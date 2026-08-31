@@ -94,3 +94,9 @@ research/*.pdf
 *.webp
 A0000268.jpg
 void.jpg
+
+# tkr-kit (local/machine-specific)
+.tkr-kit/
+.mcp.json
+CLAUDE.local.md
+.claude/rules/tkr-kit
