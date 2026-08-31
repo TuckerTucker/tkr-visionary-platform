@@ -1,0 +1,74 @@
+capability: assurance
+stories:
+  - name: catch a broken pin before a twenty-minute build does
+    status: done
+    actor: Maintainer
+    intent: spend seconds instead of twenty minutes
+    trigger_action: runs the smoke tests before deploying
+    preconditions:
+      - A checkout
+    steps:
+      - Run smoke_pins.py
+      - Run smoke_prompt.py
+      - Run smoke_graphs.py
+      - Run smoke_caption.py
+    acceptance_criteria:
+      - given: a pinned wheel that no longer resolves
+        when: smoke_pins.py is run
+        then: it says so before a deploy spends twenty minutes finding out
+      - given: no network and no GPU
+        when: smoke_prompt.py is run
+        then: it still answers, because it is stdlib only
+      - given: a plain-Python helper inside app.py
+        when: a test imports it
+        then: tools/_from_app.py pulls it out by AST, so the test does not import Modal
+    feature: smoke-tests
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by the smoke tests are themselves the check."
+  - name: measure whether a change helped
+    status: in_progress
+    actor: Maintainer
+    intent: replace an impression with a measurement
+    trigger_action: runs an A/B harness
+    preconditions:
+      - Two variants of a change
+    steps:
+      - Pick the harness
+      - Run both arms
+      - Read the result
+    acceptance_criteria:
+      - given: a probabilistic writer
+        when: a probabilistic gate is proposed in front of it
+        then: it is refused — that is two coin flips where the second one is invisible
+      - given: the validator on the request path
+        when: a judgement check is proposed for it
+        then: it goes to a harness instead, where latency is free
+      - given: the scene composer
+        when: tools/prompt_ab.py is run
+        then: the claim is measured against renders rather than driven and read
+    feature: ab-harnesses
+  - name: know what has actually been run
+    status: in_progress
+    actor: Reader
+    intent: tell a measured claim from an assumed one
+    trigger_action: reads the README coverage section
+    preconditions:
+      - The README
+    steps:
+      - Read 'What has been run end to end'
+    acceptance_criteria:
+      - given: a claim in the ledger
+        when: it is read
+        then: it is either measured or explicitly named as unmeasured
+      - given: "`non_diegetic_music: N/A`"
+        when: the ledger is read
+        then: it is named as unverified by ear, with the measurement that would settle
+          it
+      - given: a measurement that lands
+        when: the ledger is updated
+        then: the existing section is edited rather than a new document added beside it
+    feature: coverage-ledger

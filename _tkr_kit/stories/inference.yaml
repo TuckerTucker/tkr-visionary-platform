@@ -1,0 +1,120 @@
+capability: inference
+stories:
+  - name: add a model family without adding a subsystem
+    status: done
+    actor: Maintainer
+    intent: pay a graph builder rather than a second stack
+    trigger_action: implements a new family
+    preconditions:
+      - The driven ComfyUI and the job contract
+    steps:
+      - Write a graph builder
+      - Declare a row of capabilities
+      - Validate the graph on CPU
+    acceptance_criteria:
+      - given: a new graph
+        when: smoke_graphs.py runs on CPU with no weights
+        then: it validates against ComfyUI's node schema
+      - given: a family's capability row
+        when: the UI reads it
+        then: only the controls that family actually reads are shown
+      - given: a dropped connection to ComfyUI
+        when: it is observed
+        then: it is given a bounded window to mean 'still starting to die' before it is
+          treated as dead
+    feature: comfy-driver
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - name: render a still with my own LoRA
+    status: done
+    actor: Author
+    intent: see what the instrument I trained does
+    trigger_action: presses Generate with a LoRA named in the prompt
+    preconditions:
+      - Krea 2 weights present and a trained LoRA
+    steps:
+      - Name the LoRA in the prompt
+      - Press Generate
+      - Watch the phase line
+      - See the still land on the canvas
+    acceptance_criteria:
+      - given: a warm container
+        when: a second take is run
+        then: it skips the model load
+      - given: a cold start
+        when: Generate is pressed
+        then: the full centred bar reports it, because there is nothing on the canvas to
+          keep
+      - given: an H200 selected in the UI
+        when: the job runs
+        then: it runs on that class rather than the default
+    feature: image-generation
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - name: turn a prompt into a clip with sound
+    status: done
+    actor: Author
+    intent: get picture and soundtrack in one pass
+    trigger_action: sets a duration and presses Generate
+    preconditions:
+      - MiniMax-H3 weights present
+    steps:
+      - Set a duration other than Still
+      - Write the shot
+      - Press Generate
+    acceptance_criteria:
+      - given: a duration set
+        when: the model is selected
+        then: H3 runs — duration is the switch, and Still runs Krea 2
+      - given: H3 selected
+        when: the console renders
+        then: there is no CFG field and no negative prompt, because the model is
+          guidance-distilled
+      - given: thirteen references attached
+        when: the job is submitted
+        then: the budget is enforced before the job is spawned, not discovered on the
+          GPU
+    feature: video-generation
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - name: keep two trained identities from blending
+    status: done
+    actor: Author
+    intent: place a character per box
+    trigger_action: draws two boxes and drops a LoRA into each
+    preconditions:
+      - Two trained LoRAs, or the Krea 2 style LoRAs
+    steps:
+      - Draw a box
+      - Drop <lora:name:1.3> into it
+      - Draw a second box and do the same
+      - Generate
+    acceptance_criteria:
+      - given: two style LoRAs in two boxes
+        when: a render lands
+        then: there is a hard seam at the mask edge — the masking, made visible
+      - given: a photo dropped on a box
+        when: the render runs
+        then: that box is that character
+      - given: a photo dropped on the bare canvas instead
+        when: the render runs
+        then: it becomes the scene the picture is generated inside
+    feature: regional-lora
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_graphs.py and tools/smoke_free_regional.py."

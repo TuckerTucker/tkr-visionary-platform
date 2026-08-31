@@ -1,0 +1,348 @@
+capability: inference
+slices:
+  - delivers: Installed rather than vendored, cloned at a commit SHA, not linked
+      against or patched — the surface that will still be there.
+    paths:
+      - app.py
+    depends_on: []
+    story_ids:
+      - add-a-model-family-without-adding-a-subsystem
+    title: ComfyUI at COMFY_SHA, run as its own process
+    number: 1
+    layer: integration
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: One warm process per container, driven over 127.0.0.1. This is the
+      seam that made Wan's removal cost a graph builder rather than a subsystem.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - add-a-model-family-without-adding-a-subsystem
+    title: The HTTP driver — post, await, interrupt
+    number: 2
+    layer: service
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Every graph checked against the schema the running ComfyUI actually
+      has, on CPU, with no weights.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - add-a-model-family-without-adding-a-subsystem
+    title: Node-schema probing via /object_info
+    number: 3
+    layer: service
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: How long a dropped connection is allowed to mean 'still starting to
+      die' before it means dead.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - add-a-model-family-without-adding-a-subsystem
+    title: A bounded window for a dropped connection
+    number: 4
+    layer: service
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: The row the UI reads to decide which controls exist — so a family
+      costs a graph builder and a row, and the controls on screen follow the
+      model.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - add-a-model-family-without-adding-a-subsystem
+      - turn-a-prompt-into-a-clip-with-sound
+    title: A capability row per model family
+    number: 5
+    layer: domain
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Still generation through the same driven ComfyUI as video.
+    paths:
+      - app.py
+    depends_on:
+      - 3
+      - 5
+    story_ids:
+      - render-a-still-with-my-own-lora
+    title: The Krea 2 image graph
+    number: 6
+    layer: domain
+    feature: image-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Several LoRAs at named strengths, validated on CPU before a GPU is rented.
+    paths:
+      - app.py
+    depends_on:
+      - 6
+    story_ids:
+      - render-a-still-with-my-own-lora
+    title: LoRA stacking in the image graph
+    number: 7
+    layer: domain
+    feature: image-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Guidance-distilled, so no CFG and no negative prompt; 24 fps because
+      that is the model's native rate and nothing here is configurable.
+    paths:
+      - app.py
+    depends_on:
+      - 3
+      - 5
+    story_ids:
+      - turn-a-prompt-into-a-clip-with-sound
+    title: The MiniMax-H3 graph — text to video
+    number: 8
+    layer: domain
+    feature: video-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: The fl2va transformer path — a still you already made becoming the
+      start or the end of a clip.
+    paths:
+      - app.py
+    depends_on:
+      - 8
+    story_ids:
+      - turn-a-prompt-into-a-clip-with-sound
+    title: First and/or last frame conditioning
+    number: 9
+    layer: domain
+    feature: video-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Pictures, video and audio as references, with the budget checked on
+      CPU rather than discovered on the GPU. One extra file on top of the base
+      set, not a second stack.
+    paths:
+      - app.py
+    depends_on:
+      - 8
+    story_ids:
+      - turn-a-prompt-into-a-clip-with-sound
+    title: ref2va — up to twelve references, budget enforced before spawn
+    number: 10
+    layer: domain
+    feature: video-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Sound and picture together, which is the reason this family is here.
+    paths:
+      - app.py
+    depends_on:
+      - 8
+    story_ids:
+      - turn-a-prompt-into-a-clip-with-sound
+    title: Native soundtrack in one pass
+    number: 11
+    layer: domain
+    feature: video-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Two trained identities staying separate instead of blending, which is
+      what a box is for.
+    paths:
+      - comfy_nodes/visionary_boxes
+    depends_on:
+      - 6
+    story_ids:
+      - keep-two-trained-identities-from-blending
+    title: visionary_boxes — a LoRA masked to its own rectangle
+    number: 12
+    layer: domain
+    feature: regional-lora
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at comfy_nodes/visionary_boxes.
+        Covered by tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Regional conditioning without the constraint the upstream node imposed.
+    paths:
+      - comfy_nodes/visionary_free_regional
+    depends_on:
+      - 12
+    story_ids:
+      - keep-two-trained-identities-from-blending
+    title: visionary_free_regional
+    number: 13
+    layer: domain
+    feature: regional-lora
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at
+        comfy_nodes/visionary_free_regional. Covered by tools/smoke_graphs.py
+        and tools/smoke_free_regional.py."
+  - delivers: Scene and outfit transfer when the identity-edit LoRA is present; the
+      plates only exist when regions are armed.
+    paths:
+      - comfy_nodes/visionary_edit_arity
+    depends_on:
+      - 12
+    story_ids:
+      - keep-two-trained-identities-from-blending
+    title: visionary_edit_arity — scene and outfit plates
+    number: 14
+    layer: domain
+    feature: regional-lora
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at
+        comfy_nodes/visionary_edit_arity. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - delivers: Kept as the shim the measurement was taken through. CacheDiT lasted
+      one day and H3 takes render behind a step cache; the cache stays off until
+      768p testifies.
+    paths:
+      - comfy_nodes/visionary_step_cache
+    depends_on:
+      - 6
+    story_ids: []
+    title: visionary_step_cache — present, and off
+    number: 15
+    layer: domain
+    feature: image-generation
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at
+        comfy_nodes/visionary_step_cache. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - delivers: A box drawn on the frame, a LoRA or a photo dropped into it, and a
+      photo on the bare canvas becoming the scene instead.
+    paths:
+      - web/src/regions
+    depends_on:
+      - 12
+    story_ids:
+      - keep-two-trained-identities-from-blending
+    title: Region drawing, the frame and the inspector
+    number: 16
+    layer: ui
+    feature: regional-lora
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/regions. Covered by
+        tools/smoke_graphs.py and tools/smoke_free_regional.py."
+  - delivers: Both families on the one job/status/stop contract, with the capability
+      row deciding what the console shows.
+    paths:
+      - web/src/canvas
+      - web/src/video
+      - app.py
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+      - 14
+      - 15
+      - 16
+    story_ids: []
+    title: Wire inference — /api/generate and /api/video
+    number: 17
+    layer: integration
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/canvas, web/src/video,
+        app.py. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - delivers: smoke_graphs.py validates every graph against ComfyUI's node schema on
+      CPU with no weights; smoke_free_regional.py and smoke_stop.py cover the
+      regional path and the cooperative stop.
+    paths:
+      - tools/smoke_graphs.py
+      - tools/smoke_free_regional.py
+    depends_on:
+      - 17
+    story_ids: []
+    title: Test inference — graphs, regions and stops
+    number: 18
+    layer: integration
+    feature: comfy-driver
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_graphs.py,
+        tools/smoke_free_regional.py. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."

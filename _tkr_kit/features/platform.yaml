@@ -1,0 +1,136 @@
+capability: platform
+features:
+  - name: one-command-deploy
+    status: done
+    user_story: As an owner of a Modal account, I want the whole application to
+      install with one command, so that there is no setup step that can be got
+      wrong.
+    description: "`pip install modal && modal setup && modal deploy app.py`. The
+      last command prints a URL, and the URL is the application — interface, API
+      and GPU jobs. The front end is built into the image by Vite at deploy
+      time, so no local Node is needed to ship."
+    acceptance_criteria:
+      - A fresh clone deploys with three commands and no config file.
+      - No Modal Secret, no .env, no local GPU, no Docker.
+      - The printed URL serves the page, the API and the jobs.
+    references:
+      - README.md
+      - CLAUDE.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_stop.py and
+        tools/smoke_pins.py."
+  - name: volume-layout
+    status: done
+    user_story: As someone who does not trust a platform with their only copy, I
+      want my data on disk in a shape I can read, so that nothing here is
+      required to get it back out.
+    description: "One Modal Volume at /workspace: models/ flat and addressed by
+      exact filename, loras/ one folder each, datasets/{name}/ images with .txt
+      sidecars, outputs/{job}/ media with a visionary.json sidecar, work/ and
+      .cache/ disposable. Storage boundaries follow write patterns, not tidiness
+      — the HF cache is its own volume because committing 17 GB of weights after
+      writing 80 captions turned an eight-minute job into twenty-three."
+    acceptance_criteria:
+      - ls over the volume explains the layout without documentation.
+      - A dataset copied off the volume trains elsewhere unchanged.
+      - VISIONARY_VOLUME=name gives a second isolated copy.
+    references:
+      - README.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_stop.py and
+        tools/smoke_pins.py."
+  - name: job-contract
+    status: done
+    user_story: As someone waiting on a forty-minute job, I want to see what it is
+      doing, so that the wait costs what it shows rather than what it takes.
+    description: One job/status/stop contract every long job speaks. The record
+      lives in a Modal Dict and stays small — filenames, not bytes — because a
+      dict polled every two seconds must never grow with the size of the result.
+      The phase names the step, and says something different as often as the
+      thing itself changes.
+    acceptance_criteria:
+      - A phase that holds one string for forty-seven seconds is treated as a
+        defect, not a spinner.
+      - The status payload does not grow with the number of results.
+      - Every long-running surface uses this contract rather than inventing a
+        parallel one.
+    references:
+      - .claude/rules/backend.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_stop.py and
+        tools/smoke_pins.py."
+  - name: cooperative-stop
+    status: done
+    user_story: As someone who pressed Stop, I want the job to actually stop, so
+      that I am not paying for a GPU to finish work I cancelled.
+    description: "Jobs check a flag between steps and unwind cleanly, so the
+      container survives and the next request is warm. Both halves of this
+      failed at once and neither was visible: the flag lived on the job record,
+      which _publish rewrites get-update-put against a network Dict under a
+      process-local lock that the web container never takes — so a publish
+      straddling the press put stop:False back. And it was read in exactly one
+      place, inside _await, reached only after the graph is posted."
+    acceptance_criteria:
+      - The stop flag has its own Dict key, because a merge cannot clobber what
+        it does not touch.
+      - _stop_gate is called at each phase boundary, where nothing holds a GPU
+        and unwinding is free.
+      - smoke_stop.py enumerates the interleavings and none of them lose the
+        flag.
+    references:
+      - tools/smoke_stop.py
+      - .claude/rules/backend.md
+    wiring_assignment:
+      territory:
+        - app.py
+        - tools/smoke_pins.py
+        - tools/smoke_stop.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_stop.py and
+        tools/smoke_pins.py."
+  - name: compute-policy
+    status: done
+    user_story: As someone paying per GPU-second, I want CPU work to run on CPU, so
+      that a bad path costs milliseconds instead of a cold start.
+    description: Each job type picks its own class. Downloads, uploads, thumbnails
+      and validation run on CPU containers. GPU classes carry max_containers=1,
+      because a second replica pays a full cold load rather than sharing a warm
+      one. Containers stay warm between requests — ten minutes for images,
+      fifteen for video — then scale to zero.
+    acceptance_criteria:
+      - _validate_loras() is importable from the web container, so a bad path is
+        a form error in milliseconds.
+      - Pulling 26 GB never happens with an A100 idle.
+      - An idle deployment bills nothing.
+    references:
+      - .claude/rules/backend.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_stop.py and
+        tools/smoke_pins.py."

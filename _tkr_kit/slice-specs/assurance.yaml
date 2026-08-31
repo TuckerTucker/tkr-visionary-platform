@@ -1,0 +1,214 @@
+capability: assurance
+slice_specs:
+  - status: draft
+    title: The A/B harnesses — what a harness must answer with
+    purpose: "Arithmetic in the validator, judgement in the harness. This spec fixes
+      what 'harness' means here so a new one is comparable with the existing
+      ones rather than a bespoke script: two arms, one grader, a stated N, and a
+      result that survives being read six months later."
+    interface:
+      - "Every harness takes two arms and emits one record per trial: `{arm,
+        input, output, score, grader, n, ts}`."
+      - Graders are separable from harnesses — `judge_prompts.py` and
+        `judge_renders.py` are called by a harness, never embedded in one.
+      - Results land under `docs/assurance/` as the durable artifact; the
+        harness's stdout is a convenience, not the record.
+    behavior:
+      - A harness states N before it runs and reports the N it actually
+        completed, because an arm that died at trial 9 of 40 is not a result.
+      - Both arms run against the same inputs in the same order; an input that
+        fails in one arm is dropped from both.
+      - A harness never gates anything at runtime. Its output is read by a
+        person deciding whether a change stays.
+      - A result names the commit it was taken at, because a measurement without
+        one cannot be reproduced or retired.
+    errors:
+      - A grader that returns a non-numeric score — fail the trial loudly rather
+        than coercing it, because a coerced zero is indistinguishable from a
+        real one.
+      - An arm whose weights or model are not present — refuse before the first
+        trial, not at trial 1, so the failure costs nothing.
+    tests:
+      - A harness run with N=2 against identical arms produces two records whose
+        scores are equal within the grader's stated tolerance.
+      - A harness interrupted mid-run leaves the trials it completed, with the
+        completed N reported honestly.
+    data_lifecycle: "`docs/assurance/` accumulates one file per measurement.
+      Retention: finding — this is an honest, known leak with no mechanism yet.
+      It is small, it is version-controlled, and a measurement is exactly the
+      thing you want to still have in two years; but nothing prunes it and
+      nothing will until the count is inconvenient. Declared rather than hidden,
+      so it stays visible."
+    references:
+      - tools/ab_cache.py
+      - tools/chain_ab.py
+      - tools/does_it_help.py
+      - .claude/rules/backend.md
+    slice: 11
+  - status: draft
+    title: The judges — a grader you can put two arms in front of
+    purpose: A grader is the half of a harness that can quietly invalidate it. This
+      spec states what a judge must do so that a score means the same thing
+      across runs, and so that stacking a probabilistic grader on a
+      probabilistic writer stays a deliberate choice rather than an accident.
+    interface:
+      - "`judge_prompts.py` scores a compiled document against the family's
+        published format. Deterministic where the format is structural."
+      - "`judge_renders.py` scores a render against the intent it was made from.
+        Necessarily probabilistic."
+      - "`serve_judge.py` exposes a judge over HTTP so a harness can call it
+        without reloading a model per trial."
+    behavior:
+      - A judge states which of its criteria are structural and which are
+        judgement, and reports them separately. A single blended number hides
+        exactly the distinction that matters.
+      - "The structural half is reproducible: the same input yields the same
+        score, every time."
+      - A judge is never placed on the request path. The validator gates a
+        render and runs on every request, so what belongs there are structural
+        zeros — a probabilistic gate stacked on a probabilistic writer is two
+        coin flips where the second one is invisible.
+      - A judge names its own version in every record it emits, so scores from
+        two versions are never silently compared.
+    errors:
+      - A judge asked to score an input it has no criteria for — return no score
+        and say so, rather than returning a middling one.
+      - The judging server unreachable mid-run — the harness fails the trial and
+        reports it; it does not substitute a default.
+    tests:
+      - judge_prompts.py scores a known-good H3 document at 1.00 on the
+        structural criteria — the value the current compiler already achieves
+        against MiniMax's own format grader.
+      - The same document scored twice by the structural half returns the
+        identical number.
+      - A malformed document scores zero structurally and is not rescued by the
+        judgement half.
+    references:
+      - tools/judge_prompts.py
+      - tools/judge_renders.py
+      - tools/serve_judge.py
+    slice: 12
+  - status: draft
+    title: Run prompt_ab.py against the scene composer
+    purpose: The composer has been driven and read, never measured against a render.
+      This is the measurement that is not a proxy. Until it runs, the scene
+      composer's claim — that composing a scene produces a better render than
+      typing the same intent flat — is asserted, and the README says so. This
+      slice is what converts that line in the coverage ledger from unmeasured to
+      measured, whichever way it comes out.
+    interface:
+      - "`python3 tools/prompt_ab.py --arms composed,flat --n <N> --family
+        <krea2|h3> --out docs/assurance/<date>-composer.md`"
+      - "Arm A: a scene built in the composer, compiled through /api/compile."
+      - "Arm B: the same intent typed flat into the prompt field and compiled
+        through the same route."
+      - "Grader: judge_renders.py, since the question is about the picture and
+        not about the document."
+    behavior:
+      - Both arms are compiled from the same typed intent, so the only
+        difference under test is the composition, not the words.
+      - Seeds are fixed and shared across arms — an unfixed seed measures the
+        sampler, not the composer.
+      - N is stated before the run and the completed N is reported. A result
+        from nine trials is a result from nine trials.
+      - The outcome is recorded whichever way it falls. A measurement that only
+        gets written down when it agrees with the feature is not a measurement.
+      - If the composed arm does not win, that is a finding about the composer
+        and it goes to the roadmap, not into a second attempt at the harness.
+    errors:
+      - Krea 2 or H3 weights absent — refuse before the first trial and name the
+        missing file, its resolved path, and what is actually on the volume.
+      - A scene that exceeds the family's reference budget — refuse at compile
+        time with the shot named; do not truncate to make the run proceed.
+      - The judging server unreachable — fail the trial and report it; never
+        substitute a default score.
+    tests:
+      - A dry run with N=1 completes both arms and writes a record naming the
+        commit, the family, the seed and the grader version.
+      - "The two arms are shown to differ only in composition: their typed
+        intent is byte-identical in the emitted record."
+      - The README coverage ledger is edited — not appended beside — when the
+        result lands.
+    data_lifecycle: Writes one file under `docs/assurance/`, governed by the
+      declaration on assurance/spec/11. No new store.
+    references:
+      - tools/prompt_ab.py
+      - README.md
+      - web/CLAUDE.md
+    slice: 13
+  - status: draft
+    title: "Verify by ear that non_diegetic_music: N/A silences the soundtrack"
+    purpose: The one claim in the coverage ledger that no cheap check can settle.
+      The field is emitted, smoke_prompt.py confirms it is in the document, and
+      the format grader scores it — but every one of those checks the string,
+      and the question is about the audio. H3 produces sound and picture in one
+      pass, so a field that does not actually suppress the music means every
+      silent-intended render has a soundtrack nobody asked for.
+    interface:
+      - "A pair of H3 renders from one intent: one with `non_diegetic_music:
+        N/A`, one with a named cue."
+      - The artifact is the two clips plus a written verdict under
+        `docs/assurance/`.
+      - No new code is required if the answer is yes. If the answer is no, the
+        finding is a prompting-capability story, not a patch here.
+    behavior:
+      - Same seed, same duration, same shot across both arms — the only
+        difference is the one field.
+      - The verdict is written by a person listening, because that is what
+        'unverified by ear' names and no grader substitutes for it.
+      - A negative result is recorded as a finding against the H3 compiler and
+        the coverage ledger is updated to say the field does not do what it
+        appears to.
+    errors:
+      - H3 weights absent — refuse before renting the GPU; this is two renders
+        and there is no reason to discover a missing file on an H100.
+      - A render that fails mid-run — repeat it rather than judging a partial
+        clip.
+    tests:
+      - Both clips exist, are the stated duration, and carry sidecars naming the
+        differing field.
+      - The README's 'Still unverified by ear' line is edited to state the
+        outcome, with the date and the render ids.
+    data_lifecycle: "Two renders under `outputs/{job}/`, governed by the existing
+      outputs retention (op: delete and purge). One verdict file under
+      `docs/assurance/`. No new store."
+    references:
+      - README.md
+      - docs/assurance
+    slice: 14
+  - status: draft
+    title: The coverage ledger — what makes a claim admissible
+    purpose: "'It deploys' is not 'it works'. The ledger is the place the project is
+      honest about the difference, and it is only worth having if a reader can
+      tell a measured claim from an assumed one without knowing the codebase.
+      This spec states the bar, so the ledger cannot quietly drift into
+      marketing."
+    interface:
+      - "One section in README.md — 'What has been run end to end'. Not a new
+        file: if a change affects something already documented, the existing
+        file is edited."
+      - "Each entry: the claim, its status (measured | unmeasured), and for an
+        unmeasured one, the measurement that would settle it."
+    behavior:
+      - A claim is measured only if a harness, a smoke test or a person actually
+        produced the result — not if the code path exists and looks right.
+      - An unmeasured claim names its measurement. 'Not yet tested' without
+        naming what would test it is how an entry becomes permanent.
+      - The ledger is edited when a measurement lands, not when a feature
+        merges. Those are different events and conflating them is the whole
+        failure mode.
+      - An entry is retired only by being measured or by the claim being
+        withdrawn. It is never quietly deleted.
+    errors:
+      - A claim with no status — treat as unmeasured; silence is not evidence.
+      - A measurement recorded without the commit it was taken at — reject,
+        because it cannot be reproduced or retired.
+    tests:
+      - Every entry in the section parses as claim + status, and every
+        unmeasured one names a measurement.
+      - The two open entries at the time of writing — the scene composer
+        measurement and the non_diegetic_music verification — each point at
+        their slice.
+    references:
+      - README.md
+    slice: 15

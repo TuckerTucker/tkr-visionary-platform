@@ -1,0 +1,143 @@
+capability: prompting
+stories:
+  - name: pick a camera move without guessing the wording
+    status: done
+    actor: Author
+    intent: say what I want without learning an encoder
+    trigger_action: opens the shot palette
+    preconditions:
+      - The page loaded
+    steps:
+      - Open the palette
+      - Watch a tile animate its move
+      - Tap it
+      - See it become a pill
+    acceptance_criteria:
+      - given: seventy-seven tiles
+        when: the palette is opened
+        then: each animates the move it names rather than labelling it
+      - given: a pill added
+        when: the prompt field is read
+        then: it holds only what nothing else can say — who is in the shot and what
+          happens
+      - given: the vocabulary
+        when: it is compared to the base guide
+        then: it is verbatim — a contract with the checkpoint rather than a taxonomy of
+          ours
+    feature: shot-vocabulary
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_prompt.py and tools/smoke_scene.py."
+  - name: see the exact string the model will be handed
+    status: done
+    actor: Author
+    intent: trust what is being sent without being made to write it
+    trigger_action: opens the compiled preview
+    preconditions:
+      - A shot composed of pills and a typed fragment
+    steps:
+      - Compose the shot
+      - Open the preview
+      - Read the compiled document
+    acceptance_criteria:
+      - given: H3 selected
+        when: the shot is compiled
+        then: it comes out as the six-field document H3 wants
+      - given: Krea 2 selected
+        when: the same shot is compiled
+        then: it comes out as prose with the camera clauses dropped
+      - given: the compiler
+        when: smoke_prompt.py runs with stdlib only and no network
+        then: the output matches MiniMax's published format
+    feature: compilers
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_prompt.py and tools/smoke_scene.py."
+  - name: have the model finish my fragment
+    status: done
+    actor: Author
+    intent: type in bursts and still get a written prompt
+    trigger_action: types a fragment and presses Enhance
+    preconditions:
+      - Krea 2 loaded during the session
+    steps:
+      - Type `empty diner, 3am`
+      - Press Enhance
+      - Read the result
+      - Press ⌘Z if it is wrong
+    acceptance_criteria:
+      - given: the fragment `empty diner, 3am`
+        when: Enhance is pressed
+        then: it comes back written, with the light placed and the clock still reading
+          3am
+      - given: an enhanced prompt on screen
+        when: ⌘Z or the Undo beside the button is used
+        then: the original words come back exactly
+      - given: a session with Krea 2 already loaded
+        when: Enhance runs
+        then: it costs no extra model load, and writes in the dialect it reads
+    feature: enhance
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_prompt.py and tools/smoke_scene.py."
+  - name: reuse a run after the model has changed
+    status: done
+    actor: Author
+    intent: have what I meant survive a checkpoint swap
+    trigger_action: presses Reuse on an old render
+    preconditions:
+      - An old render with a sidecar
+    steps:
+      - Open a render from months ago
+      - Press Reuse
+      - Generate against the current model
+    acceptance_criteria:
+      - given: a sidecar carrying prompt_typed and shot
+        when: Reuse is pressed
+        then: the intent is recompiled for whichever model is selected now
+      - given: a sidecar carrying only a compiled prompt
+        when: a new checkpoint is selected
+        then: the stored string is worth nothing to it, which is why the typed one is
+          the record
+      - given: a gallery card
+        when: it is rendered
+        then: it carries the picture, its kind and its age — not the prompt
+    feature: intent-as-record
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_prompt.py and tools/smoke_scene.py."
+  - name: hold a scene across more than one generation
+    status: in_progress
+    actor: Author
+    intent: bind cast and material to a person rather than to a job
+    trigger_action: builds a scene in the composer
+    preconditions:
+      - Reference images for a character
+    steps:
+      - Create a cast member
+      - Attach reference pictures
+      - Compose shots against them
+      - Generate
+    acceptance_criteria:
+      - given: a cast member with a reference set
+        when: a model is switched
+        then: the same object is read by whichever model is in front of it
+      - given: a scene
+        when: a generation completes
+        then: the scene is still there — a scene is longer than a generation
+      - given: the composer's output
+        when: tools/prompt_ab.py is run against real renders
+        then: the claim is measured rather than asserted
+    feature: scene-composer

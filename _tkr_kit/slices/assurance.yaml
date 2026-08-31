@@ -1,0 +1,253 @@
+capability: assurance
+slices:
+  - delivers: So a test can import a helper without importing Modal, which is what
+      makes three of the four smoke tests cheap.
+    paths:
+      - tools/_from_app.py
+    depends_on: []
+    story_ids:
+      - catch-a-broken-pin-before-a-twenty-minute-build-does
+    title: tools/_from_app.py — plain Python out of app.py by AST
+    number: 1
+    layer: domain
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/_from_app.py. Covered by
+        the smoke tests are themselves the check."
+  - delivers: Before a deploy spends twenty minutes finding out.
+    paths:
+      - tools/smoke_pins.py
+      - tools/upstream.py
+    depends_on: []
+    story_ids:
+      - catch-a-broken-pin-before-a-twenty-minute-build-does
+    title: smoke_pins.py — every pinned wheel still resolves
+    number: 2
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_pins.py,
+        tools/upstream.py. Covered by the smoke tests are themselves the check."
+  - delivers: On CPU, with no weights present.
+    paths:
+      - tools/smoke_graphs.py
+    depends_on:
+      - 1
+    story_ids:
+      - catch-a-broken-pin-before-a-twenty-minute-build-does
+    title: smoke_graphs.py — every graph against the node schema
+    number: 3
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_graphs.py. Covered
+        by the smoke tests are themselves the check."
+  - delivers: On CPU; --gpu captions a real image when you want the expensive answer.
+    paths:
+      - tools/smoke_caption.py
+    depends_on:
+      - 1
+    story_ids:
+      - catch-a-broken-pin-before-a-twenty-minute-build-does
+    title: smoke_caption.py — every captioner repo id resolves
+    number: 4
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_caption.py. Covered
+        by the smoke tests are themselves the check."
+  - delivers: Stdlib only, no network. The cheapest check in the repo and the one
+      guarding the most-moved code.
+    paths:
+      - tools/smoke_prompt.py
+    depends_on:
+      - 1
+    story_ids:
+      - catch-a-broken-pin-before-a-twenty-minute-build-does
+    title: smoke_prompt.py — the compiler against the published format
+    number: 5
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_prompt.py. Covered
+        by the smoke tests are themselves the check."
+  - delivers: Two of them lost the flag; that is how the separate Dict key was found.
+    paths:
+      - tools/smoke_stop.py
+    depends_on:
+      - 1
+    story_ids: []
+    title: smoke_stop.py — the six stop interleavings
+    number: 6
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_stop.py. Covered by
+        the smoke tests are themselves the check."
+  - delivers: Duplicate detection checked and its thresholds tuned against a real
+      set rather than guessed.
+    paths:
+      - tools/smoke_dupes.py
+      - tools/tune_dupes.py
+    depends_on:
+      - 1
+    story_ids: []
+    title: smoke_dupes.py and tune_dupes.py
+    number: 7
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_dupes.py,
+        tools/tune_dupes.py. Covered by the smoke tests are themselves the
+        check."
+  - delivers: The composer's output shape, checked cheaply.
+    paths:
+      - tools/smoke_scene.py
+    depends_on:
+      - 1
+    story_ids: []
+    title: smoke_scene.py
+    number: 8
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_scene.py. Covered by
+        the smoke tests are themselves the check."
+  - delivers: The regional path, checked without renting a GPU.
+    paths:
+      - tools/smoke_free_regional.py
+    depends_on:
+      - 1
+    story_ids: []
+    title: smoke_free_regional.py
+    number: 9
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_free_regional.py.
+        Covered by the smoke tests are themselves the check."
+  - delivers: Drops, the gallery, LoRAs, metadata and negatives driven against a
+      baseline.
+    paths:
+      - tools/ui-checks
+      - tools/shoot_ui.mjs
+    depends_on: []
+    story_ids: []
+    title: The UI checks and the shooter
+    number: 10
+    layer: integration
+    feature: smoke-tests
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/ui-checks,
+        tools/shoot_ui.mjs. Covered by the smoke tests are themselves the
+        check."
+  - delivers: ab_cache, ab_sage, ab_style, chain_ab and does_it_help — where
+      judgement is affordable, because latency is free there.
+    paths:
+      - tools/ab_cache.py
+      - tools/ab_sage.py
+      - tools/ab_style.py
+      - tools/chain_ab.py
+      - tools/does_it_help.py
+      - tools/cold_start.py
+    depends_on: []
+    story_ids:
+      - measure-whether-a-change-helped
+    title: The A/B harnesses
+    number: 11
+    layer: integration
+    feature: ab-harnesses
+    status: in_progress
+  - delivers: judge_prompts, judge_renders and serve_judge — a grader you can put
+      two arms in front of.
+    paths:
+      - tools/judge_prompts.py
+      - tools/judge_renders.py
+      - tools/serve_judge.py
+    depends_on:
+      - 11
+    story_ids:
+      - measure-whether-a-change-helped
+    title: The judges and the judging server
+    number: 12
+    layer: integration
+    feature: ab-harnesses
+    status: in_progress
+  - delivers: The measurement that is not a proxy, and has not run. The composer has
+      been driven and read; until this runs, its claim is asserted rather than
+      measured.
+    paths:
+      - tools/prompt_ab.py
+      - docs/assurance
+    depends_on:
+      - 11
+      - 12
+    story_ids:
+      - measure-whether-a-change-helped
+      - prompting/story/hold-a-scene-across-more-than-one-generation
+    title: Run prompt_ab.py against the scene composer
+    number: 13
+    layer: integration
+    feature: ab-harnesses
+    status: draft
+  - delivers: "The one claim in the coverage ledger that no cheap check can settle:
+      the field is emitted and the format grader scores it, but nobody has
+      listened to a render made with it."
+    paths:
+      - docs/assurance
+    depends_on:
+      - 13
+    story_ids:
+      - know-what-has-actually-been-run
+    title: "Verify by ear that non_diegetic_music: N/A silences the soundtrack"
+    number: 14
+    layer: integration
+    feature: coverage-ledger
+    status: draft
+  - delivers: Being honest about coverage, since 'it deploys' is not 'it works'.
+      Every claim either measured or explicitly named as unmeasured, with the
+      measurement that would settle it.
+    paths:
+      - README.md
+    depends_on:
+      - 2
+      - 3
+      - 4
+      - 5
+    story_ids:
+      - know-what-has-actually-been-run
+    title: The coverage ledger in the README
+    number: 15
+    layer: domain
+    feature: coverage-ledger
+    status: in_progress

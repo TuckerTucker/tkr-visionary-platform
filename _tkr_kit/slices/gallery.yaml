@@ -1,0 +1,274 @@
+capability: gallery
+slices:
+  - delivers: Media beside the record of what produced it, in a folder named by the job.
+    paths:
+      - app.py
+    depends_on: []
+    story_ids:
+      - read-a-year-old-sidecar
+    new_stores:
+      - name: outputs-dir
+        retention:
+          kind: op
+          detail: /api/outputs/{job_id}/delete removes one job; /api/outputs/purge clears
+            them wholesale. Both state the blast radius before running.
+    title: outputs/{job}/ and the visionary.json writer
+    number: 1
+    layer: data
+    feature: outputs-and-sidecars
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A sidecar is read years after it is written, so a field nothing fills
+      any more still gets written and still gets read — a reader that drops one
+      makes every run that has it unreadable.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - read-a-year-old-sidecar
+    title: A reader that never drops a field
+    number: 2
+    layer: domain
+    feature: outputs-and-sidecars
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The whole listing, because the cap was protecting the network rather
+      than the page.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - see-everything-i-have-made-in-one-place
+    title: /api/gallery — the listing
+    number: 3
+    layer: api
+    feature: grid-and-viewer
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Bytes on their own routes, so what is polled stays small and the media
+      does not ride in a status payload.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - see-everything-i-have-made-in-one-place
+    title: Covers, files and clips served off the volume
+    number: 4
+    layer: api
+    feature: grid-and-viewer
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A card carries the picture, its kind and its age. Showing the prompt
+      is an obvious-looking addition and is wrong twice over.
+    paths:
+      - web/src/gallery
+      - web/src/media
+    depends_on:
+      - 3
+      - 4
+    story_ids:
+      - see-everything-i-have-made-in-one-place
+    title: The masonry grid and the card
+    number: 5
+    layer: ui
+    feature: grid-and-viewer
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/gallery, web/src/media.
+        No automated check covers this — the gap is recorded in the assurance
+        capability's coverage ledger rather than papered over here."
+  - delivers: A result you have to send elsewhere to look at properly is a result
+      you were only being shown.
+    paths:
+      - web/src/gallery
+    depends_on:
+      - 5
+    story_ids:
+      - see-everything-i-have-made-in-one-place
+    title: The viewer, full size
+    number: 6
+    layer: ui
+    feature: grid-and-viewer
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/gallery. No automated
+        check covers this — the gap is recorded in the assurance capability's
+        coverage ledger rather than papered over here."
+  - delivers: What you meant first; what the encoder was told, second, as a receipt.
+    paths:
+      - web/src/sheet
+      - web/src/gallery
+    depends_on:
+      - 2
+    story_ids:
+      - animate-a-still-i-like
+      - prompting/story/reuse-a-run-after-the-model-has-changed
+    title: The metadata sheet, preferring typed intent
+    number: 7
+    layer: ui
+    feature: reuse-and-handoff
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/sheet, web/src/gallery.
+        No automated check covers this — the gap is recorded in the assurance
+        capability's coverage ledger rather than papered over here."
+  - delivers: A run restored from its typed intent, recompiled for whichever model
+      is selected now.
+    paths:
+      - web/src/gallery
+    depends_on:
+      - 2
+    story_ids:
+      - prompting/story/reuse-a-run-after-the-model-has-changed
+    title: Reuse and Copy
+    number: 8
+    layer: domain
+    feature: reuse-and-handoff
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/gallery. No automated
+        check covers this — the gap is recorded in the assurance capability's
+        coverage ledger rather than papered over here."
+  - delivers: The first piece of a still flowing into a clip without a round trip
+      through the filesystem.
+    paths:
+      - web/src/gallery
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - animate-a-still-i-like
+    title: Animate and As reference
+    number: 9
+    layer: service
+    feature: reuse-and-handoff
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/gallery, app.py. No
+        automated check covers this — the gap is recorded in the assurance
+        capability's coverage ledger rather than papered over here."
+  - delivers: Deletion unlinks. The confirm dialog is the safety net, so it has to
+      say what is going and how much of it — a dialog that undersells it is the
+      failure mode this replaced.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - delete-without-wondering-what-went
+    title: Delete, with the blast radius stated
+    number: 10
+    layer: api
+    feature: output-lifecycle
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A separately named action, because clearing everything and deleting
+      one job should not be the same button.
+    paths:
+      - app.py
+    depends_on:
+      - 10
+    story_ids:
+      - delete-without-wondering-what-went
+    title: Purge
+    number: 11
+    layer: api
+    feature: output-lifecycle
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Clearing what the old .trash/ scheme left behind — a second copy of
+      everything already thrown away, on a volume whose only other way to
+      reclaim space is the Modal CLI.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - delete-without-wondering-what-went
+    title: _drop_legacy_trash()
+    number: 12
+    layer: service
+    feature: output-lifecycle
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The grid, the viewer, the sheet and the lifecycle actions over the
+      output routes.
+    paths:
+      - web/src/gallery
+      - web/src/sheet
+      - web/src/media
+      - app.py
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+    story_ids: []
+    title: Wire the gallery
+    number: 13
+    layer: integration
+    feature: grid-and-viewer
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/gallery, web/src/sheet,
+        web/src/media, app.py. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."

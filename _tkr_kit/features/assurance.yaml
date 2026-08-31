@@ -1,0 +1,92 @@
+capability: assurance
+features:
+  - name: smoke-tests
+    status: done
+    user_story: As someone about to spend twenty minutes on a deploy, I want the
+      cheap checks first, so that a broken pin is found before the build finds
+      it.
+    description: Four smoke tests named in the README, all cheap, all runnable
+      against your own account — graphs against ComfyUI's node schema, captioner
+      repo ids, the shot compiler against the published format, and every pinned
+      wheel. Plus smoke_stop, smoke_dupes, smoke_scene and smoke_free_regional.
+      tools/_from_app.py pulls plain-Python pieces out of app.py by AST so a
+      test can import them without importing Modal.
+    acceptance_criteria:
+      - Three of the four need no network or no GPU.
+      - smoke_pins.py resolves every pinned wheel before a deploy spends twenty
+        minutes finding out.
+      - A test never rents a GPU to answer a question a CPU can answer.
+    references:
+      - README.md
+    wiring_assignment:
+      territory:
+        - tools/_from_app.py
+        - tools/shoot_ui.mjs
+        - tools/smoke_caption.py
+        - tools/smoke_dupes.py
+        - tools/smoke_free_regional.py
+        - tools/smoke_graphs.py
+        - tools/smoke_pins.py
+        - tools/smoke_prompt.py
+        - tools/smoke_scene.py
+        - tools/smoke_stop.py
+        - tools/tune_dupes.py
+        - tools/ui-checks
+        - tools/upstream.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by the smoke tests are themselves the
+        check."
+  - name: ab-harnesses
+    status: in_progress
+    user_story: As someone deciding whether a change helped, I want a harness that
+      measures it, so that judgement happens where latency is free rather than
+      in the request path.
+    description: Arithmetic in the validator, judgement in the harness. The
+      validator runs on every request and gates a render, so what belongs there
+      are structural zeros — a probabilistic gate stacked on a probabilistic
+      writer is two coin flips where the second one is invisible. prompt_ab,
+      chain_ab, ab_cache, ab_sage, ab_style, does_it_help, judge_prompts,
+      judge_renders.
+    acceptance_criteria:
+      - A harness answers with a measurement, not an impression.
+      - tools/prompt_ab.py is the measurement for the scene composer that is not
+        a proxy — and it has not run.
+      - A change that cannot be measured by one of these is a change whose claim
+        stays unmade.
+    references:
+      - tools/prompt_ab.py
+    wiring_assignment:
+      territory:
+        - docs/assurance
+        - tools/ab_cache.py
+        - tools/ab_sage.py
+        - tools/ab_style.py
+        - tools/chain_ab.py
+        - tools/cold_start.py
+        - tools/does_it_help.py
+        - tools/judge_prompts.py
+        - tools/judge_renders.py
+        - tools/prompt_ab.py
+        - tools/serve_judge.py
+  - name: coverage-ledger
+    status: in_progress
+    user_story: As someone reading the README, I want to know what has actually been
+      run end to end, so that 'it deploys' is not mistaken for 'it works'.
+    description: "Being honest about coverage. MiniMax-H3 text-to-video has run end
+      to end on an H100 and the compiler output is checked against the published
+      format. Still unverified by ear: whether `non_diegetic_music: N/A`
+      actually silences the soundtrack. The scene composer has been driven and
+      read, never measured against a render."
+    acceptance_criteria:
+      - Every claim is either measured or explicitly named as unmeasured.
+      - An unmeasured claim names the measurement that would settle it.
+      - The ledger is edited when a measurement lands, not when a feature merges.
+    references:
+      - README.md
+    wiring_assignment:
+      territory:
+        - README.md
+        - docs/assurance

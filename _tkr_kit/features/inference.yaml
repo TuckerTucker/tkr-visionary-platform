@@ -1,0 +1,116 @@
+capability: inference
+features:
+  - name: comfy-driver
+    status: done
+    user_story: As the application, I want one warm ComfyUI per container driven
+      over HTTP, so that adding a model family costs a graph builder rather than
+      a subsystem.
+    description: ComfyUI cloned at COMFY_SHA and run as its own process, driven over
+      127.0.0.1 — not linked against or patched. One process per container, one
+      container per loaded checkpoint. What a family costs is a graph builder
+      and a row of capabilities; Wan 2.2 shared this path for a while and its
+      removal is the proof the contract is family-agnostic.
+    acceptance_criteria:
+      - Every graph validates against ComfyUI's node schema on CPU with no
+        weights present.
+      - A dropped connection is given a bounded window to mean 'still starting
+        to die' before it means dead.
+      - The loading stretch is narrated per model, read off output ComfyUI was
+        already printing to a log nobody read.
+    references:
+      - tools/smoke_graphs.py
+    wiring_assignment:
+      territory:
+        - app.py
+        - tools/smoke_free_regional.py
+        - tools/smoke_graphs.py
+        - web/src/canvas
+        - web/src/video
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - name: image-generation
+    status: done
+    user_story: As someone with a trained LoRA, I want a still, so that I can see
+      what the instrument does.
+    description: Krea 2 inference through the driven ComfyUI, with LoRA stacking.
+      Images want an H100 or H200 for the memory a regional render peaks at, and
+      share one image with video whose SageAttention kernels are compiled for
+      Hopper.
+    acceptance_criteria:
+      - A wrong LoRA path, an unknown aspect ratio or a missing weight is
+        rejected on CPU before a GPU is rented.
+      - Consecutive takes skip the model load while the container is warm.
+      - The GPU class is switchable in the UI.
+    wiring_assignment:
+      territory:
+        - app.py
+        - comfy_nodes/visionary_step_cache
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - name: video-generation
+    status: done
+    user_story: As someone with a still I like, I want a clip with sound, so that
+      motion is one action away rather than a separate product.
+    description: MiniMax-H3 through the same driven ComfyUI — sound and picture in
+      one pass, from text, from a first and/or last frame, or from up to twelve
+      references through the ref2va transformer. It is guidance-distilled, so
+      there is no CFG and no negative prompt; LoRAs load through
+      LoraLoaderModelOnly like anything else, including MiniMax's own Lightning
+      distillations.
+    acceptance_criteria:
+      - 24 fps is the model's native rate and nothing exposes it as a setting.
+      - A row of capabilities per family is what the UI reads to decide which
+        controls to show.
+      - The reference budget is enforced before the job is spawned, not
+        discovered on the GPU.
+    references:
+      - docs/roadmap.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - name: regional-lora
+    status: done
+    user_story: As someone with two trained identities, I want each masked to its
+      own rectangle, so that two characters stay separate instead of blending.
+    description: Draw a box on the frame and drop a <lora:name:1.3> into it, and
+      that LoRA applies only inside the box. Each box can also take a reference
+      photo; drop a photo on the bare canvas instead and it becomes the scene
+      the picture is generated inside. Scene and outfit transfer arrive with the
+      identity-edit LoRA. Four of our own ComfyUI nodes carry this — one is a
+      shim.
+    acceptance_criteria:
+      - Two style LoRAs in two boxes produce a hard seam at the mask edge — the
+        masking, made visible.
+      - The style LoRAs are the cheapest way to see regional prompting work at
+        all.
+      - The regional path is element-as-component in primitive form; the gap to
+        Phase 6 is that boxes are author-declared rather than model-derived.
+    references:
+      - comfy_nodes
+      - tools/smoke_free_regional.py
+    wiring_assignment:
+      territory:
+        - comfy_nodes/visionary_boxes
+        - comfy_nodes/visionary_edit_arity
+        - comfy_nodes/visionary_free_regional
+        - web/src/regions
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."

@@ -1,0 +1,366 @@
+capability: web
+slices:
+  - delivers: React and TypeScript built into the image at deploy time, so no local
+      Node is needed to ship.
+    paths:
+      - web/package.json
+      - web/vite.config.ts
+      - web/vite.lib.config.ts
+      - web/tsconfig.json
+      - web/tsconfig.ds.json
+      - web/index.html
+      - web/blocking.html
+      - web/build-ds.mjs
+    depends_on: []
+    story_ids: []
+    title: The Vite project and the image build
+    number: 1
+    layer: integration
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/package.json,
+        web/vite.config.ts, web/vite.lib.config.ts, web/tsconfig.json,
+        web/tsconfig.ds.json, web/index.html, web/blocking.html,
+        web/build-ds.mjs. Covered by tools/ui-checks."
+  - delivers: Every path named once. Thirteen call sites with template literals is
+      fine until a name changes and the compiler has nothing to say about it.
+    paths:
+      - web/src/api
+    depends_on:
+      - 1
+    story_ids:
+      - rename-a-route-and-find-out-at-build-time
+    title: The named route map and the client
+    number: 2
+    layer: api
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/api. Covered by
+        tools/ui-checks."
+  - delivers: The vocabulary the surfaces are built from, so a control behaves the
+      same wherever it appears.
+    paths:
+      - web/src/ui
+    depends_on:
+      - 1
+    story_ids: []
+    title: Shared primitives — Masonry, Popover, Sheet, Menu, NumInput, ErrorNote,
+      gesture
+    number: 3
+    layer: ui
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/ui. Covered by
+        tools/ui-checks."
+  - delivers: One set of values, so the page reads as one thing rather than as five
+      panels.
+    paths:
+      - web/src/ds
+      - web/src/styles
+    depends_on:
+      - 1
+    story_ids: []
+    title: Design tokens and styles
+    number: 4
+    layer: ui
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/ds, web/src/styles.
+        Covered by tools/ui-checks."
+  - delivers: One place the surfaces read state from, including the run record the
+      canvas depends on.
+    paths:
+      - web/src/store.ts
+      - web/src/format.ts
+      - web/src/icons.tsx
+    depends_on:
+      - 1
+    story_ids: []
+    title: The client store
+    number: 5
+    layer: domain
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/store.ts,
+        web/src/format.ts, web/src/icons.tsx. Covered by tools/ui-checks."
+  - delivers: setInterval fires on a clock, so a slow answer overlaps the next tick;
+      replies land out of order and the polls in flight hold connections a
+      browser gives about six of, starving the media on the same origin. Neither
+      symptom looks like a poll loop, which is why it went unfound.
+    paths:
+      - web/src/ui
+    depends_on:
+      - 2
+    story_ids: []
+    title: everyMs — a poll that waits for its own reply
+    number: 6
+    layer: domain
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/ui. Covered by
+        tools/ui-checks."
+  - delivers: Each result fills the canvas and the arrows step between them; every
+      frame stays mounted and the track is a transform, so stepping costs a
+      compositor frame and nothing re-fetches.
+    paths:
+      - web/src/canvas
+    depends_on:
+      - 3
+      - 5
+    story_ids:
+      - keep-the-render-i-am-judging-while-the-next-one-runs
+    title: The canvas — one at a time, a batch as frames of film
+    number: 7
+    layer: ui
+    feature: canvas-surface
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/canvas. Covered by
+        tools/ui-checks."
+  - delivers: jobId is the render on screen, moved only by finish; runId is the job
+      being polled. They are different renders for the length of a run, which is
+      the whole point.
+    paths:
+      - web/src/store.ts
+      - web/src/canvas
+    depends_on:
+      - 5
+    story_ids:
+      - keep-the-render-i-am-judging-while-the-next-one-runs
+    title: The two-id run record
+    number: 8
+    layer: domain
+    feature: canvas-surface
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/store.ts,
+        web/src/canvas. Covered by tools/ui-checks."
+  - delivers: A hairline along the top edge when there is a picture to keep; the
+      full bar only when there is not.
+    paths:
+      - web/src/canvas
+    depends_on:
+      - 7
+      - 8
+    story_ids:
+      - keep-the-render-i-am-judging-while-the-next-one-runs
+    title: The hairline, and the centred bar for a cold start
+    number: 9
+    layer: ui
+    feature: canvas-surface
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/canvas. Covered by
+        tools/ui-checks."
+  - delivers: Over a region it opens that region; over bare picture it does nothing.
+      One rule with no geography in it, because a click meaning two things by
+      invisible geometry can be disclosed by hover on a desktop and cannot on
+      glass.
+    paths:
+      - web/src/canvas
+      - web/src/regions
+    depends_on:
+      - 7
+    story_ids:
+      - keep-the-render-i-am-judging-while-the-next-one-runs
+    title: A click addresses whatever is under it
+    number: 10
+    layer: ui
+    feature: canvas-surface
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/canvas, web/src/regions.
+        Covered by tools/ui-checks."
+  - delivers: "muted is load-bearing: removing it to honour H3's soundtrack does not
+      produce autoplay with sound, it produces a 200s render arriving parked at
+      0:00 — the product's best moment spent asking for a click."
+    paths:
+      - web/src/canvas
+      - web/src/video
+    depends_on:
+      - 7
+    story_ids:
+      - keep-the-render-i-am-judging-while-the-next-one-runs
+    title: A clip plays muted and looping when it lands
+    number: 11
+    layer: ui
+    feature: canvas-surface
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/canvas, web/src/video.
+        Covered by tools/ui-checks."
+  - delivers: The dimensions, the LoRAs, the shot pills and the regions — what you
+      touch constantly. The axis is frequency, and scope is the near miss that
+      sounds right and fails on its own examples.
+    paths:
+      - web/src/console
+    depends_on:
+      - 3
+    story_ids:
+      - reach-the-control-i-use-constantly-without-opening-anything
+    title: The console row, sorted by frequency
+    number: 12
+    layer: ui
+    feature: console
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/console. Covered by
+        tools/ui-checks."
+  - delivers: The model, the sampler, steps, CFG, shift, the seed and the batch
+      count. Named for the model, because the model is the rarely-touched choice
+      that decides what every frequently-touched one means.
+    paths:
+      - web/src/console
+    depends_on:
+      - 12
+    story_ids:
+      - reach-the-control-i-use-constantly-without-opening-anything
+    title: The model button, holding what you touch rarely
+    number: 13
+    layer: ui
+    feature: console
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/console. Covered by
+        tools/ui-checks."
+  - delivers: Options live under the picture, never in a rail beside it — and
+      anything sized to fit the canvas measures the canvas, because a dvh sum is
+      wrong the moment the bar grows.
+    paths:
+      - web/src/console
+      - web/src/canvas
+    depends_on:
+      - 12
+    story_ids:
+      - reach-the-control-i-use-constantly-without-opening-anything
+    title: The bar capped so the canvas stays in frame
+    number: 14
+    layer: ui
+    feature: console
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/console, web/src/canvas.
+        Covered by tools/ui-checks."
+  - delivers: Still runs Krea 2, any length runs H3 — and the controls on screen
+      follow the model, so you only ever see the ones it actually reads.
+    paths:
+      - web/src/console
+    depends_on:
+      - 12
+    story_ids:
+      - inference/story/turn-a-prompt-into-a-clip-with-sound
+    title: Duration as the model switch
+    number: 15
+    layer: ui
+    feature: console
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/console. Covered by
+        tools/ui-checks."
+  - delivers: The entire UI workable with no Modal account, no GPU and nothing billed.
+    paths:
+      - tools/preview_ui.py
+    depends_on:
+      - 2
+    story_ids:
+      - work-on-the-ui-with-nothing-billed
+    title: preview_ui.py — real compilers against stubbed jobs
+    number: 16
+    layer: integration
+    feature: local-preview
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/preview_ui.py. Covered by
+        tools/ui-checks."
+  - delivers: One page holding the canvas, the console, the gallery, the datasets
+      and the training board.
+    paths:
+      - web/src/App.tsx
+      - web/src/main.tsx
+      - web/src/blocking-main.tsx
+      - web/src/blocking
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+      - 14
+      - 15
+      - 16
+    story_ids: []
+    title: Wire the page — App, mounting, and the surfaces
+    number: 17
+    layer: integration
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/App.tsx,
+        web/src/main.tsx, web/src/blocking-main.tsx, web/src/blocking. Covered
+        by tools/ui-checks."
+  - delivers: tools/ui-checks drives the real surfaces — drops, the gallery, LoRAs,
+      metadata and negatives — against a baseline.
+    paths:
+      - tools/ui-checks
+      - tools/shoot_ui.mjs
+    depends_on:
+      - 17
+    story_ids: []
+    title: Test the page — the UI checks
+    number: 18
+    layer: integration
+    feature: page-shell
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/ui-checks,
+        tools/shoot_ui.mjs. Covered by tools/ui-checks."

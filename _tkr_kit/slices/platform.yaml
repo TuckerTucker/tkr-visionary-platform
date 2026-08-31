@@ -1,0 +1,322 @@
+capability: platform
+slices:
+  - delivers: Images that install nothing at runtime, so a deploy is reproducible
+      and a cold start is not a pip install.
+    paths:
+      - app.py
+    depends_on: []
+    story_ids:
+      - deploy-the-whole-application-in-one-command
+    title: Modal images with every dependency baked in
+    number: 1
+    layer: integration
+    feature: one-command-deploy
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: One Volume at /workspace with models/, loras/, datasets/, outputs/,
+      work/ and .cache/ — the layout that is the contract.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - get-my-data-back-out-without-the-application
+      - run-an-isolated-second-copy
+    new_stores:
+      - name: workspace-volume
+        retention:
+          kind: op
+          detail: "user-driven: dataset delete, output delete and purge, LoRA delete.
+            work/ and .cache/ are disposable. The volume's only other way to
+            reclaim space is the Modal CLI, which is why deletion unlinks rather
+            than moving to a trash."
+    title: The workspace volume and the WORKSPACE constants
+    number: 2
+    layer: data
+    feature: volume-layout
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: "Storage boundaries following write patterns, not tidiness: committing
+      17 GB of weights after writing 80 captions turned an eight-minute job into
+      twenty-three."
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - keep-a-caption-job-from-paying-a-weights-commit
+    new_stores:
+      - name: hf-cache-volume
+        retention:
+          kind: op
+          detail: cleared with the Modal CLI; the cache is rebuildable from HuggingFace,
+            and bounded in practice by the catalogue's fixed file set.
+    title: A separate volume for the HuggingFace cache
+    number: 3
+    layer: data
+    feature: volume-layout
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: One reload per in-flight window rather than a queue of twelve
+      identical ones — 3.00s of queue became 0.51s. A caller arriving mid-reload
+      still runs its own, because a reload that began before you asked is no
+      evidence a file written after it is visible.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids: []
+    title: Coalesced volume reloads with a sequence number
+    number: 4
+    layer: service
+    feature: volume-layout
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: A polled record carrying filenames, not bytes — a dict polled every
+      two seconds must never grow with the size of the result.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - see-what-a-long-job-is-doing
+    new_stores:
+      - name: job-records
+        retention:
+          kind: op
+          detail: jobs are keyed per run and swept with their outputs; the record holds
+            filenames only, so its size is bounded by the file count rather than
+            by the media.
+    title: The job record in a Modal Dict, kept small
+    number: 5
+    layer: data
+    feature: job-contract
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: A loading stretch that changes six times where it used to change none,
+      read from lines ComfyUI already prints. Nothing was measured or optimised
+      to get it.
+    paths:
+      - app.py
+    depends_on:
+      - 5
+    story_ids:
+      - see-what-a-long-job-is-doing
+    title: Phase narration read off output nobody was reading
+    number: 6
+    layer: service
+    feature: job-contract
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: A flag a concurrent publish cannot clobber, because a merge cannot
+      touch what it does not hold. It lived on the job record, which _publish
+      rewrites get-update-put under a process-local lock the web container never
+      takes.
+    paths:
+      - app.py
+    depends_on:
+      - 5
+    story_ids:
+      - stop-a-job-and-keep-the-container-warm
+    title: The stop flag on its own Dict key
+    number: 7
+    layer: data
+    feature: cooperative-stop
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: A stop that is read where nothing holds a GPU and unwinding is free,
+      rather than only inside _await — which is reached after the graph is
+      posted, so every minute before that ran to completion whatever anybody
+      pressed.
+    paths:
+      - app.py
+    depends_on:
+      - 7
+    story_ids:
+      - stop-a-job-and-keep-the-container-warm
+    title: _stop_gate at every phase boundary
+    number: 8
+    layer: service
+    feature: cooperative-stop
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: "A draft belongs to the window looking at it: liveness follows
+      attention, not authorship."
+    paths:
+      - app.py
+    depends_on:
+      - 5
+    story_ids: []
+    new_stores:
+      - name: session-drafts
+        retention:
+          kind: op
+          detail: swept after fifteen minutes without a heartbeat; /api/session is the
+            registered beat.
+    title: Session heartbeat and draft liveness
+    number: 9
+    layer: service
+    feature: job-contract
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: One container per loaded checkpoint, ten minutes warm for images and
+      fifteen for video, then scale to zero. A second replica would pay a full
+      cold load rather than share a warm one.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - fail-a-bad-input-without-renting-a-gpu
+    title: GPU classes, warm windows and max_containers=1
+    number: 10
+    layer: integration
+    feature: compute-policy
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: _validate_loras() and its siblings reachable without Modal's GPU
+      classes, so a bad path is a form error in milliseconds rather than a cold
+      start and 35 GB of weight loading before it fails.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - fail-a-bad-input-without-renting-a-gpu
+    title: Validators importable from the web container
+    number: 11
+    layer: domain
+    feature: compute-policy
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: The three facts that distinguish a wrong Modal profile from a filename
+      typo from a partial download — because any error a user can hit twice
+      should have explained itself the first time.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - fail-a-bad-input-without-renting-a-gpu
+    title: Errors that name the volume, the path and the contents
+    number: 12
+    layer: domain
+    feature: compute-policy
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: The front end shipped inside the image, so `modal deploy app.py` stays
+      the whole install and Node is a build-time dependency only.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - deploy-the-whole-application-in-one-command
+    title: Vite building web/ into the image at deploy time
+    number: 13
+    layer: integration
+    feature: one-command-deploy
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: The FastAPI app mounting the UI and every API route, /api/state and
+      /api/where, on the single URL the deploy prints.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+      - 13
+    story_ids:
+      - deploy-the-whole-application-in-one-command
+    title: Wire the platform — one ASGI app on one URL
+    number: 14
+    layer: integration
+    feature: one-command-deploy
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_stop.py and tools/smoke_pins.py."
+  - delivers: smoke_stop.py enumerates the six interleavings of a stop against a
+      publish and asserts none of them lose the flag; smoke_pins.py resolves
+      every pinned wheel before a deploy spends twenty minutes finding out.
+    paths:
+      - tools/smoke_stop.py
+      - tools/smoke_pins.py
+    depends_on:
+      - 14
+    story_ids: []
+    title: Test the platform — the stop interleavings and the pins
+    number: 15
+    layer: integration
+    feature: cooperative-stop
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_stop.py,
+        tools/smoke_pins.py. Covered by tools/smoke_stop.py and
+        tools/smoke_pins.py."

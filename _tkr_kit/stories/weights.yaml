@@ -1,0 +1,152 @@
+capability: weights
+stories:
+  - name: choose which families to download
+    status: done
+    actor: Owner
+    intent: pull only what I will run
+    trigger_action: opens the gear on a fresh deployment
+    preconditions:
+      - A deployed URL and an empty volume
+    steps:
+      - Open the gear
+      - Read the family table
+      - Pick a family
+      - Press Download
+    acceptance_criteria:
+      - given: a fresh deployment
+        when: the URL is opened
+        then: the volume is empty and nothing has downloaded on its own
+      - given: the family table
+        when: it is read
+        then: each row states size, whether it is gated, and what it buys
+      - given: someone who wants video without references
+        when: they choose the base set
+        then: the ref2va transformer remains one extra file rather than a second stack
+    feature: model-catalogue
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: resume a stalled transfer
+    status: done
+    actor: Owner
+    intent: not lose 20 GB to four quiet minutes
+    trigger_action: starts a large download on a domestic connection
+    preconditions:
+      - A family selected for download
+    steps:
+      - Start the download
+      - Watch bytes and rate
+      - Let the connection stall
+    acceptance_criteria:
+      - given: a transfer that goes quiet for four minutes
+        when: the watchdog fires
+        then: the transfer is abandoned and resumed from where it stopped, up to five
+          times
+      - given: a download in progress
+        when: Download is pressed a second time
+        then: the same job is returned with mine:false and busy_with naming what holds
+          it
+      - given: a download in progress
+        when: the page renders
+        then: the other download buttons are disabled rather than answering a press with
+          a red box
+    feature: resumable-downloads
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: paste a token and be told what is actually wrong
+    status: done
+    actor: Owner
+    intent: distinguish a bad token from an unaccepted licence
+    trigger_action: pastes an HF token under the gear and downloads Krea 2
+    preconditions:
+      - A HuggingFace account
+    steps:
+      - Paste the token
+      - Press Save
+      - Download the Krea 2 family
+    acceptance_criteria:
+      - given: a valid token whose account has not accepted the Krea 2 licence
+        when: the download runs
+        then: the error names that case and links the model page, rather than surfacing
+          a generic 403
+      - given: a token pasted into the field
+        when: Save is pressed
+        then: it is stored under `hf_token` — the field set_token reads — so Save
+          reporting success means the token was actually saved
+      - given: a gated family download
+        when: it is started
+        then: the token rides along, because pasting a key and pressing Download is one
+          action
+    feature: gated-weights
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: pull a LoRA somebody sent me
+    status: done
+    actor: Owner
+    intent: use a weight that was never published to HuggingFace
+    trigger_action: pastes a Drive link under the gear
+    preconditions:
+      - A Drive link shared with anyone who has it
+    steps:
+      - Paste a file link, a bare id, or a folder link
+      - Optionally name a folder
+      - Press Download
+    acceptance_criteria:
+      - given: a Drive folder containing epochs, a preview grid and a readme
+        when: it is ingested
+        then: only the .safetensors files are kept
+      - given: a folder name given
+        when: the files land
+        then: they are grouped as versions of a single LoRA under loras/{folder}/
+      - given: a link that has not been shared
+        when: it is ingested
+        then: that case is named explicitly rather than surfacing a parse error
+    feature: drive-ingest
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: delete a LoRA without deleting a training run
+    status: done
+    actor: Owner
+    intent: remove one entry from the picker safely
+    trigger_action: presses delete on a LoRA row
+    preconditions:
+      - A LoRA on the volume
+    steps:
+      - Open the LoRA list
+      - Press delete on a row
+      - Confirm
+    acceptance_criteria:
+      - given: a delete request naming loras/{name}/{epoch}.safetensors
+        when: it is submitted
+        then: it is rejected by the same guard that rejects ../ escapes
+      - given: a LoRA row as /api/state lists it
+        when: delete is pressed
+        then: the folder with its epochs, or the loose file, is removed — the unit the
+          storage layout already calls a LoRA
+    feature: lora-registry
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."

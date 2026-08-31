@@ -1,0 +1,286 @@
+capability: weights
+slices:
+  - delivers: Every weight addressed by exact filename and grouped into the family
+      that is the unit you decide in.
+    paths:
+      - app.py
+    depends_on: []
+    story_ids:
+      - choose-which-families-to-download
+    title: MODEL_CATALOGUE — families, exact filenames, sizes, gating
+    number: 1
+    layer: data
+    feature: model-catalogue
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Downloads that never rent a GPU, and that say what they are doing
+      while they do it — a payload has a computable ceiling, which is the
+      explanation to prefer.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - resume-a-stalled-transfer
+    title: CPU download worker reporting bytes and rate
+    number: 2
+    layer: service
+    feature: resumable-downloads
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A transfer quiet for four minutes abandoned and resumed from where it
+      stopped, rather than restarted.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - resume-a-stalled-transfer
+    title: Stall watchdog and resume, five attempts
+    number: 3
+    layer: service
+    feature: resumable-downloads
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: "One download at a time, because they share an uplink: three
+      concurrent pulls measured 4-12 MB/s each against ~31 MB/s for one. A
+      second press returns the first job rather than a red box, because pressing
+      twice is what anyone does when the first press appears to do nothing."
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - resume-a-stalled-transfer
+    title: Idempotent starts — mine, busy_with
+    number: 4
+    layer: service
+    feature: resumable-downloads
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The queue kept in the program rather than in a person — clicking files
+      one at a time meant watching a 4 GB file finish to be allowed to start the
+      next.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+      - 4
+    story_ids:
+      - choose-which-families-to-download
+    title: Whole-family download queued server-side
+    number: 5
+    layer: service
+    feature: model-catalogue
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: "No Modal Secret and no CLI step: the token is pasted into the UI and
+      stored under `hf_token`, which is the field set_token reads."
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - paste-a-token-and-be-told-what-is-actually-wrong
+    data_surface:
+      - field: hf_token
+        purpose: authenticate downloads of gated model weights from HuggingFace on the
+          owner's behalf
+        retention: replace-on-write in a Modal Dict; cleared by saving an empty value;
+          never written to the volume, a log or a sidecar
+        lawful_basis: the deployment is single-user and self-hosted — the credential is
+          the operator's own, supplied to their own instance for the sole
+          purpose of fetching weights they have licensed
+        provision: "out of scope for PIPEDA/GDPR triage: no third party's personal data
+          is involved, and the token never leaves the operator's own Modal
+          account"
+    new_stores:
+      - name: hf-token-dict
+        retention:
+          kind: bounded
+          detail: "replace-on-write: one key, overwritten by /api/token, never appended
+            to"
+    title: The HF token in a Modal Dict
+    number: 6
+    layer: data
+    feature: gated-weights
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A 403 that says the licence has not been accepted by the account that
+      issued the token, and links the page — rather than failing as a generic
+      403.
+    paths:
+      - app.py
+    depends_on:
+      - 6
+    story_ids:
+      - paste-a-token-and-be-told-what-is-actually-wrong
+    title: The unaccepted-licence case, named and linked
+    number: 7
+    layer: domain
+    feature: gated-weights
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Three input shapes accepted, because a LoRA arrives as whatever link
+      somebody happened to copy.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - pull-a-lora-somebody-sent-me
+    title: Google Drive resolver — file link, bare id, folder link
+    number: 8
+    layer: service
+    feature: drive-ingest
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A folder's preview grid and readme skipped; a named folder groups its
+      files as versions of a single LoRA, which is the unit the storage layout
+      already calls a LoRA.
+    paths:
+      - app.py
+    depends_on:
+      - 8
+    story_ids:
+      - pull-a-lora-somebody-sent-me
+    title: .safetensors only, with optional folder grouping
+    number: 9
+    layer: domain
+    feature: drive-ingest
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: A link not shared with anyone who has it reported as that, rather than
+      surfacing a parse error from the HTML Drive returns instead of a file.
+    paths:
+      - app.py
+    depends_on:
+      - 8
+    story_ids:
+      - pull-a-lora-somebody-sent-me
+    title: The unshared-link case, named explicitly
+    number: 10
+    layer: domain
+    feature: drive-ingest
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The picker reading the volume rather than a registry — a folder with
+      its epochs, or a loose file.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - delete-a-lora-without-deleting-a-training-run
+    title: LoRA rows on /api/state
+    number: 11
+    layer: api
+    feature: lora-registry
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: One request whose blast radius is a file or a whole training run
+      depending on path depth is exactly what that guard exists to prevent, so
+      an epoch inside a folder is not addressable.
+    paths:
+      - app.py
+    depends_on:
+      - 11
+    story_ids:
+      - delete-a-lora-without-deleting-a-training-run
+    title: Deletion with the path-depth guard
+    number: 12
+    layer: api
+    feature: lora-registry
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The settings panel and the download, token, drive and LoRA routes
+      behind it.
+    paths:
+      - web/src/settings
+      - app.py
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+    story_ids:
+      - choose-which-families-to-download
+    title: Wire the weights surface — the gear panel and its routes
+    number: 13
+    layer: integration
+    feature: model-catalogue
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/settings, app.py. No
+        automated check covers this — the gap is recorded in the assurance
+        capability's coverage ledger rather than papered over here."

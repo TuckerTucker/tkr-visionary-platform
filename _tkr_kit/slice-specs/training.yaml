@@ -1,0 +1,46 @@
+capability: training
+slice_specs:
+  - status: draft
+    title: A trainability probe for video weights
+    purpose: "Deferred with Phase 5, specified now because the trap is already known
+      and specifying it later means rediscovering it. Downloaded and trainable
+      are different questions, and they were different for Wan too: a Train
+      surface that checks `present` offers a run that dies after the dataset is
+      cached — forty minutes in, on a GPU, with nothing to show. H3 trains under
+      AI Toolkit rather than musubi, so the probe cannot assume the musubi
+      recipe."
+    interface:
+      - "`trainable(family) -> {ok: bool, missing: [str], reason: str}` —
+        importable from the web container, so the Train surface can disable a
+        family without renting anything."
+      - "The check is per-trainer, not per-catalogue: it asks what the trainer
+        actually loads, which for AI Toolkit is not the same file set the
+        inference path uses."
+      - The Train surface reads this, not `present`.
+    behavior:
+      - Runs on CPU, in milliseconds, in the web container — the same rule that
+        puts _validate_loras() there.
+      - "`missing` names exact filenames and their resolved paths, so the answer
+        doubles as the download instruction."
+      - "A family whose weights are present in an unusable precision reports
+        ok:false with the reason stated. This is the Wan case exactly: musubi
+        could not train the fp8_scaled weights the platform had downloaded, and
+        wanted a second 53 GB copy at bf16 plus an 11 GB bf16 T5 — about 64 GB
+        of duplicate weights, on a volume whose only way to reclaim space is the
+        Modal CLI."
+      - The probe never downloads anything. Nothing downloads on its own.
+    errors:
+      - An unknown family — return ok:false naming the family, rather than
+        raising; the Train surface renders a disabled row, not a stack trace.
+      - A volume that cannot be read — surface the resolved volume name, the
+        path wanted, and what is actually there.
+    tests:
+      - A family with every trainer-required file present returns ok:true.
+      - A family whose inference weights are present but whose trainer weights
+        are not returns ok:false with the exact missing filenames — the
+        regression that this whole slice exists to prevent.
+      - The probe completes with no network and no GPU.
+    references:
+      - docs/roadmap.md
+      - .claude/rules/backend.md
+    slice: 10
