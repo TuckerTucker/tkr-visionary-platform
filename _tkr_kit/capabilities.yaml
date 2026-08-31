@@ -1,0 +1,535 @@
+capabilities:
+  - name: platform
+    layer: integration
+    status: done
+    depends_on: []
+    provides_to:
+      - weights
+      - datasets
+      - training
+      - inference
+      - prompting
+      - gallery
+      - web
+      - assurance
+    paths:
+      - app.py
+    description: "The Modal substrate and the single-file application: the images,
+      the volume layout, the job/status/stop contract every long job speaks, the
+      session heartbeat, and the GPU-class and warm-container policy. `modal
+      deploy app.py` is the entire install, and this capability is why."
+    scope_in:
+      - One file, navigable by banner comments — the alternative trades a long
+        file for a build-order problem in the Modal image builds.
+      - Modal images with every dependency baked in; nothing installs at runtime.
+      - "One Volume at /workspace: models/, loras/, datasets/{name}/,
+        outputs/{job}/, work/, .cache/. The HF cache is a separate volume
+        because committing 17 GB after writing 80 captions turned an 8-minute
+        job into 23."
+      - The job record in a Modal Dict, polled small — filenames, not bytes.
+      - "Cooperative stop: its own Dict key, checked at every phase boundary by
+        _stop_gate, not only inside _await."
+      - Session heartbeat (/api/session) so a draft belongs to the window
+        looking at it.
+      - GPU class per job type; max_containers=1 on GPU classes so a second
+        replica cannot pay a cold load beside a warm one.
+      - Errors that name the resolved volume, the exact path wanted, and what is
+        actually on the volume.
+    scope_out:
+      - Modal Secrets and any CLI setup step — the HF token is pasted into the
+        UI and stored in a Modal Dict.
+      - Splitting app.py into modules. Vetoed in CLAUDE.md; the file is the
+        deployment contract.
+      - Anything downloading on its own. Weights are chosen explicitly under the
+        gear.
+      - Ownership of app.py's per-domain sections. Path territory is
+        prefix-based and app.py cannot be subdivided by prefix, so this
+        capability holds the whole file and the other backend capabilities carry
+        their non-app.py territory only.
+    acceptance_criteria:
+      - "`modal deploy app.py` prints one URL that serves the UI, the API and
+        the GPU jobs."
+      - A bad input (wrong LoRA path, unknown aspect ratio, missing weight) is
+        rejected on CPU in milliseconds, before a GPU is rented.
+      - Pressing Stop unwinds the job cleanly and leaves the container warm.
+      - VISIONARY_VOLUME=name deploys a second isolated copy against its own
+        storage.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (app.py) is present
+        in the tree. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: weights
+    layer: service
+    status: done
+    depends_on:
+      - platform
+    provides_to:
+      - datasets
+      - training
+      - inference
+    paths:
+      - web/src/settings
+    description: Getting model files onto the volume, and knowing what is there. The
+      catalogue, CPU-only downloads that resume, the gated-licence path for Krea
+      2, the Google Drive route for LoRAs nobody published, and the LoRA
+      registry the prompt reads.
+    scope_in:
+      - MODEL_CATALOGUE — every weight addressed by exact filename, grouped into
+        families.
+      - Downloads on CPU containers, reporting bytes and rate; a transfer quiet
+        for four minutes is abandoned and resumed, up to five times.
+      - "One download at a time and idempotent starts: three concurrent pulls
+        measured 4-12 MB/s each against ~31 MB/s for one, so a second press
+        returns the first job with mine:false and busy_with naming the holder."
+      - Whole-family download (/api/download-missing) with the token riding
+        along, because pasting a key and pressing Download is one action.
+      - HF token stored in a Modal Dict, set through /api/token under the gear.
+      - "Gated weights: an unaccepted licence says so and links the page rather
+        than surfacing a generic 403."
+      - Google Drive ingest — file link, bare id, or folder; only .safetensors
+        kept; optional folder groups epochs as versions of one LoRA.
+      - LoRA deletion at the row /api/state lists, with the same guard that
+        rejects ../ escapes rejecting an addressable epoch inside a folder.
+    scope_out:
+      - A catalogue-wide download button. It existed in the token row and put
+        the one control that pulls every family beside a password field it has
+        nothing to do with.
+      - Browsing, searching or recommending anybody else's instruments —
+        weights, reference sets, character bibles, style packs. Pulling a
+        specific file you were sent is what the Drive route is for; a
+        marketplace is vetoed whatever it is a marketplace of.
+      - Automatic downloads. The full catalogue is ~206 GB and almost nobody
+        wants all of it.
+    acceptance_criteria:
+      - A fresh deployment downloads nothing until a family is chosen under the
+        gear.
+      - A download that stalls resumes from where it stopped rather than
+        restarting.
+      - A gated 403 names the licence page for the account that issued the token.
+      - A Drive folder link lands only its .safetensors, skipping the preview
+        grid and readme.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (web/src/settings) is
+        present in the tree. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: datasets
+    layer: service
+    status: done
+    depends_on:
+      - platform
+      - weights
+    provides_to:
+      - training
+    paths:
+      - web/src/datasets
+      - tools/smoke_caption.py
+      - tools/smoke_dupes.py
+      - tools/tune_dupes.py
+    description: Preparing the material you train on. A dataset is a folder of
+      images with .txt sidecars beside them — the same thing the trainer reads —
+      plus the captioner, the panel that reads a set back to you, and duplicate
+      detection.
+    scope_in:
+      - datasets/{name}/ as images with {image}.txt sidecars. The layout is the
+        contract; nothing here is required to get your data back out.
+      - Upload, replace, remove, delete, and per-set metadata.
+      - Prose captions from Qwen3-VL-8B with presets tuned to what you are
+        training — character, style, concept.
+      - Custom caption models and presets, added and deleted from the page.
+      - "The insight panel: trigger-word coverage, caption length, repeated
+        clauses."
+      - Duplicate detection, because a set arrives with duplicates far more
+        often than not — the same shoot exported twice, a JPEG beside the PNG it
+        came from, a crop kept next to its original.
+      - Prepend-trigger across a set, and find & replace scoped to the page's
+        current filtered view.
+      - Thumbnails and full images served off the volume by their own routes, on
+        CPU.
+    scope_out:
+      - Tag lists. Captions are sentences, because the text encoders these
+        models use parse grammar.
+      - Captioning on a GPU class that also holds an inference checkpoint.
+      - Any dataset format that is not readable with ls and a text editor.
+    acceptance_criteria:
+      - A captioned set is a folder you can copy off the volume and train
+        elsewhere with.
+      - The insight panel answers trigger coverage against the word typed on the
+        page, not a stored one.
+      - Duplicates are flagged before a set trains unevenly.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (web/src/datasets,
+        tools/smoke_caption.py, tools/smoke_dupes.py…) is present in the tree.
+        Covered by tools/smoke_caption.py, tools/smoke_dupes.py and
+        tools/tune_dupes.py."
+  - name: training
+    layer: service
+    status: done
+    depends_on:
+      - platform
+      - weights
+      - datasets
+    provides_to:
+      - inference
+      - prompting
+    paths:
+      - web/src/train
+    description: LoRA training for Krea 2 on musubi-tuner, as a board of concurrent
+      runs rather than a screen you have to sit in front of. A session outlives
+      its run, so a card reports what actually happened even if a container was
+      killed mid-step.
+    scope_in:
+      - "musubi-tuner, three steps: cache latents, cache text encoder outputs,
+        train."
+      - Sessions as durable records — create, start, stop, delete — that survive
+        the container.
+      - Several runs at once. The trainer is the one GPU class here with no
+        single-container pin, because each run loads its own weights and writes
+        its own output folder.
+      - Live epoch, step, rate and loss on each card, read off the job's
+        heartbeat.
+      - A finished card hands its LoRA files straight to the LoRA picker.
+    scope_out:
+      - Video LoRA training. H3 trains under AI Toolkit rather than musubi — a
+        second image, a second set of pins, a second recipe. Phase 5, not
+        started.
+      - A modal that takes over the screen for the length of a run.
+      - Checking `present` to decide whether a family is trainable. Downloaded
+        and trainable are different questions; a Train surface offering video
+        has to check for whatever the trainer actually loads.
+    acceptance_criteria:
+      - Start a run, add another, and leave; both report correctly on return.
+      - A container killed mid-step leaves a card that says so rather than one
+        stuck at its last heartbeat.
+      - A finished run's .safetensors is nameable in a prompt without any
+        further step.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (web/src/train) is
+        present in the tree. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: inference
+    layer: service
+    status: done
+    depends_on:
+      - platform
+      - weights
+    provides_to:
+      - prompting
+      - gallery
+      - web
+    paths:
+      - comfy_nodes
+      - tools/smoke_graphs.py
+      - tools/smoke_free_regional.py
+      - tools/smoke_stop.py
+      - web/src/canvas
+      - web/src/regions
+      - web/src/video
+    description: One driven ComfyUI, family-agnostic. Krea 2 for stills, MiniMax-H3
+      for video with a native soundtrack, regional multi-character LoRA on top.
+      What a family costs is a graph builder and a row of capabilities — the
+      same row the UI reads to decide which controls to show.
+    scope_in:
+      - ComfyUI cloned at COMFY_SHA, run as its own process, driven over
+        127.0.0.1 — not linked against or patched.
+      - One process per container; one container per loaded checkpoint.
+      - Krea 2 still generation with LoRA stacking.
+      - "MiniMax-H3 video: text-to-video, first and/or last frame, and up to
+        twelve references through the ref2va transformer. Guidance-distilled, so
+        no CFG and no negative prompt."
+      - Regional multi-character LoRA — a box per character, each LoRA masked to
+        its own rectangle, so two trained identities stay separate instead of
+        blending.
+      - Scene and outfit transfer when the identity-edit LoRA is present.
+      - "Our own ComfyUI nodes: visionary_boxes, visionary_edit_arity,
+        visionary_free_regional, visionary_step_cache."
+      - A capability row per family, which is what the UI reads to decide which
+        controls exist.
+      - Phase narration read off ComfyUI's own log, so a loading stretch changes
+        six times through a window that used to change none.
+      - Cooperative stop at every phase boundary.
+    scope_out:
+      - A second video family. Wan 2.2 shared this path and was removed for
+        being a second of everything; what it proved — that the container, the
+        warm process and the job contract are family-agnostic — is what was
+        kept.
+      - 2K rendering. Absent on purpose; see docs/decisions.md.
+      - A step cache. CacheDiT lasted one day and the receipt is in
+        docs/decisions.md; H3 takes render behind a step cache.
+      - Configurable frame rate. 24 fps is the model's native rate.
+    acceptance_criteria:
+      - Every graph validates against ComfyUI's node schema on CPU, with no
+        weights present.
+      - A stop pressed at any phase unwinds without killing the container.
+      - Two style LoRAs in two boxes produce a hard seam at the mask edge.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (comfy_nodes,
+        tools/smoke_graphs.py, tools/smoke_free_regional.py…) is present in the
+        tree. Covered by tools/smoke_graphs.py and
+        tools/smoke_free_regional.py."
+  - name: prompting
+    layer: domain
+    status: in_progress
+    depends_on:
+      - platform
+      - inference
+    provides_to:
+      - gallery
+      - web
+    paths:
+      - web/src/shot
+      - web/src/scene
+      - web/src/console
+      - web/src/lora
+      - tools/smoke_prompt.py
+      - tools/smoke_scene.py
+      - tools/prompt_ab.py
+      - tools/judge_prompts.py
+      - tools/prompt_playground.py
+      - tools/prompt_playground.html
+      - tools/rewrite-dump.jsonl
+      - docs/design-notes
+    description: A prompt is a compilation target, not something the user writes.
+      One vocabulary — SHOT_VOCAB — with a compiler per model family behind it,
+      so nobody types `integrated_multimodal_description:`. The typed intent is
+      the record; the compiled prompt is a receipt.
+    scope_in:
+      - "SHOT_VOCAB: one vocabulary, three compilers. H3 wants a six-field
+        document, Krea 2 wants prose with the camera clauses dropped."
+      - The shot palette — seventy-seven tiles, each animating the move it
+        names, because a tile shows you a dolly-out rather than making you guess
+        the wording.
+      - "The prompt field keeping only what nothing else can say: who is in the
+        shot and what happens."
+      - A live preview of the exact string the model will be handed
+        (/api/compile).
+      - "Enhance: the model finishes a fragment, running on Krea 2's own text
+        encoder — already loaded during a session — so it writes in the dialect
+        it reads. Undo restores your words exactly."
+      - The scene composer, and the cast object binding reference sets to a
+        person across models.
+      - prompt_typed and shot written to the sidecar as the durable half; the
+        compiled prompt written as a receipt.
+      - Arithmetic in the validator, judgement in the harness — the validator
+        gates a render, so it carries structural zeros only.
+    scope_out:
+      - Asking the user to hold three prompt formats in their head so a
+        checkpoint can be fed correctly.
+      - Protecting prompt reproducibility. A prompt is a guess at how to speak
+        unnaturally to one text encoder; the same intent producing a different
+        prompt twice is what a conversation is.
+      - Showing the prompt on a gallery card. A six-field document is not
+        readable at thumbnail size, and a prompt is an implementation detail of
+        whichever encoder was fed that day.
+      - Demanding one clean flowing paragraph. Fragments are the expected input,
+        not the degraded case.
+    acceptance_criteria:
+      - The compiler output matches MiniMax's published format, checked by
+        tools/smoke_prompt.py with no network.
+      - Enhance is reversible with one key and the original text comes back
+        byte-for-byte.
+      - Reuse, Copy and the metadata sheet all prefer prompt_typed over the
+        compiled string.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (web/src/shot,
+        web/src/scene, web/src/console…) is present in the tree. Covered by
+        tools/smoke_prompt.py and tools/smoke_scene.py."
+  - name: gallery
+    layer: service
+    status: done
+    depends_on:
+      - platform
+      - inference
+      - prompting
+    provides_to:
+      - web
+    paths:
+      - web/src/gallery
+      - web/src/sheet
+      - web/src/media
+    description: Everything you have made, in one grid, plus the sidecar that makes
+      a run replayable. A card carries the picture, its kind and its age — and
+      nothing else, on purpose.
+    scope_in:
+      - outputs/{job}/ holding the generated media beside a visionary.json
+        sidecar.
+      - "A reader that never drops a field: a sidecar is read years after it is
+        written, so a field nothing fills any more still gets written and still
+        gets read."
+      - The grid, its covers and thumbs, served off the volume by their own
+        routes.
+      - The metadata sheet, preferring typed intent over the compiled prompt.
+      - Reuse and Copy, restoring a run's inputs.
+      - Animate and As reference on a finished image — the first piece of a
+        still flowing into a clip without a round trip through the filesystem.
+      - Delete and purge, with a confirm dialog that states the blast radius.
+    scope_out:
+      - A .trash/ per root. It was built on the theory that a mis-click should
+        cost a file move rather than the file, but nothing ever surfaced it — a
+        second copy of everything already thrown away, on a volume whose only
+        other way to reclaim space is the Modal CLI.
+      - The prompt on the card.
+      - Search over the grid. The library is browsed, not searched.
+    acceptance_criteria:
+      - A sidecar written by an older deploy still reads, with every field it
+        carried.
+      - Reuse reproduces a run from its typed intent, recompiled for whichever
+        model is selected.
+      - A delete dialog names how much is going before it goes.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (web/src/gallery,
+        web/src/sheet, web/src/media) is present in the tree. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - name: web
+    layer: ui
+    status: done
+    depends_on:
+      - platform
+      - weights
+      - datasets
+      - training
+      - inference
+      - prompting
+      - gallery
+    provides_to: []
+    paths:
+      - web/src/App.tsx
+      - web/src/main.tsx
+      - web/src/blocking-main.tsx
+      - web/src/store.ts
+      - web/src/icons.tsx
+      - web/src/format.ts
+      - web/src/ui
+      - web/src/api
+      - web/src/ds
+      - web/src/styles
+      - web/src/blocking
+      - web/index.html
+      - web/blocking.html
+      - web/package.json
+      - web/vite.config.ts
+      - web/vite.lib.config.ts
+      - web/build-ds.mjs
+      - web/tsconfig.json
+      - web/tsconfig.ds.json
+      - tools/preview_ui.py
+    description: "The page: React and TypeScript built into the image at deploy
+      time, so `modal deploy app.py` stays the whole install and no local Node
+      is needed to ship. One canvas at a time; options in a bar under the
+      picture, never a rail beside it."
+    scope_in:
+      - The canvas as the largest thing on screen, always. A batch is frames of
+        film — each result fills the canvas and steps between them — rather than
+        a contact sheet.
+      - "A render replaced when the next one lands, not when it is asked for:
+        two ids on the run record, so the shot you are judging survives the
+        length of the next run."
+      - The console sorted by how often you reach for something, and by nothing
+        else. The button is named for the model, because the model is the
+        rarely-touched choice that decides what every frequently-touched one
+        means.
+      - A click addresses whatever is under it — over a region it opens that
+        region, over bare picture it does nothing.
+      - "everyMs rather than setInterval: a poll waits for its own reply,
+        because at 400ms against a network Dict a slow answer overlaps the next
+        tick and the polls in flight starve the media coming off the same
+        origin."
+      - Shared primitives (Masonry, Popover, Sheet, Menu, NumInput, ErrorNote,
+        gesture), the named route map, the design tokens.
+      - tools/preview_ui.py — the real prompt compilers and shot vocabulary
+        against stubbed jobs, so the whole UI is workable with no Modal account,
+        no GPU and nothing billed.
+    scope_out:
+      - A settings rail beside the canvas. The picture is height-bound at every
+        render aspect on a laptop, so a bar always comes out of the picture
+        while four of five aspects leave room for a rail twice over — but the
+        axis that is free depends on the render, not on taste.
+      - "Floating the console over the picture. Built and rejected: a backdrop
+        blur means judging a render through something, and its legibility then
+        depends on what you generated."
+      - Mounting the front end from disk at runtime. It is built into the image;
+        Node is a build-time dependency only.
+      - Toasts, are-you-sure dialogs, and console-only errors.
+    acceptance_criteria:
+      - npm run dev in web/ proxies to the preview server and the entire UI is
+        workable offline.
+      - A clip that lands plays muted and looping; the soundtrack is one tap
+        away on the native controls.
+      - Nothing sized to the canvas uses a dvh sum — it measures the canvas,
+        because the bar grows.
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Every slice under it reads done, and its territory (web/src/App.tsx,
+        web/src/main.tsx, web/src/blocking-main.tsx…) is present in the tree.
+        Covered by tools/ui-checks."
+  - name: assurance
+    layer: integration
+    status: in_progress
+    depends_on:
+      - platform
+      - inference
+      - prompting
+    provides_to: []
+    paths:
+      - tools/smoke_pins.py
+      - tools/upstream.py
+      - tools/_from_app.py
+      - tools/cold_start.py
+      - tools/ab_cache.py
+      - tools/ab_sage.py
+      - tools/ab_style.py
+      - tools/chain_ab.py
+      - tools/does_it_help.py
+      - tools/judge_renders.py
+      - tools/serve_judge.py
+      - tools/shoot_ui.mjs
+      - tools/ui-checks
+      - tools/vendor
+      - tools/parse-eval-2026-08-17
+      - tools/case_study_assets.py
+      - docs/assurance
+      - docs/audits
+    description: What has actually been run, and the honesty about what has not.
+      Four cheap smoke tests runnable against your own account, plus the A/B
+      harnesses where judgement belongs — latency is free there, and a
+      probabilistic gate stacked on a probabilistic writer is two coin flips
+      where the second is invisible.
+    scope_in:
+      - smoke_graphs.py — every graph validates against ComfyUI's node schema on
+        CPU, no weights.
+      - smoke_caption.py — every captioner repo id resolves and parses; --gpu
+        captions a real image.
+      - smoke_prompt.py — the shot compiler matches MiniMax's published format,
+        stdlib only, no network.
+      - smoke_pins.py — every pinned wheel still resolves, before a deploy
+        spends twenty minutes finding out.
+      - smoke_stop.py, smoke_dupes.py, smoke_scene.py, smoke_free_regional.py.
+      - tools/_from_app.py — pulls plain-Python pieces out of app.py by AST, so
+        a test can import them without importing Modal.
+      - The A/B harnesses and judges, where judgement is affordable.
+      - "The coverage ledger in README: being honest about what has been run end
+        to end, since 'it deploys' is not 'it works'."
+    scope_out:
+      - Judgement in the request path. The validator gates a render and runs on
+        every request, so it carries structural zeros only.
+      - A test that needs a GPU to answer a question a CPU can answer.
+    acceptance_criteria:
+      - All four README smoke tests pass against a fresh account.
+      - Every claim in the coverage ledger is either measured or explicitly
+        named as unmeasured.

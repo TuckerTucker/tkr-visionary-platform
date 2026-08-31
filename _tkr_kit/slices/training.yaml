@@ -1,0 +1,199 @@
+capability: training
+slices:
+  - delivers: A trainer pinned to a commit SHA, not a branch, so an upstream
+      force-push does not change the build under you.
+    paths:
+      - app.py
+    depends_on: []
+    story_ids:
+      - train-a-lora-on-my-own-photographs
+    title: The musubi-tuner image and its pins
+    number: 1
+    layer: integration
+    feature: musubi-runs
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The three-step shape, which is also the shape a video trainer would
+      want; that is why the Wan plan was a rename and the AI Toolkit one is not.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - train-a-lora-on-my-own-photographs
+    title: train_job — cache latents, cache text, train
+    number: 2
+    layer: service
+    feature: musubi-runs
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The record that lets a card report what happened after the container
+      is gone.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - start-a-run-add-another-and-leave
+    new_stores:
+      - name: training-sessions
+        retention:
+          kind: op
+          detail: /api/sessions/{sid}/delete removes a session; the run's outputs live
+            under loras/ and are reclaimed by the LoRA delete route.
+    title: Sessions — a training run as a thing that outlives the run
+    number: 3
+    layer: data
+    feature: sessions-board
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: So a container killed mid-step produces a card that says so, rather
+      than one frozen at its last update.
+    paths:
+      - app.py
+    depends_on:
+      - 3
+      - 2
+    story_ids:
+      - start-a-run-add-another-and-leave
+    title: Status read off the job's heartbeat
+    number: 4
+    layer: service
+    feature: sessions-board
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Forty minutes of visible work is comfortable; the same forty minutes
+      behind a still button is not.
+    paths:
+      - app.py
+    depends_on:
+      - 4
+    story_ids:
+      - start-a-run-add-another-and-leave
+    title: Live epoch, step, rate and loss
+    number: 5
+    layer: domain
+    feature: sessions-board
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Each run loads its own weights and writes its own output folder, so
+      there is nothing to share and nothing to serialise.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - start-a-run-add-another-and-leave
+    title: Concurrent runs — the one GPU class with no container pin
+    number: 6
+    layer: integration
+    feature: musubi-runs
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: Every verb the board needs, over the same job/status/stop contract as
+      everything else.
+    paths:
+      - app.py
+    depends_on:
+      - 3
+    story_ids: []
+    title: Session create, start, stop and delete
+    number: 7
+    layer: api
+    feature: sessions-board
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: "No export step: the trainer writes where the picker reads."
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - train-a-lora-on-my-own-photographs
+    title: A finished run hands its LoRAs to the picker
+    number: 8
+    layer: service
+    feature: musubi-runs
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. No automated check
+        covers this — the gap is recorded in the assurance capability's coverage
+        ledger rather than papered over here."
+  - delivers: The board, the session form and the cards over the session routes.
+    paths:
+      - web/src/train
+      - app.py
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+    story_ids: []
+    title: Wire the training board
+    number: 9
+    layer: integration
+    feature: sessions-board
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/train, app.py. No
+        automated check covers this — the gap is recorded in the assurance
+        capability's coverage ledger rather than papered over here."
+  - delivers: "Downloaded and trainable are different questions. A Train surface
+      offering video has to check for whatever the trainer actually loads, or it
+      offers a run that dies after the dataset is cached. Deferred with the
+      phase: H3 trains under AI Toolkit, which is a second image, a second set
+      of pins and a second recipe rather than a rename."
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - train-a-video-lora
+    title: A trainability probe for video weights
+    number: 10
+    layer: service
+    feature: video-training-readiness
+    status: deferred

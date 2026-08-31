@@ -1,0 +1,57 @@
+# Plan-exception allowlist — reviewed exceptions to plan-reconciliation findings.
+#
+# Grammar (shared with .claude/citation-allowlist and .claude/classification-allowlist):
+# one entry per line, `#` comments, blank lines ignored.
+#
+#   <target>            excuses that finding under any record
+#   <record>::<target>  scopes the exception to one record
+#
+# An entry is a decision, not a mute button: a human read the finding and found the plan
+# correct. Every entry is dated and says why. If the reason stops holding, delete the line
+# and the finding comes back.
+#
+# Audited 2026-08-31 against the first run of the as-built plan (18 findings: 17
+# unlisted-work, 1 status-lag). The status-lag was a real defect and was fixed, not excused:
+# the prompting capability read `done` while its scene-composer slice was in_progress.
+#
+# NOT EXCEPTED, DELIBERATELY: nothing under app.py, comfy_nodes/, web/src/ or tools/. That
+# is the shipped product and every part of it is claimed by a capability. If a finding
+# appears there, the remedy is an entity that claims it, never a line in this file.
+
+# 2026-08-31 — Agent configuration: rules, skills, norms and hooks that shape how Claude
+# works in this repo. It governs how the work is done; it is not the work the plan schedules.
+.claude
+
+# 2026-08-31 — The plan itself. An entity claiming _tkr_kit/ would make the plan a work item
+# in its own backlog, which is a loop rather than a territory.
+_tkr_kit
+
+# 2026-08-31 — Machine-local sync state for the design tooling. Not version-controlled work
+# product and not reachable by any agent territory.
+.design-sync
+
+# 2026-08-31 — One generated grammar page, the output of the design tooling rather than a
+# surface the product ships. If a design system becomes something the app reads at runtime,
+# delete this line and give it a capability.
+design-system
+
+# 2026-08-31 — Imported prior-art research, read once and kept for provenance. It is input to
+# decisions already recorded in docs/decisions.md and docs/roadmap.md, not work to schedule.
+research
+Prompt_enhancer_research
+
+# 2026-08-31 — Canonical tkr-kit documentation homes, each holding only its README
+# placeholder. Empty is measured, not unexamined: nothing has needed one yet. Delete the
+# relevant line when a real document lands in one.
+docs/adr
+docs/briefs
+docs/models
+docs/patterns
+docs/runbooks
+docs/superpowers
+
+# 2026-08-31 — Case-study and published assets: images and prose generated FROM the product
+# for an external audience. Produced by tools/case_study_assets.py, which the assurance
+# capability does claim. The output is not a surface the plan builds.
+docs/case-study
+docs/published

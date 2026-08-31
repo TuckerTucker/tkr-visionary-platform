@@ -1,0 +1,93 @@
+capability: datasets
+stories:
+  - name: build a dataset from a folder of photographs
+    status: done
+    actor: Author
+    intent: get my images onto the volume with captions beside them
+    trigger_action: uploads images into a new dataset
+    preconditions:
+      - A deployed URL
+    steps:
+      - Create a dataset
+      - Upload images
+      - Watch them appear as tiles
+    acceptance_criteria:
+      - given: a new dataset name
+        when: images are uploaded
+        then: datasets/{name}/ holds the images with a .txt sidecar per image
+      - given: a dataset called 'shoot 2 / picks'
+        when: any route takes it as a path parameter
+        then: it works, because encodeURIComponent is applied to every interpolated
+          segment without exception
+      - given: a draft open in a window
+        when: the window keeps beating
+        then: the draft is not swept after fifteen minutes of silence
+    feature: dataset-store
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_caption.py, tools/smoke_dupes.py and
+        tools/tune_dupes.py."
+  - name: caption a set without writing eighty sentences
+    status: done
+    actor: Author
+    intent: have prose captions I only have to correct
+    trigger_action: presses caption with a preset chosen
+    preconditions:
+      - A dataset with images and the captioner weights present
+    steps:
+      - Pick a preset — character, style or concept
+      - Press Caption
+      - Correct captions as they land
+    acceptance_criteria:
+      - given: a preset tuned for character training
+        when: captioning runs
+        then: the captions are sentences, not tag lists, because the text encoders parse
+          grammar
+      - given: a caption run in progress
+        when: the page is watched
+        then: it fills in as a workspace rather than returning as a batch
+      - given: every captioner repo id in the catalogue
+        when: smoke_caption.py runs on CPU
+        then: each one resolves and parses
+    feature: captioning
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_caption.py, tools/smoke_dupes.py and
+        tools/tune_dupes.py."
+  - name: find the problem before spending an hour of A100 time
+    status: done
+    actor: Author
+    intent: know the set is trainable before training it
+    trigger_action: opens the insight panel with a trigger word typed
+    preconditions:
+      - A captioned dataset
+    steps:
+      - Type the trigger word
+      - Open the insight panel
+      - Read coverage, length and repeated clauses
+      - Open duplicates
+    acceptance_criteria:
+      - given: a trigger word typed on the page
+        when: insight is requested
+        then: the word rides in the query, so coverage is answered against it rather
+          than against a stored one
+      - given: a set exported twice with a JPEG beside each PNG
+        when: duplicates are checked
+        then: the copies are flagged before they train unevenly
+      - given: a filtered view on screen
+        when: find & replace is run
+        then: it is scoped to that view, because the filters are the targeting tool
+    feature: set-hygiene
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_caption.py, tools/smoke_dupes.py and
+        tools/tune_dupes.py."

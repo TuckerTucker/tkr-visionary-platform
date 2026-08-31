@@ -1,0 +1,119 @@
+capability: web
+stories:
+  - name: rename a route and find out at build time
+    status: done
+    actor: Maintainer
+    intent: have the server and the page fail together
+    trigger_action: renames an API path
+    preconditions:
+      - The named route map in web/src/api/routes.ts
+    steps:
+      - Rename the route on the server
+      - Build the front end
+    acceptance_criteria:
+      - given: a renamed route
+        when: the front end builds
+        then: the compiler names the call site, rather than the page failing at runtime
+      - given: a dataset name with a slash in it
+        when: it is passed as a path parameter
+        then: encodeURIComponent handles it, at every interpolated segment without
+          exception
+    feature: page-shell
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/ui-checks."
+  - name: keep the render I am judging while the next one runs
+    status: done
+    actor: Author
+    intent: compare at the moment I wanted to
+    trigger_action: presses Generate while looking at a result
+    preconditions:
+      - A render on the canvas
+    steps:
+      - Look at a render
+      - Press Generate
+      - Watch the hairline
+      - See the new render replace it when it lands
+    acceptance_criteria:
+      - given: a render on the canvas
+        when: Generate is pressed
+        then: the canvas is not blanked — the run record's jobId still addresses the old
+          job's bytes while the new one is sampled
+      - given: a run that fails or is stopped
+        when: it ends
+        then: the last render that did produce something is still on screen
+      - given: a batch of four
+        when: the arrows are used
+        then: each result fills the canvas and stepping costs a compositor frame,
+          because every frame stays mounted and the track is a transform
+      - given: a clip that lands
+        when: it is rendered
+        then: it plays muted and looping — muted is load-bearing, because every browser
+          refuses unmuted autoplay without a gesture
+    feature: canvas-surface
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/ui-checks."
+  - name: reach the control I use constantly without opening anything
+    status: done
+    actor: Author
+    intent: have the ordering match my hand
+    trigger_action: reaches for the aspect ratio and then for the seed
+    preconditions:
+      - The console under the canvas
+    steps:
+      - Change the dimensions in the row
+      - Open the model button for the seed
+    acceptance_criteria:
+      - given: the row
+        when: it is read
+        then: it holds the dimensions, the LoRAs, the shot pills and the regions — what
+          you touch constantly
+      - given: the seed, which changes on every render
+        when: the console is laid out
+        then: it lives behind the button anyway, because nobody types a seed
+      - given: the button
+        when: it is labelled
+        then: it is named for the model, because the model decides what every
+          frequently-touched control means
+      - given: the bar at its fullest state
+        when: the page is rendered
+        then: the canvas is still in frame, because the bar is capped
+    feature: console
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/ui-checks."
+  - name: work on the UI with nothing billed
+    status: done
+    actor: Maintainer
+    intent: change a layout without a Modal account
+    trigger_action: runs the preview server
+    preconditions:
+      - Python 3 and Node locally
+    steps:
+      - Run `python3 tools/preview_ui.py`
+      - Run `npm run dev` in web/
+      - Open the dev URL
+    acceptance_criteria:
+      - given: no Modal account and no GPU
+        when: the preview is opened
+        then: the whole UI is workable and nothing is billed
+      - given: the preview server
+        when: a prompt is compiled
+        then: the real compilers and shot vocabulary answer, against stubbed jobs
+    feature: local-preview
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/ui-checks."

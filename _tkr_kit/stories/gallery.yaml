@@ -1,0 +1,118 @@
+capability: gallery
+stories:
+  - name: read a year-old sidecar
+    status: done
+    actor: Author
+    intent: have an old run stay replayable
+    trigger_action: opens a render from an earlier deploy
+    preconditions:
+      - A render written by an older version
+    steps:
+      - Open the render
+      - Open its metadata sheet
+    acceptance_criteria:
+      - given: a sidecar carrying a field nothing fills any more
+        when: it is read
+        then: the field is still read, and still written — because a reader that drops a
+          field makes every run that has one unreadable
+      - given: a sidecar on disk
+        when: it is opened in a text editor
+        then: it is legible without this application
+    feature: outputs-and-sidecars
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: see everything I have made in one place
+    status: done
+    actor: Author
+    intent: browse rather than search
+    trigger_action: opens the gallery
+    preconditions:
+      - Renders on the volume
+    steps:
+      - Open the gallery
+      - Scroll
+      - Open one full size
+    acceptance_criteria:
+      - given: a grid of covers
+        when: the page polls a running job at the same time
+        then: the grid still paints, because everyMs waits for its own reply rather than
+          firing on a clock
+      - given: a card
+        when: it is read
+        then: it carries the picture, its kind and its age
+      - given: a thousand renders
+        when: the gallery is opened
+        then: the polled record does not grow with them — bytes come off their own
+          routes
+    feature: grid-and-viewer
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: animate a still I like
+    status: done
+    actor: Author
+    intent: move from a picture to a clip without touching the filesystem
+    trigger_action: presses Animate on a finished image
+    preconditions:
+      - A finished still
+    steps:
+      - Open the still
+      - Press Animate
+      - Set a duration
+      - Generate
+    acceptance_criteria:
+      - given: a finished still
+        when: Animate is pressed
+        then: it carries into the video path with no download and re-upload
+      - given: a finished still
+        when: As reference is pressed
+        then: it is attached as a reference for the next render
+      - given: a render
+        when: the metadata sheet is opened
+        then: it shows the typed intent first, and the compiled prompt as a receipt
+    feature: reuse-and-handoff
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: delete without wondering what went
+    status: done
+    actor: Author
+    intent: know the blast radius before confirming
+    trigger_action: presses delete on a job
+    preconditions:
+      - Renders on the volume
+    steps:
+      - Press delete
+      - Read the dialog
+      - Confirm
+    acceptance_criteria:
+      - given: a delete of a job with forty files
+        when: the dialog is shown
+        then: it says what is going and how much of it
+      - given: a volume carrying a legacy .trash/
+        when: the app starts
+        then: _drop_legacy_trash() clears what the old scheme left behind
+      - given: a purge
+        when: it is invoked
+        then: it is a separately named action from deleting one job
+    feature: output-lifecycle
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."

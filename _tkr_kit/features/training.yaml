@@ -1,0 +1,72 @@
+capability: training
+features:
+  - name: musubi-runs
+    status: done
+    user_story: As someone with a captioned folder, I want a .safetensors back, so
+      that the instrument is made of my own material.
+    description: "LoRA training for Krea 2 on musubi-tuner, in three steps: cache
+      latents, cache text encoder outputs, train. Each run loads its own weights
+      and writes its own output folder, so several train concurrently — the
+      trainer is the one GPU class here with no single-container pin."
+    acceptance_criteria:
+      - Point it at a folder of images and get a .safetensors back.
+      - A finished run hands its LoRA files straight to the picker, with no
+        export step.
+      - Several runs proceed at once without contending for a container.
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: sessions-board
+    status: done
+    user_story: As someone training three LoRAs, I want a board rather than a screen
+      I have to sit in front of, so that I can start a run, add another, and
+      leave.
+    description: A session is a thing that outlives the run. Each is its own card
+      showing live epoch, step, rate and loss. Status is read off each job's
+      heartbeat, so a card reports what actually happened even if a container
+      was killed mid-step.
+    acceptance_criteria:
+      - Runs live on a board rather than taking over a screen.
+      - A container killed mid-step produces a card that says so, not one frozen
+        at its last heartbeat.
+      - Create, start, stop and delete are all reachable per session.
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/train
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: video-training-readiness
+    status: deferred
+    user_story: As someone with a set of clips, I want to train a video LoRA, so
+      that the same authorship applies to motion.
+    description: "Phase 5, not started, and the trainer is not musubi — H3 trains
+      under AI Toolkit. That is the fact that matters: the Wan plan was a
+      rename, because train_job is already the exact three-step shape and only
+      the script names would have changed. A second trainer is not a rename; it
+      is a second image, a second set of pins, and a second recipe to keep
+      working. Deferred, not cancelled: the dataset side is already done and the
+      storage contract does not change for whichever trainer arrives."
+    acceptance_criteria:
+      - A Train surface offering video checks for whatever the trainer actually
+        loads, not for `present` — downloaded and trainable are different
+        questions.
+      - "The sidecar layout is unchanged: {clip}.txt beside {clip}.mp4."
+      - A set counts its clips.
+    references:
+      - docs/roadmap.md
+    wiring_assignment:
+      territory:
+        - app.py

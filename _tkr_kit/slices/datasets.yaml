@@ -1,0 +1,270 @@
+capability: datasets
+slices:
+  - delivers: "The storage contract: exactly what the trainer reads, and readable
+      with ls and a text editor."
+    paths:
+      - app.py
+    depends_on: []
+    story_ids:
+      - build-a-dataset-from-a-folder-of-photographs
+    new_stores:
+      - name: datasets-dir
+        retention:
+          kind: op
+          detail: /api/datasets/{name}/delete removes a set; /api/datasets/{name}/remove
+            removes images from one. Growth is operator-driven and
+            operator-reclaimed.
+    title: datasets/{name}/ — images with .txt sidecars
+    number: 1
+    layer: data
+    feature: dataset-store
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: The set as a first-class object, with every path parameter
+      encodeURIComponent'd because 'shoot 2 / picks' is an ordinary name.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - build-a-dataset-from-a-folder-of-photographs
+    title: Dataset create, save, meta and delete routes
+    number: 2
+    layer: api
+    feature: dataset-store
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: Images onto the volume over CPU, never a GPU.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - build-a-dataset-from-a-folder-of-photographs
+    title: Upload, replace and remove
+    number: 3
+    layer: api
+    feature: dataset-store
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: Bytes on their own routes so the polled record stays small.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids: []
+    title: Thumbnails, images and clips served off the volume
+    number: 4
+    layer: api
+    feature: dataset-store
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: A draft kept alive by the window looking at it rather than swept after
+      fifteen minutes of silence.
+    paths:
+      - app.py
+    depends_on:
+      - 2
+    story_ids:
+      - build-a-dataset-from-a-folder-of-photographs
+    title: Draft liveness tied to the session heartbeat
+    number: 5
+    layer: service
+    feature: dataset-store
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: Prose captions, because the text encoders these models use parse
+      grammar — sentences, not tags.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - caption-a-set-without-writing-eighty-sentences
+    title: Qwen3-VL-8B captioning on its own GPU class
+    number: 6
+    layer: service
+    feature: captioning
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: Character, style and concept — the choice is about what you are
+      training, not about wording.
+    paths:
+      - app.py
+    depends_on:
+      - 6
+    story_ids:
+      - caption-a-set-without-writing-eighty-sentences
+    title: Caption presets tuned to the training goal
+    number: 7
+    layer: domain
+    feature: captioning
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: A captioner the catalogue does not carry, added from the page.
+    paths:
+      - app.py
+    depends_on:
+      - 7
+    story_ids: []
+    title: Custom caption models and preset CRUD
+    number: 8
+    layer: api
+    feature: captioning
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: The set read back to you before an hour of A100 time is spent on it.
+      The trigger word rides in the query because it is typed on the page, not
+      stored.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - find-the-problem-before-spending-an-hour-of-a100-time
+    title: The insight panel — coverage, length, repeated clauses
+    number: 9
+    layer: domain
+    feature: set-hygiene
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: A set arrives with duplicates far more often than not — the same shoot
+      exported twice, a JPEG beside the PNG it came from, a crop kept next to
+      its original — and they train unevenly.
+    paths:
+      - app.py
+    depends_on:
+      - 1
+    story_ids:
+      - find-the-problem-before-spending-an-hour-of-a100-time
+    title: Duplicate detection
+    number: 10
+    layer: domain
+    feature: set-hygiene
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: One edit across every sidecar, rather than eighty.
+    paths:
+      - app.py
+    depends_on:
+      - 9
+    story_ids:
+      - find-the-problem-before-spending-an-hour-of-a100-time
+    title: Prepend-trigger across a set
+    number: 11
+    layer: domain
+    feature: set-hygiene
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: The filters are the targeting tool, so the edit lands on what is on screen.
+    paths:
+      - app.py
+    depends_on:
+      - 9
+    story_ids:
+      - find-the-problem-before-spending-an-hour-of-a100-time
+    title: Find & replace scoped to the filtered view
+    number: 12
+    layer: domain
+    feature: set-hygiene
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at app.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."
+  - delivers: The editor, the insight panel and the duplicates view over the dataset
+      routes.
+    paths:
+      - web/src/datasets
+      - app.py
+    depends_on:
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
+      - 12
+    story_ids: []
+    title: Wire the dataset workspace
+    number: 13
+    layer: integration
+    feature: dataset-store
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at web/src/datasets, app.py.
+        Covered by tools/smoke_caption.py, tools/smoke_dupes.py and
+        tools/tune_dupes.py."
+  - delivers: smoke_caption.py resolves and parses every captioner repo id on CPU;
+      smoke_dupes.py and tune_dupes.py check duplicate detection against a real
+      set rather than a guess.
+    paths:
+      - tools/smoke_caption.py
+      - tools/smoke_dupes.py
+      - tools/tune_dupes.py
+    depends_on:
+      - 13
+    story_ids: []
+    title: Test datasets — captioners, duplicates and thresholds
+    number: 14
+    layer: integration
+    feature: set-hygiene
+    status: done
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The behaviour it delivers is present at tools/smoke_caption.py,
+        tools/smoke_dupes.py, tools/tune_dupes.py. Covered by
+        tools/smoke_caption.py, tools/smoke_dupes.py and tools/tune_dupes.py."

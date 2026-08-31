@@ -1,0 +1,199 @@
+capability: platform
+stories:
+  - name: deploy the whole application in one command
+    status: done
+    actor: Owner
+    intent: have a working deployment without a setup ritual
+    trigger_action: runs `modal deploy app.py`
+    preconditions:
+      - A Modal account, authed by `modal setup`
+      - Python 3.10+ locally, only to run the modal CLI
+    steps:
+      - Clone the repo
+      - Run `pip install modal`
+      - Run `modal setup` and auth in the browser
+      - Run `modal deploy app.py`
+      - Open the printed URL
+    acceptance_criteria:
+      - given: a clean machine with no Docker, no local GPU and no .env
+        when: "`modal deploy app.py` is run"
+        then: one URL is printed and it serves the UI, the API and the GPU jobs
+      - given: a repo whose web/ has changed
+        when: the deploy runs
+        then: Vite builds the front end into the image, with no local Node required
+      - given: no Modal Secret has ever been created
+        when: the deployment starts
+        then: nothing asks for one — the HF token is pasted into the UI later
+    feature: one-command-deploy
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: run an isolated second copy
+    status: done
+    actor: Owner
+    intent: test against storage that is not my real volume
+    trigger_action: sets VISIONARY_VOLUME before deploying
+    preconditions:
+      - A working deployment
+    steps:
+      - Run `VISIONARY_VOLUME=visionary-test modal deploy app.py`
+      - Open the new URL
+    acceptance_criteria:
+      - given: a second deploy under a different volume name
+        when: the new URL is opened
+        then: its models, loras, datasets and outputs are empty and independent of the
+          first
+      - given: work done in the test copy
+        when: the original URL is opened
+        then: nothing from the test copy appears
+    feature: one-command-deploy
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: get my data back out without the application
+    status: done
+    actor: Owner
+    intent: copy a dataset off the volume and use it elsewhere
+    trigger_action: runs `modal volume get` against the dataset folder
+    preconditions:
+      - A captioned dataset on the volume
+    steps:
+      - List datasets/{name}/
+      - Copy the folder down
+      - Point another trainer at it
+    acceptance_criteria:
+      - given: a dataset of images with .txt sidecars
+        when: the folder is copied off the volume
+        then: it trains elsewhere with no conversion step
+      - given: someone who has never read this codebase
+        when: they run ls over /workspace
+        then: the layout explains itself — models/, loras/, datasets/, outputs/, work/,
+          .cache/
+    feature: volume-layout
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: keep a caption job from paying a weights commit
+    status: done
+    actor: System
+    intent: commit only what the job wrote
+    trigger_action: finishes a captioning run
+    preconditions:
+      - The HF cache on its own volume
+    steps:
+      - Run a captioning job that loads a 17 GB model
+      - Write 80 caption sidecars
+      - Commit
+    acceptance_criteria:
+      - given: a captioning job that loaded 17 GB of weights
+        when: the job commits
+        then: only the captions are committed — the weights live on the separate HF
+          cache volume
+      - given: the two volumes merged into one
+        when: a caption job runs
+        then: the eight-minute job takes twenty-three, which is the measurement that
+          separated them
+    feature: volume-layout
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: see what a long job is doing
+    status: done
+    actor: Operator
+    intent: know a job is progressing without watching a still button
+    trigger_action: starts any long-running job
+    preconditions:
+      - A job that takes more than a few seconds
+    steps:
+      - Start the job
+      - Watch the phase line
+      - Watch it change as the work changes
+    acceptance_criteria:
+      - given: a job in a loading stretch
+        when: the phase is polled
+        then: it names the model and its size, and changes as often as the thing itself
+          changes
+      - given: a phase that holds one string for forty-seven seconds
+        when: the page renders it
+        then: that is treated as a spinner with extra words — a defect, not a feature
+      - given: a job producing forty files
+        when: the status record is polled
+        then: the record carries filenames, not bytes, and does not grow with the size
+          of the result
+    feature: job-contract
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: stop a job and keep the container warm
+    status: done
+    actor: Operator
+    intent: cancel work without paying a cold start for the next one
+    trigger_action: presses Stop
+    preconditions:
+      - A running job
+    steps:
+      - Press Stop
+      - Watch the job unwind
+      - Start the next job
+    acceptance_criteria:
+      - given: a job stopped mid-run
+        when: the next request arrives
+        then: the container is still warm and skips the model load
+      - given: a Stop pressed in the web container while the GPU container is publishing
+        when: both writes land
+        then: the stop survives, because the flag has its own Dict key and a merge
+          cannot clobber what it does not touch
+      - given: a Stop pressed before the graph is posted
+        when: the next phase boundary is reached
+        then: _stop_gate unwinds there, rather than running the whole first minute to
+          completion
+    feature: cooperative-stop
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."
+  - name: fail a bad input without renting a GPU
+    status: done
+    actor: Operator
+    intent: find out about a typo in milliseconds
+    trigger_action: submits a generation with a wrong LoRA path
+    preconditions:
+      - A deployment with no warm GPU container
+    steps:
+      - Type a LoRA name that does not exist
+      - Press Generate
+    acceptance_criteria:
+      - given: a LoRA path that is not on the volume
+        when: Generate is pressed
+        then: the request is rejected on CPU in milliseconds, before a GPU is rented
+      - given: an unknown aspect ratio or a missing weight
+        when: the request is validated
+        then: the same CPU path rejects it with an error naming the resolved volume, the
+          path wanted, and what is actually there
+      - given: no job running and no container warm
+        when: the deployment sits idle
+        then: nothing is billed
+    feature: compute-policy
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. Covered by tools/smoke_stop.py and tools/smoke_pins.py."

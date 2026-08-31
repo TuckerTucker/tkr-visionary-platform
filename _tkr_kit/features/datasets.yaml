@@ -1,0 +1,87 @@
+capability: datasets
+features:
+  - name: dataset-store
+    status: done
+    user_story: As someone preparing a training set, I want a dataset to be a folder
+      of images with text beside them, so that the tool is never between me and
+      my data.
+    description: datasets/{name}/ holds images with {image}.txt caption sidecars —
+      exactly what the trainer reads. Create, save, rename, set metadata,
+      upload, replace, remove, delete. Thumbnails and full images are served off
+      the volume by their own CPU routes.
+    acceptance_criteria:
+      - "The layout is the contract: nothing here is required to get the data
+        back out."
+      - A dataset name with a space or a slash in it survives being a path
+        parameter, because encodeURIComponent is applied to every interpolated
+        segment without exception.
+      - A draft belongs to the window that made it, kept alive by a heartbeat
+        rather than swept after fifteen minutes of silence.
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/datasets
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_caption.py,
+        tools/smoke_dupes.py and tools/tune_dupes.py."
+  - name: captioning
+    status: done
+    user_story: As someone who does not want to write eighty captions, I want the
+      model to write them, so that I only have to correct them.
+    description: Prose captions from Qwen3-VL-8B, with presets tuned to what you are
+      training — character, style, concept. Captions are sentences, not tags,
+      because the text encoders these models use parse grammar. Custom caption
+      models and presets can be added and removed from the page.
+    acceptance_criteria:
+      - Captioning is a workspace, not a batch job — you watch it fill in and
+        correct as it goes.
+      - Every captioner repo id resolves and parses on CPU, checked by
+        smoke_caption.py.
+      - A preset states what it is tuned for, so the choice is about the
+        training goal rather than about wording.
+    references:
+      - tools/smoke_caption.py
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_caption.py,
+        tools/smoke_dupes.py and tools/tune_dupes.py."
+  - name: set-hygiene
+    status: done
+    user_story: As someone about to spend an hour of A100 time, I want the set read
+      back to me, so that I find the problem before the run rather than in the
+      samples.
+    description: A panel reports trigger-word coverage, caption length and repeated
+      clauses. Duplicate detection flags copies before they train unevenly.
+      Prepend-trigger applies across a set; find & replace is scoped to the
+      page's current filtered view, so the filters are the targeting tool.
+    acceptance_criteria:
+      - The trigger word rides in the query, because it is typed on the page
+        rather than stored — asking without it answers '0 of 24 have the
+        trigger' for a set that is fine.
+      - "A set arrives with duplicates far more often than not: the same shoot
+        exported twice, a JPEG saved beside the PNG it came from, a crop kept
+        next to its original."
+      - Duplicate thresholds are tuned against a real set rather than guessed.
+    references:
+      - tools/smoke_dupes.py
+      - tools/tune_dupes.py
+    wiring_assignment:
+      territory:
+        - app.py
+        - tools/smoke_caption.py
+        - tools/smoke_dupes.py
+        - tools/tune_dupes.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_caption.py,
+        tools/smoke_dupes.py and tools/tune_dupes.py."

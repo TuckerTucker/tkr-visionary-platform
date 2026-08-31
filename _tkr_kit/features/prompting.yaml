@@ -1,0 +1,130 @@
+capability: prompting
+features:
+  - name: shot-vocabulary
+    status: done
+    user_story: As someone who does not know how a text encoder wants to be spoken
+      to, I want to pick a camera move from a palette, so that I never have to
+      guess the wording.
+    description: "SHOT_VOCAB is one vocabulary — camera moves, framing, lighting,
+      tone, audio — behind three compilers. Seventy-seven tiles, each animating
+      the move it names, because a tile shows you a dolly-out rather than making
+      you guess the wording. The prompt field then keeps only what nothing else
+      can say: who is in the shot and what happens."
+    acceptance_criteria:
+      - Nobody types `integrated_multimodal_description:`.
+      - A tile demonstrates its move rather than labelling it.
+      - The vocabulary is verbatim from the base guide — a contract with the
+        checkpoint rather than a taxonomy of our own.
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/lora
+        - web/src/shot
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_prompt.py and
+        tools/smoke_scene.py."
+  - name: compilers
+    status: done
+    user_story: As someone switching between a still and a clip, I want the same
+      intent to compile for whichever model is loaded, so that I do not hold
+      three formats in my head.
+    description: H3 wants a six-field document; Krea 2 wants prose with the camera
+      clauses dropped. One vocabulary, a compiler per family, and a live preview
+      of the exact string the model will be handed. Asking a person to hold
+      three formats so a checkpoint can be fed correctly is the tool making its
+      problem into theirs.
+    acceptance_criteria:
+      - The compiled document is one gesture away and is not a developer tool.
+      - smoke_prompt.py checks the output against MiniMax's published format
+        with stdlib only and no network.
+      - The compiler scored 1.00 against MiniMax's own format grader.
+    references:
+      - tools/smoke_prompt.py
+    wiring_assignment:
+      territory:
+        - app.py
+        - tools/smoke_prompt.py
+        - tools/smoke_scene.py
+        - web/src/console
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_prompt.py and
+        tools/smoke_scene.py."
+  - name: enhance
+    status: done
+    user_story: As someone who typed a fragment, I want the model to finish it, so
+      that fragments are the expected input rather than the degraded case.
+    description: Type `empty diner, 3am`, press Enhance, and it comes back as a
+      written prompt with the light placed and the clock still reading 3am. The
+      rewrite runs on Krea 2's own text encoder — already loaded during a
+      session — so it writes in the same dialect it reads. ⌘Z or the Undo beside
+      the button restores your words exactly.
+    acceptance_criteria:
+      - Undo restores the original text byte-for-byte.
+      - The rewrite costs no extra model load during a session.
+      - People think and write in bursts; a tool that demands one clean flowing
+        paragraph is demanding that a human produce the artefact of a machine
+        before the machine will listen.
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/console
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_prompt.py and
+        tools/smoke_scene.py."
+  - name: intent-as-record
+    status: done
+    user_story: As someone whose model will be replaced, I want my intent kept
+      rather than my prompt, so that what I meant recompiles for whatever comes
+      next.
+    description: "prompt_typed and shot are the durable half — what you actually
+      meant — and the compiled prompt is a receipt: this is what this encoder
+      was told, this once. Reuse, Copy and the metadata sheet prefer the typed
+      one. A stored prompt is worth nothing to a checkpoint that wants a
+      different grammar."
+    acceptance_criteria:
+      - Reuse recompiles from typed intent rather than replaying a stored string.
+      - The metadata sheet shows the typed intent first.
+      - "The gallery card shows neither: a six-field document is not readable at
+        thumbnail size."
+    references:
+      - docs/roadmap.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/smoke_prompt.py and
+        tools/smoke_scene.py."
+  - name: scene-composer
+    status: in_progress
+    user_story: As someone building a scene rather than a shot, I want cast,
+      material and a timeline in one place, so that a session is longer than a
+      generation.
+    description: "The cast buckets are already the reusable character object — slots
+      holding your pictures, bound to a person, read by whichever model is in
+      front of them. Same authorship, different vehicle: personalisation is
+      shifting from training toward reference conditioning, and LoRA becomes the
+      self-hosted tier rather than the definition. Driven and read; not yet
+      measured against a render."
+    acceptance_criteria:
+      - A scene outlives a single generation.
+      - H3_CAST_KINDS binds reference sets to a person rather than to a job.
+      - The composer is measured against renders by tools/prompt_ab.py before it
+        is called done.
+    references:
+      - web/CLAUDE.md
+      - tools/prompt_ab.py
+    wiring_assignment:
+      territory:
+        - web/src/scene

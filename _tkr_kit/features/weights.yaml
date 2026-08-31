@@ -1,0 +1,128 @@
+capability: weights
+features:
+  - name: model-catalogue
+    status: done
+    user_story: As someone with a fresh deployment, I want to choose what downloads,
+      so that I am not made to pull 206 GB to see one picture.
+    description: MODEL_CATALOGUE addresses every weight by exact filename and groups
+      them into families. Nothing downloads on its own. The family is the unit
+      you decide in — you want the H3 stack or you do not.
+    acceptance_criteria:
+      - A fresh deployment has an empty volume and stays that way until the gear
+        is opened.
+      - Each family states its size, whether it is gated, and what it buys.
+      - Video without references is the base set; the ref2va transformer is one
+        extra file rather than a second stack.
+    references:
+      - README.md
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/settings
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: resumable-downloads
+    status: done
+    user_story: As someone on a domestic connection, I want a stalled 26 GB transfer
+      to resume, so that four quiet minutes do not cost me the whole pull.
+    description: "Downloads run on CPU containers and report bytes and rate as they
+      go. A transfer quiet for four minutes is abandoned and resumed from where
+      it stopped, up to five times. One download at a time, because they share
+      an uplink: three concurrent pulls measured 4-12 MB/s each against ~31 MB/s
+      for one."
+    acceptance_criteria:
+      - /api/download is idempotent — a second press returns the job the first
+        started, with mine:false and busy_with naming the holder.
+      - "Being busy is a state, not an error: the page disables the other
+        buttons rather than answering a press with a red box."
+      - /api/download-missing queues a whole family server-side rather than
+        making the user hold the queue.
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: gated-weights
+    status: done
+    user_story: As someone whose token is fine but whose licence is not accepted, I
+      want to be told that, so that I am not debugging a generic 403.
+    description: Krea 2 RAW and Turbo need a HuggingFace token, and the licence must
+      be accepted by the same account that issued it. The token is pasted into
+      the UI and stored in a Modal Dict — no Modal Secret, no CLI step.
+    acceptance_criteria:
+      - An unaccepted licence is named as that case and links the model page.
+      - The token field is `hf_token`, which is the field set_token reads — a
+        mismatch here once returned 200 while clearing the token it was asked to
+        save.
+      - The token rides along with a family download, because pasting a key and
+        pressing Download is one action.
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: drive-ingest
+    status: done
+    user_story: As someone sent a LoRA link, I want to paste it, so that a weight
+      nobody published to HuggingFace is still one action away.
+    description: Most LoRAs worth having were never published — they are a link
+      someone sent you. A file link, a bare id, or a folder link all work. Only
+      .safetensors is kept. Leave folder blank and files drop in loose; give one
+      and they are grouped as versions of a single LoRA.
+    acceptance_criteria:
+      - A folder's preview grid and readme are skipped.
+      - An unshared file is named as that case explicitly, rather than surfacing
+        a parse error.
+      - A grouped folder reads back as one LoRA with epochs, which is the unit
+        the storage layout already calls a LoRA.
+    references:
+      - README.md
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: lora-registry
+    status: done
+    user_story: As someone with forty training runs on the volume, I want to delete
+      one, so that the picker stays legible.
+    description: The LoRA row /api/state lists is the unit — the folder with its
+      epochs in it, or the loose file. An epoch inside a folder is deliberately
+      not addressable.
+    acceptance_criteria:
+      - Deletion takes a singular `path`, at the unit the storage layout calls a
+        LoRA.
+      - loras/{name}/{epoch}.safetensors is rejected by the same guard that
+        rejects ../ escapes — one request whose blast radius is a file or a
+        whole training run depending on path depth is exactly what that guard
+        exists to prevent.
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."

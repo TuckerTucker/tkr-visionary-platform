@@ -1,0 +1,127 @@
+capability: web
+features:
+  - name: page-shell
+    status: done
+    user_story: As the front end, I want every route named once and every primitive
+      shared, so that the server and the page fail together at build time rather
+      than apart at runtime.
+    description: React and TypeScript under web/, built by Vite into the image at
+      deploy time. The route map names every path once — the vanilla page built
+      them at thirteen call sites with template literals, which is fine until a
+      name changes and the compiler has nothing to say about it. Shared
+      primitives, design tokens, and a store.
+    acceptance_criteria:
+      - "encodeURIComponent on every interpolated segment, without exception: a
+        dataset called 'shoot 2 / picks' is ordinary and is a path parameter."
+      - A renamed route breaks the build rather than a request.
+      - The front end is built into the image; nothing at runtime needs Node.
+    consumes_api:
+      - /api/state
+      - /api/where
+    wiring_assignment:
+      territory:
+        - tools/shoot_ui.mjs
+        - tools/ui-checks
+        - web/blocking.html
+        - web/build-ds.mjs
+        - web/index.html
+        - web/package.json
+        - web/src/App.tsx
+        - web/src/api
+        - web/src/blocking
+        - web/src/blocking-main.tsx
+        - web/src/ds
+        - web/src/format.ts
+        - web/src/icons.tsx
+        - web/src/main.tsx
+        - web/src/store.ts
+        - web/src/styles
+        - web/src/ui
+        - web/tsconfig.ds.json
+        - web/tsconfig.json
+        - web/vite.config.ts
+        - web/vite.lib.config.ts
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/ui-checks."
+  - name: canvas-surface
+    status: done
+    user_story: As someone judging a render, I want it to stay on screen while the
+      next one runs, so that I can still compare at the moment I wanted to.
+    description: "One canvas at a time, and a batch is frames of film rather than a
+      contact sheet: each result fills the canvas and `‹ 1 / 4 ›` steps between
+      them. The run record carries two ids — jobId/files is the render on
+      screen, moved only by finish; runId is the job being polled. A run that
+      fails or is stopped leaves the picture up too."
+    acceptance_criteria:
+      - Pressing Generate does not blank the canvas.
+      - Stepping a batch costs a compositor frame and re-fetches nothing,
+        because every frame stays mounted and the track is a transform.
+      - A click addresses whatever is under it — over a region it opens that
+        region, over bare picture it does nothing.
+      - A clip plays muted and looping when it lands; muted is load-bearing,
+        because every browser refuses unmuted autoplay without a gesture.
+    wiring_assignment:
+      territory:
+        - web/src/canvas
+        - web/src/regions
+        - web/src/store.ts
+        - web/src/video
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/ui-checks."
+  - name: console
+    status: done
+    user_story: As someone reaching for the same four controls all day, I want them
+      in the row and the rest behind a button, so that the ordering matches my
+      hand rather than a taxonomy.
+    description: The console is sorted by how often you reach for something, and by
+      nothing else. The row holds the dimensions, the LoRAs, the shot pills and
+      the regions; one button holds the model, the sampler, steps, CFG, shift,
+      the seed and the batch count. The button is named for the model, because
+      the model is the rarely-touched choice that decides what every
+      frequently-touched one means.
+    acceptance_criteria:
+      - The axis is frequency, not scope — scope sounds right and fails on its
+        own examples, since nobody picks a new aspect ratio per render and CFG
+        is not a per-session setting either.
+      - The seed is different on every render and still lives behind the button,
+        because nobody types a seed.
+      - The bar is capped so its fullest state cannot push the canvas out of
+        frame.
+      - Naming the button `8 steps · CFG 1.0` named it after two values nobody
+        chose.
+    wiring_assignment:
+      territory:
+        - web/src/canvas
+        - web/src/console
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/ui-checks."
+  - name: local-preview
+    status: done
+    user_story: As someone working on the UI, I want the whole page workable with
+      nothing billed, so that a layout change does not cost a GPU.
+    description: npm run dev in web/ proxies to tools/preview_ui.py, which serves
+      the real prompt compilers and shot vocabulary against stubbed jobs. No
+      Modal account, no GPU, nothing billed.
+    acceptance_criteria:
+      - The compilers under the preview server are the real ones, not stubs.
+      - The entire UI is reachable offline.
+      - Nothing about the preview path ships in the deployed image.
+    references:
+      - tools/preview_ui.py
+    wiring_assignment:
+      territory:
+        - tools/preview_ui.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. Covered by tools/ui-checks."

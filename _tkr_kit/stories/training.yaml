@@ -1,0 +1,82 @@
+capability: training
+stories:
+  - name: train a LoRA on my own photographs
+    status: done
+    actor: Author
+    intent: get a .safetensors made from my own material
+    trigger_action: starts a training run against a dataset
+    preconditions:
+      - A captioned dataset and the Krea 2 weights present
+    steps:
+      - Pick the dataset
+      - Set the run parameters
+      - Start
+    acceptance_criteria:
+      - given: a captioned folder
+        when: a run is started
+        then: it caches latents, caches text encoder outputs, then trains
+      - given: a finished run
+        when: the LoRA picker is opened
+        then: the .safetensors is there with no export step
+      - given: two runs started
+        when: both proceed
+        then: neither waits for the other, because the trainer has no single-container
+          pin
+    feature: musubi-runs
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: start a run, add another, and leave
+    status: done
+    actor: Author
+    intent: not have to sit in front of a screen for forty minutes
+    trigger_action: starts a second run while the first is going
+    preconditions:
+      - One run already in progress
+    steps:
+      - Start a second run
+      - Close the tab
+      - Come back later
+    acceptance_criteria:
+      - given: two runs on the board
+        when: the page is reopened
+        then: each card shows live epoch, step, rate and loss
+      - given: a container killed mid-step
+        when: its card is read
+        then: it reports what actually happened, because status is read off the job's
+          heartbeat
+      - given: a session whose run has finished
+        when: the page is reloaded
+        then: the session is still there — it outlives the run
+    feature: sessions-board
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        The interaction is reachable in the deployed application; its
+        given/when/then were checked by walking the surface, not by an automated
+        run. No automated check covers this — the gap is recorded in the
+        assurance capability's coverage ledger rather than papered over here."
+  - name: train a video LoRA
+    status: deferred
+    actor: Author
+    intent: apply the same authorship to motion
+    trigger_action: points the trainer at a folder of clips
+    preconditions:
+      - A set of clips with .txt sidecars
+      - An AI Toolkit image with its own pins
+    steps:
+      - Pick a clip set
+      - Start a video training run
+    acceptance_criteria:
+      - given: a Train surface offering video
+        when: trainability is checked
+        then: it checks for whatever the trainer actually loads, not for `present`
+      - given: a set of clips
+        when: it is counted
+        then: the count is of clips, and the sidecar layout is {clip}.txt beside
+          {clip}.mp4 — unchanged from the image side
+    feature: video-training-readiness

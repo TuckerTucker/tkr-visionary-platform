@@ -1,0 +1,103 @@
+capability: gallery
+features:
+  - name: outputs-and-sidecars
+    status: done
+    user_story: As someone returning to a run a year later, I want the sidecar to
+      still read, so that a run stays replayable across every version that
+      follows.
+    description: outputs/{job}/ holds the generated media beside a visionary.json
+      sidecar. A reader that drops a field makes every run that has one
+      unreadable, so a field nothing fills any more still gets written and still
+      gets read.
+    acceptance_criteria:
+      - A sidecar written by an older deploy reads with every field it carried.
+      - The sidecar records the typed intent and the compiled prompt, marked as
+        record and receipt.
+      - Nothing in the sidecar requires this application to interpret.
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: grid-and-viewer
+    status: done
+    user_story: As someone with a thousand renders, I want one grid, so that
+      everything I have made is in one place.
+    description: A card carries the picture, its kind and its age — and nothing
+      else, on purpose. Covers and thumbs are served off the volume by their own
+      routes, so the polled record stays small. The viewer opens full size.
+    acceptance_criteria:
+      - "The card does not carry the prompt: it is unreadable at thumbnail size
+        and is an implementation detail of whichever encoder was fed that day."
+      - Media comes off the same origin as the polls, so the poll loop must not
+        starve the grid — everyMs, not setInterval.
+      - The grid is browsed, not searched.
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/gallery
+        - web/src/media
+        - web/src/sheet
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: reuse-and-handoff
+    status: done
+    user_story: As someone looking at a still I like, I want to animate it or use it
+      as a reference, so that the work flows on without a round trip through the
+      filesystem.
+    description: Animate and As reference on a finished image are the first piece of
+      the end state where a generated still flows into a clip. Reuse and Copy
+      restore a run's inputs, and the metadata sheet shows what produced it —
+      all three preferring typed intent over the compiled string.
+    acceptance_criteria:
+      - Animate carries the still into the video path without a download and
+        re-upload.
+      - Reuse restores the inputs, recompiled for the model now selected.
+      - The metadata sheet is a sheet, not a modal over the picture.
+    wiring_assignment:
+      territory:
+        - app.py
+        - web/src/gallery
+        - web/src/sheet
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
+  - name: output-lifecycle
+    status: done
+    user_story: As someone whose volume is full, I want deletion to say what it is
+      taking, so that destructive is asked for rather than softened.
+    description: Deletion unlinks. There was a .trash/ per root for a while, on the
+      theory that a mis-click should cost a file move rather than the file — but
+      nothing ever surfaced it, so it was a second copy of everything already
+      thrown away, on a volume whose only other way to reclaim space is the
+      Modal CLI. The confirm dialog is the safety net now, so it has to say what
+      is going and how much of it.
+    acceptance_criteria:
+      - The dialog states the blast radius; a dialog that undersells it is the
+        failure mode this replaced.
+      - _drop_legacy_trash() clears what the old scheme left behind.
+      - Purge is a separate, explicitly named action from deleting one job.
+    wiring_assignment:
+      territory:
+        - app.py
+    evidence:
+      kind: manual
+      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
+        Its slices all read done and its acceptance criteria are satisfied by
+        the shipped surface. No automated check covers this — the gap is
+        recorded in the assurance capability's coverage ledger rather than
+        papered over here."
