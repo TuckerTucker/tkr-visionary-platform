@@ -154,6 +154,9 @@ export type TrainParams = {
 
 export type AppState = {
   hf_token_set: boolean
+  /** Chosen server-side in `PASSWORD_MIN` and sent rather than duplicated, so
+   *  the Settings field disables against the same number the route enforces. */
+  password_min: number
   models: ModelEntry[]
   loras: LoraEntry[]
   video_models: VideoModel[]

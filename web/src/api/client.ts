@@ -48,12 +48,39 @@ async function api<T>(path: string, init?: RequestInit): Promise<Res<T>> {
       detail: String(e instanceof Error ? e.message : e),
     }
   }
+  // Before anything is parsed. A 401 is not a failure this panel can report —
+  // it is a page that is no longer signed in, and every other panel on it is
+  // about to say the same thing in its own words. The gate is server-rendered
+  // at `/`, so a reload *is* the sign-in screen.
+  if (r.status === 401) return signedOut<T>()
   const body = await r.text()
   try {
     return JSON.parse(body) as T
   } catch {
     return { error: statusNote(r.status, r.statusText), detail: body.trim() || undefined }
   }
+}
+
+/**
+ * The one reload, however many requests noticed at once.
+ *
+ * The page holds a status poll every 400ms, a gallery, a thumbnail queue and
+ * whatever the person is doing, so a session that ends ends for all of them in
+ * the same tick. Nine reloads is a page that never finishes loading one, and
+ * the flag never has to be cleared because the document it lives in is on its
+ * way out.
+ */
+let reloading = false
+
+function signedOut<T>(): Res<T> {
+  if (!reloading) {
+    reloading = true
+    window.location.reload()
+  }
+  // Callers still get the shape they expect. This sentence should not be
+  // readable for long, but a panel that renders nothing during the reload
+  // looks like the failure rather than the recovery.
+  return { error: 'Signed out — reloading.' }
 }
 
 /**
@@ -69,8 +96,13 @@ function statusNote(status: number, statusText: string): string {
     return `Not found (404) — this build is asking for a route the server does not have,`
       + ` which usually means the page and the deployment are different versions.`
   }
-  if (status === 401 || status === 403) {
-    return `Not authorised (${status}) — check the HuggingFace token under Settings.`
+  // Not 401, which never reaches here: `api()` intercepts it above and
+  // reloads onto the gate, because being signed out is a state of the page
+  // rather than a fault in one request. 403 stays because HuggingFace answers
+  // one to a gated repo the account has not accepted the licence for, and
+  // that is the sentence that unblocks it.
+  if (status === 403) {
+    return `Not authorised (403) — check the HuggingFace token under Settings.`
   }
   if (status === 502 || status === 503 || status === 504) {
     return `The server did not answer (${status}) — it may still be starting up,`

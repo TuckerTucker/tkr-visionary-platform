@@ -29,6 +29,25 @@ export const setToken = (hfToken: string) =>
   post<{ ok?: boolean; hf_token_set?: boolean }>('/api/token', { hf_token: hfToken })
 
 /**
+ * The password on this deployment, changed. Not set — setting the first one is
+ * `/api/login` on the server-rendered gate, which is a page this bundle never
+ * gets to see, because /assets is behind the cookie it is asking for.
+ *
+ * `current` is not ceremony on a single-user app: it is what stops an
+ * unattended tab from being made permanent by whoever walks past it.
+ */
+export const changePassword = (current: string, next: string) =>
+  post<{ ok?: boolean }>('/api/password', { current, next })
+
+/**
+ * Sign out, which here means everywhere — the server rotates the signing
+ * secret, so a cookie copied off this machine dies at the same instant. There
+ * is one of you, so a per-browser sign-out would be a second way to do the
+ * first thing.
+ */
+export const signOut = () => post<{ ok?: boolean }>('/api/logout')
+
+/**
  * What a download route answers with.
  *
  * `mine` is the half that is easy to miss. One download at a time, because they

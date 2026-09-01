@@ -76,8 +76,16 @@ below.
 - **No `from __future__ import annotations`.** It broke FastAPI's
   `get_type_hints()` against module globals and turned `/api/upload` into a 422.
   See the note at the top of `app.py`.
-- **No Modal Secrets, no CLI setup.** The HF token is pasted into the UI and
-  stored in a Modal Dict. `modal deploy app.py` is the entire install.
+- **No Modal Secrets, no CLI setup.** Both credentials — the deployment's
+  password and the HF token — are typed into the UI and stored in Modal Dicts.
+  `modal deploy app.py` is the entire install, and that is what made
+  trust-on-first-use the bootstrap for the password: there is no step at which
+  one could have been supplied.
+- **Every route is behind the password unless the allowlist says otherwise.**
+  The gate is one middleware on the ASGI app, so a new route is protected by
+  existing. `OPEN_PATHS` is two entries and should stay two. See Conventions in
+  `.claude/rules/backend.md` for why it is a cookie, why it is verified with
+  arithmetic rather than a lookup, and how a forgotten password is recovered.
 - **Nothing downloads on its own.** Weights are chosen explicitly, under the
   gear.
 - **Pin to what you can reproduce.** A commit SHA, not a branch or a floating

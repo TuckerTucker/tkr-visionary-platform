@@ -468,6 +468,51 @@ nobody has looked at.
 
 ## Conventions
 
+- **Every route is shut unless the guard lets it through, and the allowlist is
+  two entries long.** `_gate` is a middleware on `api`, not a `Depends(...)` per
+  route, and that is the whole point: there are fifty routes and new ones arrive
+  most weeks, so a per-route decorator is a forgetting machine — the first route
+  added without it is a hole that nothing reports and nothing tests. Adding a
+  route therefore requires *nothing*: it is behind the password the moment it
+  exists. `OPEN_PATHS` is `/` and `/api/login`, and it should stay that length.
+  `/assets` is deliberately inside the fence rather than outside it, so a
+  stranger who finds the URL cannot even read the bundle to learn what this is.
+
+- **The cookie is checked with arithmetic, never with a lookup.** `/api/status`
+  is polled every 400ms for the length of a training run, so a session looked up
+  in a Modal Dict would put a network round trip on the hottest path in the app
+  — the `_active_download()` failure again, where a Dict scan took a route from
+  milliseconds to seven seconds. So nothing is stored per session: the cookie is
+  `v1.{expiry}.{hmac}` and `_valid_cookie` verifies it against a secret the
+  container already holds, measured at 3µs. Revocation is that secret rotating,
+  which is why signing out and changing the password both do it, and why there
+  is no per-browser sign-out — with one user, a scoped sign-out and a global one
+  are the same intent said twice.
+
+  The corollary is that a bearer token was never an option. Six routes serve
+  bytes straight into `<img src>` and `<video src>` — thumb, image, clip, file,
+  cover, character-file — and a browser attaches no headers to those.
+
+- **First run is trust-on-first-use, and that is a choice about which failure is
+  visible.** `modal deploy app.py` is the entire install, so there is no step at
+  which a password could have been supplied; the alternative was a claim code
+  printed to the container log, which buys a stricter first minute at the cost
+  of making the install two commands. What TOFU gives instead is a loud failure:
+  meeting a *sign-in* form on a deployment you have never signed in to means
+  somebody else claimed it, which is unmistakable in a way a quiet compromise is
+  not. The recovery lever is `modal dict clear visionary-auth`, and `auth` is
+  its own Dict rather than a corner of `config` precisely so that clearing it
+  does not also cost the HuggingFace token.
+
+- **scrypt is the brake, the attempt counter is only the shape of it.**
+  `_attempts` lives in process memory because `web()` is `max_containers=1`, and
+  a container recycle empties it — so it is not the bound on guessing and should
+  not be mistaken for one. The bound is `SCRYPT_N`: ~100ms and 32 MB per
+  attempt, measured. The counter stops the thousand tries a script makes in a
+  minute, which is the shape an attack on a guessable URL actually takes, and it
+  answers with the number of seconds to wait, because a refusal with no time in
+  it is a refusal you retry immediately.
+
 - **A caption preset is a decision about what to leave out, and a refusal is
   not an error.** Both halves of the captioner row exist for reasons the other
   cannot cover.

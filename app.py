@@ -48,11 +48,13 @@ Nothing downloads on its own — pick what you want under the gear.
 
 import base64
 import hashlib
+import hmac
 import io
 import json
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -10118,6 +10120,347 @@ class VideoGenerator:
 
 
 # --------------------------------------------------------------------------
+# Auth — one password, and a cookie that costs nothing to check
+#
+# The deployed URL is `{workspace}--visionary-web.modal.run`. That is derived
+# from names rather than generated, so it is guessable by anyone who knows the
+# workspace, and behind it sit the volume — photographs of real people, and
+# LoRAs trained on them — and a Generate button that rents an H100 on the
+# account's card. Obscurity was never the gate; there was no gate.
+#
+# One password, because the app is singular by construction: `sessions`, `jobs`
+# and the volume layout have no tenant in them, and an auth layer that implied
+# otherwise would be the first half of a multi-tenant rewrite nobody asked for.
+#
+# Three properties of what is already here chose the mechanism, and all three
+# are load-bearing:
+#
+#   Six routes serve bytes straight into <img src> and <video src> — thumb,
+#   image, clip, file, cover, character-file. A browser attaches no headers to
+#   those, so a bearer token cannot reach them. It is a cookie or it is nothing.
+#
+#   /api/status is polled every 400ms for the length of a training run. A
+#   session looked up in a Modal Dict would put a network round trip on that
+#   path, which is the `_active_download()` failure again — a Dict scan there
+#   took a route from milliseconds to seven seconds. So the cookie carries its
+#   own proof: an HMAC this container verifies against a secret it already
+#   holds, no network at all.
+#
+#   web() is max_containers=1, which makes in-process memory effectively
+#   global. That is what lets the secret cache and the attempt counter below be
+#   two module-level variables rather than shared state.
+# --------------------------------------------------------------------------
+
+# Its own Dict, deliberately not `config`. The recovery path for a forgotten
+# password is `modal dict clear visionary-auth` — the only lever that works
+# without a working login — and sharing a Dict with the HF token would make
+# forgetting the password cost the token too.
+auth = modal.Dict.from_name("visionary-auth", create_if_missing=True)
+
+AUTH_COOKIE = "visionary_session"
+# Ninety days, and no idle timeout at any length. This is a tool left open in a
+# tab beside a forty-minute training run, and a clock that signs you out
+# mid-run is the failure the UX rules name outright. Being signed out is
+# something you asked for, never something that happened to you.
+AUTH_TTL_S = 90 * 24 * 3600
+# scrypt at the interactive-login end of its range: roughly 100ms and 32 MB per
+# attempt on this container. That cost is the real brake on guessing — the
+# attempt counter below is emptied by a container recycle, this is not.
+SCRYPT_N, SCRYPT_R, SCRYPT_P = 2 ** 15, 8, 1
+SCRYPT_MAXMEM = 64 * 1024 * 1024  # 128 * N * R is 33.5 MB; the default is 32 MB
+# The shortest password accepted, said in the gate rather than discovered by
+# having one refused.
+PASSWORD_MIN = 12
+# How long a container trusts its cached copy of the signing secret. Signing
+# out rotates the secret, and this is the bound on how long a cookie issued
+# before that rotation could still work somewhere else — one Dict read a
+# minute, against a poll every 400ms.
+AUTH_SECRET_TTL_S = 60
+# Five wrong answers in five minutes and the gate stops asking scrypt to work.
+LOCKOUT_TRIES, LOCKOUT_WINDOW_S = 5, 300
+
+# Cached (secret, when it was read). See AUTH_SECRET_TTL_S.
+_secret_cache: tuple[bytes, float] | None = None
+# Failed attempts, oldest first. In-process because max_containers=1 makes that
+# global, and because the honest bound on guessing is scrypt rather than this:
+# a recycle empties it. What it stops is the thousand tries a script makes in a
+# minute, which is the shape an attack on a guessable URL actually takes.
+_attempts: deque[float] = deque(maxlen=64)
+
+
+def _auth_secret() -> bytes | None:
+    """
+    The HMAC key every cookie is signed with, cached for the life of a container.
+
+    None until a password exists, which is also the answer to "has anything
+    been signed yet": before the first password there is no secret, and so no
+    cookie can verify.
+    """
+    global _secret_cache
+    now = time.time()
+    if _secret_cache and now - _secret_cache[1] < AUTH_SECRET_TTL_S:
+        return _secret_cache[0]
+    try:
+        raw = auth.get("secret")
+    except Exception:
+        # Keep using the cached key rather than signing everyone out because
+        # the Dict blinked. This is fail-static, not fail-open — the key was
+        # read legitimately, and the only thing a stale one delays is a
+        # rotation. With no cache to fall back on it still refuses.
+        return _secret_cache[0] if _secret_cache else None
+    if not raw:
+        _secret_cache = None
+        return None
+    key = bytes.fromhex(raw)
+    _secret_cache = (key, now)
+    return key
+
+
+def _password_set() -> bool:
+    """Whether this deployment has been claimed. See `login` for what that means."""
+    try:
+        return bool(auth.get("password"))
+    except Exception:
+        # Fail closed. "The Dict blinked" and "nobody has claimed this yet"
+        # look identical from here, and only one of them is safe to guess
+        # wrong: guessing unclaimed hands the first stranger a password field.
+        return True
+
+
+def _set_password(password: str) -> None:
+    """
+    Store the password and invalidate every cookie ever issued.
+
+    One Dict key holding both halves, not two: a write that landed the salt and
+    lost the hash would leave a record that verifies nothing, recoverable only
+    by clearing the Dict. Modal writes the value whole, so the record is never
+    half-new.
+
+    Rotating the secret in the same breath is the point rather than a bonus. A
+    password change that left old sessions alive would be the exact thing
+    somebody changes a password *for* — another browser is signed in — quietly
+    not working.
+    """
+    global _secret_cache
+    salt = secrets.token_bytes(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R,
+                            p=SCRYPT_P, dklen=32, maxmem=SCRYPT_MAXMEM)
+    key = secrets.token_bytes(32)
+    auth["password"] = {"salt": salt.hex(), "hash": digest.hex()}
+    auth["secret"] = key.hex()
+    _secret_cache = (key, time.time())
+
+
+def _check_password(password: str) -> bool:
+    """Constant-time, because `==` on a digest leaks the matching prefix to a clock."""
+    try:
+        rec = auth.get("password")
+    except Exception:
+        return False
+    if not rec:
+        return False
+    digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(rec["salt"]),
+                            n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P, dklen=32,
+                            maxmem=SCRYPT_MAXMEM)
+    return hmac.compare_digest(digest.hex(), rec["hash"])
+
+
+def _rotate_secret() -> None:
+    """Sign out — which here means everywhere, since there is one of you."""
+    global _secret_cache
+    key = secrets.token_bytes(32)
+    auth["secret"] = key.hex()
+    _secret_cache = (key, time.time())
+
+
+def _issue_cookie() -> str:
+    """
+    `v1.{expiry}.{hmac}` — everything needed to check it travels in the string.
+
+    Nothing is stored per session, so there is nothing to look up on the poll
+    path and nothing to garbage-collect. Revocation is the secret rotating, not
+    a row being deleted.
+    """
+    secret = _auth_secret()
+    if secret is None:
+        raise RuntimeError("no signing secret — set a password first")
+    body = f"v1.{int(time.time()) + AUTH_TTL_S}"
+    return f"{body}.{hmac.new(secret, body.encode(), hashlib.sha256).hexdigest()}"
+
+
+def _valid_cookie(value: str | None) -> bool:
+    """
+    Signature first, expiry second. An expiry read before the signature is a
+    number an attacker chose.
+    """
+    if not value:
+        return False
+    secret = _auth_secret()
+    if secret is None:
+        return False
+    parts = value.split(".")
+    if len(parts) != 3 or parts[0] != "v1":
+        return False
+    body = f"{parts[0]}.{parts[1]}"
+    want = hmac.new(secret, body.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(parts[2], want):
+        return False
+    try:
+        return int(parts[1]) > time.time()
+    except ValueError:
+        return False
+
+
+def _locked_for() -> int:
+    """Seconds until the next attempt is allowed. 0 means now."""
+    now = time.time()
+    while _attempts and now - _attempts[0] > LOCKOUT_WINDOW_S:
+        _attempts.popleft()
+    if len(_attempts) < LOCKOUT_TRIES:
+        return 0
+    return max(1, int(LOCKOUT_WINDOW_S - (now - _attempts[0])))
+
+
+def _set_auth_cookie(response: Any) -> Any:
+    """
+    The one place the cookie's flags are written, so they cannot drift apart.
+
+    `secure` is unconditional: this only ever runs behind Modal's TLS, and a
+    cookie that is willing to travel in clear is a cookie that will. `lax`
+    rather than `strict` because `strict` withholds it from a link somebody
+    followed into the app, which reads as a random signed-out page.
+    """
+    response.set_cookie(
+        AUTH_COOKIE, _issue_cookie(), max_age=AUTH_TTL_S, path="/",
+        httponly=True, secure=True, samesite="lax",
+    )
+    return response
+
+
+# The gate. Server-rendered rather than a screen inside the bundle, and that is
+# what keeps the allowlist to two paths: /assets stays behind the cookie, so a
+# stranger gets a password box and cannot even read the front end. It is also
+# the one page in this app that has to render with no JS bundle, no fonts and
+# no stylesheet, since all three are behind the thing it is asking for.
+GATE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Visionary</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#010102;color:#f7f8f8;min-height:100dvh;display:flex;
+     align-items:center;justify-content:center;padding:24px;
+     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+form{width:100%;max-width:360px;background:rgba(255,255,255,.03);
+     border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:22px}
+h1{font-size:15px;font-weight:600;margin-bottom:6px}
+p{color:#84888f;font-size:12px;margin-bottom:16px}
+input{width:100%;height:32px;padding:0 10px;color:#f7f8f8;
+      background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);
+      border-radius:8px;font:inherit}
+input:focus{outline:none;border-color:rgba(255,255,255,.24)}
+button{width:100%;height:32px;margin-top:10px;border:0;border-radius:8px;
+       background:#f7f8f8;color:#010102;font:inherit;font-weight:600;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+.note{margin:10px 0 0;font-size:12px;min-height:18px}
+.bad{color:#ff8a80}
+</style></head>
+<body>
+<form id="f" autocomplete="on">
+  <h1>__TITLE__</h1>
+  <p>__BLURB__</p>
+  <input id="p" type="password" autocomplete="__AUTOCOMPLETE__" autofocus
+         placeholder="__PLACEHOLDER__" aria-label="Password">
+  <button id="b" type="submit" __DISABLED__>__ACTION__</button>
+  <p class="note" id="n" role="status" aria-live="polite"></p>
+</form>
+<script>
+  var first = __FIRST__, min = __MIN__;
+  var p = document.getElementById('p'), b = document.getElementById('b'),
+      n = document.getElementById('n');
+  // Disabled until it could possibly be accepted, rather than accepted and
+  // then refused. Only on first run: on a sign-in the length of the password
+  // you already have is not this page's business to judge.
+  function gauge() {
+    if (!first) return;
+    b.disabled = p.value.length < min;
+    n.className = 'note';
+    // Nothing on an empty field. "12 more characters" before a key is pressed
+    // is a complaint about not having typed yet, and the placeholder already
+    // says the number.
+    n.textContent = p.value.length && p.value.length < min
+      ? (min - p.value.length) + ' more character' + (min - p.value.length === 1 ? '' : 's')
+      : '';
+  }
+  p.addEventListener('input', gauge);
+  document.getElementById('f').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    b.disabled = true;
+    n.className = 'note';
+    n.textContent = first ? 'Setting\\u2026' : 'Checking\\u2026';
+    var r, body;
+    try {
+      r = await fetch('/api/login', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: p.value}),
+      });
+      body = await r.json();
+    } catch (err) {
+      // Same three causes as client.ts sees, said the same way: the page
+      // cannot tell a stopped server from dropped wifi, so it says the thing
+      // true of both.
+      n.className = 'note bad';
+      n.textContent = 'Could not reach the server \\u2014 try again.';
+      b.disabled = false;
+      return;
+    }
+    if (body && body.ok) { location.reload(); return; }
+    n.className = 'note bad';
+    n.textContent = (body && body.error) || 'That did not work.';
+    b.disabled = false;
+    p.select();
+  });
+  gauge();
+</script>
+</body></html>
+"""
+
+
+def _gate_page() -> str:
+    """
+    Two states, one page: claim it, or sign in.
+
+    The unclaimed copy says outright that nobody has set a password yet,
+    because that sentence is the whole of this deployment's security story on
+    first run — and if you ever meet the *signed-in* form on a deployment you
+    have never signed in to, somebody else claimed it and you want to know at
+    a glance rather than by inference.
+    """
+    first = not _password_set()
+    fills = {
+        "__TITLE__": "Set a password" if first else "Visionary",
+        "__BLURB__": (
+            f"Nobody has claimed this deployment yet, so it is open to anyone who "
+            f"knows the URL. The password you set here is the only one — "
+            f"{PASSWORD_MIN} characters or more."
+            if first else
+            "Signed out. Enter the password for this deployment."
+        ),
+        "__PLACEHOLDER__": f"{PASSWORD_MIN}+ characters" if first else "Password",
+        "__AUTOCOMPLETE__": "new-password" if first else "current-password",
+        "__ACTION__": "Set password" if first else "Sign in",
+        "__DISABLED__": "disabled" if first else "",
+        "__FIRST__": "true" if first else "false",
+        "__MIN__": str(PASSWORD_MIN),
+    }
+    page = GATE_HTML
+    for token, value in fills.items():
+        page = page.replace(token, value)
+    return page
+
+
+
+# --------------------------------------------------------------------------
 # Web app — UI + API on a single URL
 #
 # The routes below are `def`, not `async def`, and that is deliberate: FastAPI
@@ -10172,6 +10515,29 @@ def web():
                   f"{took:.1f}s{size}", flush=True)
         return response
 
+    # Default-deny, in one place.
+    #
+    # A `Depends(...)` per route would be a forgetting machine: fifty routes
+    # today, and the first one added without it is a hole that nothing reports.
+    # Two paths are open and everything else needs the cookie — including
+    # /assets, so a stranger cannot even read the bundle to learn what this is.
+    #
+    # Added after _timed, which in Starlette makes it the outer wrapper, so a
+    # request that is going to be refused is refused before anything else runs.
+    OPEN_PATHS = {"/", "/api/login"}
+
+    @api.middleware("http")
+    async def _gate(request: Request, call_next):
+        if request.url.path in OPEN_PATHS or _valid_cookie(request.cookies.get(AUTH_COOKIE)):
+            return await call_next(request)
+        # JSON with an `error`, because that is the shape every caller on the
+        # page already reads; client.ts turns the 401 itself into a reload onto
+        # the gate, so this sentence is a fallback rather than the usual path.
+        return JSONResponse(
+            {"error": "Signed out — reload the page to sign in again."},
+            status_code=401,
+        )
+
     # Where the build landed. A constant rather than a search, because a page
     # that cannot be found should say which path was empty — the same reason
     # _require_models() prints the path it wanted.
@@ -10192,7 +10558,11 @@ def web():
               name="assets")
 
     @api.get("/", response_class=HTMLResponse)
-    def index() -> HTMLResponse:
+    def index(request: Request) -> HTMLResponse:
+        # The only route that answers two different pages. Everything else is
+        # either open or refused; this one is the door.
+        if not _valid_cookie(request.cookies.get(AUTH_COOKIE)):
+            return HTMLResponse(_gate_page(), headers={"cache-control": "no-store"})
         page = DIST / "index.html"
         if not page.is_file():
             # Diagnosing itself rather than 500ing: this can only happen if the
@@ -10211,6 +10581,108 @@ def web():
             page.read_text(),
             headers={"cache-control": "no-store"},
         )
+
+    @api.post("/api/login")
+    def login(payload: dict) -> JSONResponse:
+        """
+        Sign in — or, on an unclaimed deployment, claim it.
+
+        One route for both because from the gate they are the same gesture:
+        you type a password and you are in. Splitting them would mean the page
+        has to know which deployment it is talking to before it can ask,
+        and that is a question only this side can answer.
+
+        Trust-on-first-use is the bootstrap, and its virtue is that the failure
+        is loud rather than silent: `modal deploy` is the entire install, so
+        there is no step at which a password could have been supplied, and if
+        you ever open this deployment and it asks you to *sign in* when you
+        never set a password, somebody else claimed it. That is unmistakable in
+        a way an empty log line is not. Recovery is `modal dict clear
+        visionary-auth`, which resets the password and leaves the HF token
+        alone.
+        """
+        password = str(payload.get("password") or "")
+        wait = _locked_for()
+        if wait:
+            # The number, not "try later". A refusal without a time in it is a
+            # refusal you retry immediately, which is how a lockout becomes a
+            # thing the owner fights rather than a thing an attacker hits.
+            return JSONResponse(
+                {"error": f"Too many attempts — try again in {wait}s."},
+                status_code=429,
+            )
+
+        if not _password_set():
+            if len(password) < PASSWORD_MIN:
+                return JSONResponse(
+                    {"error": f"At least {PASSWORD_MIN} characters."},
+                    status_code=400,
+                )
+            _set_password(password)
+            print("[auth] deployment claimed — password set", flush=True)
+            return _set_auth_cookie(JSONResponse({"ok": True, "claimed": True}))
+
+        if not _check_password(password):
+            _attempts.append(time.time())
+            left = LOCKOUT_TRIES - len(_attempts)
+            if left <= 0:
+                # The refusal that *starts* the lockout has to say so. This
+                # branch was `0 < left <= 2` and went silent here, so the
+                # countdown ran "2 left", "1 left", nothing — and the wait was
+                # discovered by pressing again, which is the exact failure the
+                # counter exists to prevent, reintroduced one branch later.
+                note = f" Locked now — try again in {_locked_for()}s."
+            elif left <= 2:
+                # Only near the end. A count on the first wrong press is a
+                # threat answering a typo.
+                note = f" {left} attempt{'' if left == 1 else 's'} left."
+            else:
+                note = ""
+            # Says how many are left, and deliberately does not say whether the
+            # password was close, long enough, or anything else about it.
+            return JSONResponse({"error": "Wrong password." + note}, status_code=401)
+
+        _attempts.clear()
+        return _set_auth_cookie(JSONResponse({"ok": True}))
+
+    @api.post("/api/logout")
+    def logout() -> JSONResponse:
+        """
+        Sign out, which here means everywhere.
+
+        There is one of you, so a per-browser sign-out and a global one are the
+        same intent said at different scopes, and keeping both would be two
+        ways to do the first thing. Rotating the secret is what makes it real:
+        the cookie deleted below is the polite half, and a cookie copied off
+        this machine before it was deleted stops working at the same instant.
+        """
+        _rotate_secret()
+        response = JSONResponse({"ok": True})
+        response.delete_cookie(AUTH_COOKIE, path="/")
+        return response
+
+    @api.post("/api/password")
+    def change_password(payload: dict) -> JSONResponse:
+        """
+        Change it, proving you know the current one first.
+
+        The current-password check is not ceremony on a single-user app: it is
+        what stops an unattended tab from being turned into a permanent one by
+        whoever walks past it.
+        """
+        current = str(payload.get("current") or "")
+        nxt = str(payload.get("next") or "")
+        if len(nxt) < PASSWORD_MIN:
+            return JSONResponse({"error": f"At least {PASSWORD_MIN} characters."},
+                                status_code=400)
+        if not _check_password(current):
+            return JSONResponse({"error": "That is not the current password."},
+                                status_code=401)
+        _set_password(nxt)
+        # Re-issued against the new secret, so the browser that made the change
+        # stays signed in and every other one does not. Without this the person
+        # changing their password is the first one it signs out.
+        return _set_auth_cookie(JSONResponse({"ok": True}))
 
     @api.get("/api/where")
     def where() -> dict[str, Any]:
@@ -10322,6 +10794,10 @@ def web():
             "models": _model_status(),
             "loras": loras,
             "hf_token_set": bool(_hf_token()),
+            # The gate renders this number into its own copy server-side; the
+            # Settings field needs it too, and a 12 typed in two builds is a 12
+            # that will diverge the first time it is reconsidered.
+            "password_min": PASSWORD_MIN,
             "samplers": SAMPLERS,
             "schedulers": SCHEDULERS,
             # Which of those two menus opens selected. The video side already

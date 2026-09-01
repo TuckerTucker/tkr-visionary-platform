@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 
 import { failed, type ApiError } from '../api/client'
 import {
-  addCaptionModel, deleteCaptionModel, deleteLora, downloadFamily, setToken,
-  startDownload, startGdrive,
+  addCaptionModel, changePassword, deleteCaptionModel, deleteLora, downloadFamily,
+  setToken, signOut, startDownload, startGdrive,
 } from '../api/routes'
 import type { AppState, GpuChoice, LoraEntry, ModelEntry } from '../api/types'
 import { useStore } from '../store'
@@ -20,6 +20,11 @@ import { useDownload } from './useDownload'
  * pickers live here for the same reason: a card is set per session and confirms
  * a cold start when it changes, so it was 71px of composer for a decision no
  * take varies by.
+ *
+ * The password is the one card that is not about weights, and it is here rather
+ * than in a sheet of its own: two fields and a Sign out do not earn a second
+ * settings surface, and a person looking for "where do I change this" opens the
+ * gear whatever the gear is called.
  */
 export function Settings({
   state, open, onClose, onReload,
@@ -31,6 +36,9 @@ export function Settings({
 }) {
   const [token, setTokenValue] = useState('')
   const [tokenNote, setTokenNote] = useState<string | null>(null)
+  const [pwCurrent, setPwCurrent] = useState('')
+  const [pwNext, setPwNext] = useState('')
+  const [pwNote, setPwNote] = useState<{ text: string; err?: boolean } | null>(null)
   const [driveUrl, setDriveUrl] = useState('')
   const [driveFolder, setDriveFolder] = useState('')
   // The whole ApiError, not `r.error`: the sentence is what the box shows, but a delete
@@ -72,6 +80,33 @@ export function Settings({
     if (!failed(r)) onReload()
   })
 
+  const savePassword = () => run('password', async () => {
+    const r = await changePassword(pwCurrent, pwNext)
+    if (failed(r)) {
+      // The current field keeps what was typed and the new one is cleared: a
+      // refusal here is almost always the current password, and clearing both
+      // would make the person retype the half that was right.
+      setPwNote({ text: r.error, err: true })
+      setPwNext('')
+      return
+    }
+    setPwNote({ text: 'Password changed. Every other browser is signed out.' })
+    setPwCurrent('')
+    setPwNext('')
+  })
+
+  // No confirm dialog. Signing out is not destructive — nothing is lost and the
+  // way back is the password you already have — and the rules here reserve a
+  // dialog for a blast radius, not for a decision that undoes itself.
+  const endSession = () => run('signout', async () => {
+    const r = await signOut()
+    if (failed(r)) return setPwNote({ text: r.error, err: true })
+    // The reload lands on the gate, because the cookie is gone by the time this
+    // runs. Deliberately not left to the next poll's 401: the person pressed a
+    // button and the page should answer the press, not the poll after it.
+    window.location.reload()
+  })
+
   const removeLora = (l: LoraEntry) => {
     // The dialog is the entire safety net: the route unlinks and there is
     // nothing behind it. So it says how much is going, and whether it can come
@@ -100,12 +135,17 @@ export function Settings({
 
   const loras = state?.loras ?? []
   const loraBytes = loras.reduce((a, l) => a + (Number(l.bytes) || 0), 0)
+  // The server's own number, not a 12 retyped here. The fallback only covers
+  // the tick before the first /api/state lands, and it is deliberately the
+  // stricter direction: a field that is briefly harder to satisfy is recoverable,
+  // one that is briefly easier sends a password the route will refuse.
+  const min = state?.password_min ?? 12
 
   return (
     <div id="settings" className="scrim">
       <div className="sheet">
         <div className="sheet-head">
-          <h1 className="grow">Models</h1>
+          <h1 className="grow">Settings</h1>
           <button className="ico" id="settings-x" type="button" onClick={onClose}>
             <IconClose />
           </button>
@@ -120,6 +160,47 @@ export function Settings({
           <p className="muted" style={{ margin: '9px 2px 0' }}>
             Changing a card costs one cold start while the model loads. Runs after it are warm.
           </p>
+        </div>
+
+        {/* Above the HuggingFace field rather than below it, for two reasons.
+            It is the credential *for* this app rather than one the app carries
+            somewhere else, so it is the first thing on the sheet that is about
+            the deployment you are standing in. And two `type="password"` inputs
+            on one panel is a password manager's worst case: the real ones go
+            first and are marked current/new, the token below stays `off`, and
+            nothing offers to autofill an hf_… field with your login. */}
+        <div className="card">
+          <label>Password</label>
+          <div className="row">
+            <input id="pw-cur" type="password" className="grow" placeholder="Current"
+                   autoComplete="current-password" value={pwCurrent}
+                   onChange={(e) => setPwCurrent(e.target.value)} />
+            <input id="pw-new" type="password" className="grow"
+                   placeholder={`New — ${min}+ characters`}
+                   autoComplete="new-password" value={pwNext}
+                   onChange={(e) => setPwNext(e.target.value)} />
+            {/* Shut until the new one could be accepted, so the length is a
+                thing you watch rather than a thing you are told after pressing.
+                `run` is still the guard that matters — `disabled` is a paint. */}
+            <button className="s" type="button"
+                    disabled={!!busy || pwNext.length < min || !pwCurrent}
+                    onClick={() => void savePassword()}>
+              {busy === 'password' ? 'Saving…' : 'Change'}
+            </button>
+          </div>
+          <p className="muted" style={{ marginTop: 8 }}>
+            The one password on this deployment. Signing out signs out every
+            browser, here and anywhere else it is open.{' '}
+            <span id="pw-state">
+              {pwNote && <span className={pwNote.err ? 'warn' : 'ok'}>{pwNote.text}</span>}
+            </span>
+          </p>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button className="s" type="button" disabled={!!busy}
+                    onClick={() => void endSession()}>
+              {busy === 'signout' ? 'Signing out…' : 'Sign out'}
+            </button>
+          </div>
         </div>
 
         {/* The token, and only the token. "Download missing" used to sit in
