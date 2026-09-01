@@ -340,6 +340,17 @@ H3MC_AUDIO_CONTEXT = 24  # one second on the model's 40 Hz audio grid
 # a chain that breaks precisely on the long think between takes.
 H3MC_SIDECAR = "context.safetensors"
 
+# Which of the pack's fixed slots that latent occupies inside ComfyUI's output
+# folder — the one thing the save, the harvest and the restore have to agree
+# on, and the thing they did not. `clip_index: 0` asks for the pack's *auto*
+# branch, which writes `{prefix}_00001_.safetensors`: a counter that starts at
+# one, and a trailing underscore marking the file run-numbered. The harvest
+# read `{prefix}_00000.safetensors`. Nothing ever matched, so no take saved its
+# context, every Continue was refused by the CPU gate, and the log said so once
+# per take. A fixed slot spells the name outright and depends on no counter —
+# one job id, one file, so the slot number itself carries no information.
+H3MC_SLOT = 1
+
 # Style-by-reference: nkxx188's training-free K/V injection. This REPLACED the
 # ostris reference-LoRA path, and the decision was a measurement, not an
 # argument — tools/ab_style.py, same seed, two prompts: the ostris path leaked
@@ -6980,6 +6991,22 @@ def _h3_frames(seconds: float) -> int:
                         lo=H3_MIN_FRAMES, hi=H3_MAX_FRAMES)
 
 
+def _h3_ctx_prefix(job_id: str) -> str:
+    """What the save node is given: the name up to the slot it appends."""
+    return f"h3_context/{job_id}"
+
+
+def _h3_ctx_name(job_id: str) -> str:
+    """
+    A take's motion latent, named the way the pack names it.
+
+    Relative to ComfyUI's output directory, because that is what the save
+    node's `filename_prefix`, the load node's `latent_path` and the harvest
+    all speak. One pair of functions so those three cannot drift apart again.
+    """
+    return f"{_h3_ctx_prefix(job_id)}_{H3MC_SLOT:05d}.safetensors"
+
+
 def _h3_canvas(aspect: str, tier: str) -> tuple[int, int]:
     """(width, height) for an aspect ratio at an H3 tier's short edge."""
     if tier not in H3_TIERS:
@@ -7078,11 +7105,16 @@ def _h3_graph(
     # there will be one. Picture and audio come out of the same latent, so this
     # single file is the whole context a continuation slices from.
     if save_context_as:
+        # **A slot, not the auto counter.** `clip_index: 0` is the pack's
+        # run-numbered branch and writes a name only it can predict; asking
+        # for a fixed slot makes the file `_h3_ctx_name` already spells. See
+        # H3MC_SLOT for the mismatch that cost every take its context.
         graph["save_ctx"] = {
             "class_type": "MiniMaxH3MotionContextSaveLatent",
             "inputs": {"latent": ["sample", 0],
-                       "filename_prefix": f"h3_context/{save_context_as}",
-                       "clip_index": 0},
+                       # The node appends the slot itself.
+                       "filename_prefix": _h3_ctx_prefix(save_context_as),
+                       "clip_index": H3MC_SLOT},
         }
     if load_context_from:
         # Between the stock conditioning node and the guider — the pack's own
@@ -7093,10 +7125,17 @@ def _h3_graph(
         # accumulate drift. Every optional input is spelled out — the house
         # rule, because INPUT_TYPES defaults and run() defaults disagree in
         # node packs more often than they should.
+        # **The whole filename, not a prefix.** The resolver tests the string
+        # for `isfile` then `isdir` and raises "neither a file nor a folder"
+        # otherwise — `h3_context/{job}` is neither, so this refused on the
+        # card, three minutes into a rented H100, every time a continuation
+        # got far enough to reach it. A file is taken as itself and
+        # `clip_index` is ignored, which is why it is the slot anyway rather
+        # than a second thing to keep in step.
         graph["ctx_lat"] = {
             "class_type": "MiniMaxH3MotionContextLoadLatent",
-            "inputs": {"latent_path": f"h3_context/{load_context_from}",
-                       "clip_index": 0},
+            "inputs": {"latent_path": _h3_ctx_name(load_context_from),
+                       "clip_index": H3MC_SLOT},
         }
         graph["mctx"] = {
             "class_type": "MiniMaxH3MotionContext",
@@ -9967,14 +10006,24 @@ class VideoGenerator:
         # frame, which is the degrade the page already handles, and failing a
         # finished three-minute render over its sidecar would be the wrong
         # trade twice.
-        ctx = COMFY / "output" / "h3_context" / f"{job_id}_00000.safetensors"
+        ctx = COMFY / "output" / _h3_ctx_name(job_id)
         if ctx.exists():
             shutil.copyfile(ctx, out_dir / H3MC_SIDECAR)
             ctx.unlink()
         else:
+            # What is *actually* in the folder, not just what was wanted. The
+            # miss this line existed to report turned out to be a name the save
+            # node and the harvest spelled differently (see H3MC_SLOT), and one
+            # sentence naming the path it did not find could not tell "the node
+            # never ran" from "it wrote something else" — which is the whole
+            # question. Listing costs nothing and answers it in one take.
+            try:
+                found = sorted(q.name for q in ctx.parent.iterdir()) or ["nothing"]
+            except OSError:
+                found = ["no h3_context folder at all"]
             print(f"[video] {job_id} no motion context saved "
-                  f"(wanted {ctx}) — Continue will fall back to the last "
-                  f"frame", flush=True)
+                  f"(wanted {ctx}; folder holds {', '.join(found)}) — "
+                  f"Continue will fall back to the last frame", flush=True)
         _write_output_meta(
             out_dir, kind="video", job_id=job_id, model=model,
             prompt=params["prompt"], created=time.time(),
@@ -10024,7 +10073,7 @@ class VideoGenerator:
                     f"(wanted {src}). The take it belonged to was probably "
                     f"deleted — clear the Motion tile to continue from its "
                     f"last frame instead.")
-            dest = COMFY / "output" / "h3_context" / f"{continue_from}_00000.safetensors"
+            dest = COMFY / "output" / _h3_ctx_name(continue_from)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src, dest)
             frames = _h3_frames(params["seconds"]
