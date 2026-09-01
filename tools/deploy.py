@@ -211,7 +211,13 @@ def changed_since(sha: str):
     treating it as "no information" ran every one of them at their most useless.
     """
     if sha and sh("git", "cat-file", "-e", f"{sha}^{{commit}}").returncode == 0:
-        return sh("git", "diff", f"{sha}..HEAD").stdout
+        # Scoped to what can actually reach the image. Unscoped, the first
+        # commit of *this file* ran every smoke — the signal strings below are
+        # its own constants, so it matched itself and a gate that always fires
+        # is a gate nobody reads. Everything else in the repo (tools, docs) is
+        # not in the image and cannot change what a graph validates against.
+        return sh("git", "diff", f"{sha}..HEAD", "--",
+                  "app.py", "comfy_nodes", "web").stdout
     return None  # no live version, or a sha this clone does not have
 
 
