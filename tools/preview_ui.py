@@ -211,6 +211,11 @@ DATASETS = [
 
 STATE = {
     "hf_token_set": True,
+    # There is no gate in front of this server and there should not be: it
+    # serves stubbed jobs on your own machine. The number is here because the
+    # Settings password field disables against it, and a field that cannot be
+    # typed into is not a field this preview can be used to review.
+    "password_min": 12,
     "models": [
         {"key": "turbo", "label": "Krea 2 Turbo", "note": "8 steps, distilled",
          "family": "Krea 2 — images", "repo_id": "krea/Krea-2-Turbo", "present": True, "size_gb": 17.2,
@@ -1458,6 +1463,25 @@ class Handler(BaseHTTPRequestHandler):
                 for name, (w, h, seed) in
                 (("shot 1", (1024, 1024, 11)), ("shot 2", (1024, 1024, 29)))
             ]})
+
+        # There is no gate in front of this server, so these two are stubs of a
+        # *reply*, not of the thing it does. Without them the password card
+        # answers "this build is asking for a route the server does not have",
+        # which is what client.ts says about a version mismatch — the one
+        # message that would send somebody looking at the wrong problem.
+        if path == "/api/password":
+            try:
+                p_ = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                p_ = {}
+            if len(str(p_.get("next") or "")) < STATE["password_min"]:
+                return self.reply({"error": f"At least {STATE['password_min']} characters."},
+                                  code=400)
+            # The real route checks the current one against scrypt. Here every
+            # answer is accepted, because there is nothing to be wrong about.
+            return self.reply({"ok": True})
+        if path == "/api/logout":
+            return self.reply({"ok": True})
 
         self.reply({"error": f"No stub for {path}"}, code=404)
 

@@ -552,11 +552,16 @@ export function App() {
             <IconPanel />
           </button>
         )}
-        {/* "Models", not "Settings": the sheet holds weights — checkpoints,
-            LoRAs, caption models — plus the GPU and token that serve them.
-            There is no setting in it. The id stays `t-settings` because
-            check_settings.py reaches the sheet through it. */}
-        <button className="ico" id="t-settings" title="Models" type="button"
+        {/* "Settings" again, and the rename is the news rather than a
+            tidy-up. This said "Models" on the grounds that the sheet held
+            weights and nothing else — checkpoints, LoRAs, caption models, plus
+            the GPU and token that serve them — and that was true until the
+            password moved in. A password is not a weight under any reading,
+            and there was nowhere else for it that was not a second settings
+            surface built for two fields. The label follows the contents; the
+            id was always `t-settings`, which is how check_settings.py reaches
+            the sheet. */}
+        <button className="ico" id="t-settings" title="Settings" type="button"
                 onClick={() => { setSettingsOpen(true); void reloadState() }}>
           <IconCube />
         </button>

@@ -17,6 +17,13 @@ That is the whole install. The last command prints a URL, and the URL is the
 application — interface, API and GPU jobs. Nothing runs on your machine, nothing
 runs while you are not using it.
 
+**Open that URL and set a password before anything else.** A fresh deployment is
+unclaimed, and the first person to reach it is the one who sets the password —
+so the gap between deploying and opening it is the only window in which somebody
+else could. The URL is `{workspace}--visionary-web.modal.run`, which is derived
+from names rather than generated: it was never a secret, and until it has a
+password behind it there is nothing between a stranger and an H100 on your card.
+
 ---
 
 ## What you can do
@@ -73,8 +80,37 @@ train unevenly.
 - A [HuggingFace](https://huggingface.co) account **if** you want Krea 2 — its
   weights are gated. Everything else downloads without one.
 
-You do not need a local GPU, Docker, a `.env` file, or any Modal Secret. The
-HuggingFace token is pasted into the UI and stored in a Modal Dict.
+You do not need a local GPU, Docker, a `.env` file, or any Modal Secret. Both
+credentials this app holds — your password and the HuggingFace token — are typed
+into the UI and stored in Modal Dicts, which is what keeps `modal deploy app.py`
+the entire install.
+
+---
+
+## The password
+
+One password, because there is one of you: no accounts, no roles, no second
+tenant. It gates everything, including the front-end bundle itself, so a
+stranger who finds the URL gets a password box and nothing else.
+
+- **Setting it** happens on the first visit, on the page that asks. Twelve
+  characters or more.
+- **Changing it** is under the gear, and takes the current one. Every other
+  browser is signed out by the change.
+- **Signing out** signs out everywhere — the server rotates its signing key, so
+  a cookie copied off the machine dies at the same moment.
+- **Forgetting it** costs one command:
+
+  ```bash
+  modal dict clear visionary-auth
+  ```
+
+  The next visit is a fresh unclaimed deployment, ready to have a password set.
+  Nothing else is touched — not the volume, not your HuggingFace token, not a
+  training run in flight.
+
+Staying signed in has no time limit and no idle timeout, deliberately: this is a
+tab you leave open beside a forty-minute training run.
 
 ---
 
@@ -206,13 +242,14 @@ weight) are rejected on CPU in milliseconds, before a GPU is rented.
 
 ## Verifying a deployment
 
-Four smoke tests, all cheap, all runnable against your own account:
+Five smoke tests, all cheap, all runnable against your own account:
 
 ```bash
 modal run tools/smoke_graphs.py     # every graph validates against ComfyUI's node schema (CPU, no weights)
 modal run tools/smoke_caption.py    # every captioner repo id resolves and parses (CPU); --gpu captions a real image
 python3 tools/smoke_prompt.py       # the shot compiler matches MiniMax's published format (stdlib, no network)
 python3 tools/smoke_pins.py         # every pinned wheel still resolves, before a deploy spends 20 minutes finding out
+python3 tools/smoke_auth.py         # the gate, lifted out of app.py by AST — allowlist, cookie flags, revocation
 ```
 
 ### What has been run end to end

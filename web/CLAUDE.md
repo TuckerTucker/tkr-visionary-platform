@@ -909,6 +909,25 @@ preview rather than an incomplete pull. That is `_from_app.py`'s one failure
 mode and the reason its subset is named rather than pattern-matched. It fired
 twice in one session over `_stage_*`, which is the rule working.
 
+**The gate is the one screen this bundle does not draw.** It is server-rendered
+in `app.py`, because `/assets` sits behind the same cookie it is asking for —
+there is no version of a React sign-in page that does not have to be served to
+a stranger first. It is also the only page in the app with no stylesheet, no
+font and no JS bundle behind it, so its handful of tokens are written out
+literally rather than imported; they are copied from `:root` in `ui.css` and
+should be kept in step by hand if that ramp moves.
+
+The page's own half is one rule and one rename. `api()` in `client.ts`
+intercepts a **401 before it parses anything** and reloads once, because being
+signed out is a state of the whole page rather than a fault in one request —
+nine panels notice in the same tick, and nine reloads is a page that never
+finishes loading one. And the gear now says **Settings** rather than Models: it
+said Models on the grounds that the sheet held weights and nothing else, which
+was true until the password moved in, and a password is not a weight under any
+reading. Two fields and a Sign out did not earn a second settings surface, so
+the label followed the contents. The id is still `t-settings`, which is how
+`check_settings.py` reaches the sheet.
+
 ## Where the console redesign got to
 
 **Promote and demote — done.** The rule that settled it is under "The page":
