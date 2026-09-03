@@ -5,12 +5,16 @@ two is TeaCache, at the production shape act one taught us to insist on.
     modal run tools/ab_cache.py::smoke     # CPU: do the packs even import
     modal run tools/ab_cache.py::main      # H100: stock vs teacache, timed
 
-Two arms, one warm container: the H3 graph exactly as `_h3_graph` builds it,
-and the same graph with `CacheDiT_MiniMax_H3_Advanced_Optimizer` spliced in
-front of the guider at the pack's own H3 preset (F8/B0, threshold 0.12,
-3-step warmup). Same seed on both timed runs, 20 steps — the full-quality
-path, which is the only population step-skipping serves; distilled runs have
-nothing to skip.
+Three arms, one warm container. **`_h3_graph` is no longer a stock graph** —
+it splices `VisionaryStepCache` itself at anything over H3_CACHE_MIN_STEPS, so
+the arm that used to be called stock had the shipped cache in it and the
+teacache arm had two caches stacked, each measuring its skips against the
+other's reused output. `_without_cache` takes the node back out, which is what
+makes `stock` mean stock; `shipped` is what `_h3_graph` actually builds, and
+is the arm to move when the node changes; `teacache` is the third-party pack
+the mechanism was first proven with, kept so its number stays reproducible.
+Same seed on every timed run, 20 steps — the full-quality path, which is the
+only population step-skipping serves; distilled runs have nothing to skip.
 
 The verdict is two numbers and two files: wall-clock per arm, and the takes
 themselves for eyes and ears — the audio stream rides the same cached blocks,
@@ -113,6 +117,18 @@ def _cached_variant(graph: dict) -> dict:
     return out
 
 
+def _without_cache(graph: dict) -> dict:
+    """A genuinely stock graph. `_h3_graph` ships the cache node in-line, so
+    a baseline has to remove it rather than decline to add one."""
+    import copy
+    out = copy.deepcopy(graph)
+    node = out.pop("cache", None)
+    if node is not None:
+        out["guider"]["inputs"]["model"] = node["inputs"]["model"]
+        out["sigmas"]["inputs"]["model"] = node["inputs"]["model"]
+    return out
+
+
 def _teacache_variant(graph: dict) -> dict:
     """The same splice, TeaCache's node, at its own benchmarked settings —
     an engine is judged as shipped. total_steps is the node's only view of
@@ -189,16 +205,18 @@ def render() -> dict:
     _install_pack()
     comfy = _Comfy("video")
     comfy.start()
-    comfy.require_nodes(H3_NODE, TEACACHE_NODE)
+    comfy.require_nodes(H3_NODE, TEACACHE_NODE, "VisionaryStepCache")
 
     # Weights resident before either clock starts, on a seed neither timed
     # run reuses — an identical graph would come back as a cache hit.
-    comfy.run("warm", _graph(SEED - 1), what="video")
+    comfy.run("warm", _without_cache(_graph(SEED - 1)), what="video")
 
     out: dict[str, object] = {}
     files: dict[str, bytes] = {}
-    for arm, graph in (("stock", _graph(SEED)),
-                       ("teacache", _teacache_variant(_graph(SEED)))):
+    for arm, graph in (("stock", _without_cache(_graph(SEED))),
+                       ("shipped", _graph(SEED)),
+                       ("teacache",
+                        _teacache_variant(_without_cache(_graph(SEED))))):
         t0 = time.perf_counter()
         names = comfy.run(arm, graph, what="video")
         out[f"{arm}_s"] = round(time.perf_counter() - t0, 1)

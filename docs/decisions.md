@@ -381,20 +381,53 @@ model a warm container already holds, which is why the removal shipped with a
 container kill. If this comes back, it comes back measured at 768p on
 ten-second takes, with the calibrator off, and with an unwrap story.
 
-It did not come back; the other family shipped instead. TeaCache's whole-
-output reuse tests the *latent*, not the hidden states, so its bookkeeping
-does not grow with resolution — the same harness at production shape read
-220.0s stock against 97.4s cached, computed steps at stock price. It ships
-as `comfy_nodes/visionary_step_cache`, first-party, because the pack it was
+It did not come back; the other family shipped instead. TeaCache's reuse
+tests the *latent*, not the hidden states, so its bookkeeping does not grow
+with resolution — the same harness at production shape read 220.0s stock
+against 97.4s cached, computed steps at stock price. It ships as
+`comfy_nodes/visionary_step_cache`, first-party, because the pack it was
 proven with keeps its state in a node execute that ComfyUI caches — spent
-state silently disables it from the second take on. Ours keys on the
-sampler's sigma and resets itself.
+state silently disables it from the second take on. Ours takes fresh state
+per run from the OUTER_SAMPLE wrapper, which is where ComfyUI's own
+`nodes_easycache.py` takes it.
 
-It did not come back; the other family shipped instead. TeaCache's whole-
-output reuse tests the *latent*, not the hidden states, so its bookkeeping
-does not grow with resolution — the same harness at production shape read
-220.0s stock against 97.4s cached, computed steps at stock price. It ships
-as `comfy_nodes/visionary_step_cache`, first-party, because the pack it was
-proven with keeps its state in a node execute that ComfyUI caches — spent
-state silently disables it from the second take on. Ours keys on the
-sampler's sigma and resets itself.
+## MotionCache: three of its four ideas, none of its code
+
+Mozer/ComfyUI-MiniMax-H3-MotionCache-FastVAE, read 2026-09-03. Two nodes, and
+the pack's own README measures one of them as a loss: its batched-tile H3 VAE
+decode ran 11.15s against stock `VAEDecode`'s 10.36s on a five-second take at
+1344x768, and says so, recommending stock. The reason is structural and does
+not move on our hardware — 28 spatial tiles per temporal chunk become 8
+decoder invocations at batch 4, with the tile math unchanged, and a 256x256
+tile already saturates the card. The graph keeps stock `VAEDecode`.
+
+Its MotionCache node is the same family as `visionary_step_cache`, and its
+headline is worse than what was already running: 1.43x, *estimated* as calls
+over computed calls. That is the arithmetic CacheDiT's dashboard used to read
+1.33x while the take got slower, so it is not a number to trade against a
+measured 2.26x.
+
+What it was worth was four mechanisms, reimplemented rather than depended on —
+one commit, one author, a README whose install line clones a different
+repository. Residual reuse (a skip returns the current input plus the last
+delta, not the last output verbatim). Scoring video and audio apart and taking
+the worse (the sampler runs H3 on one flat pack whose audio tail is a schedule
+artefact, so a single scalar over it lets a spoken syllable hide behind a still
+frame — H3's `forward` hands the DIFFUSION_MODEL wrapper chain the two streams
+unpacked, which is why the hook moved off `apply_model`). A percent range in
+place of a typed `total_steps`, which was two copies of one fact. And a cap on
+consecutive skips.
+
+Its motion weighting was refused: a per-pixel weight tensor built from frame
+differences on every computed step is cost that scales with tensor size against
+skips that do not, which is exactly what made CacheDiT a net loss at 768p. Its
+8x subsampling of the score inputs was refused too — it changes what the
+threshold means, and 0.15 is the only number here anybody measured.
+
+The thing worth knowing that the pack did not teach: core ComfyUI ships
+`nodes_easycache.py`, which is TeaCache-family, already residual-based, already
+percent-ranged, and already carries `[video, audio]` outputs. It scores video
+only. Whether ours should become a thin patch over it rather than a sibling is
+an open question with a real answer on the maintained-upstream side; what stops
+it today is that EasyCache's change-rate-normalised score and 8x subsampling
+would retire the measured threshold, which is a harness question.
