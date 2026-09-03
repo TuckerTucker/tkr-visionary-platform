@@ -370,11 +370,12 @@ K2ST_SHA = "b30d495ab7e5626a2effc72a071430297643b718"  # 2026-07-21
 # test rides the latent rather than the hidden states and so has no cost
 # that grows with resolution: 220.0s to 97.4s on the same harness take.
 
-# Below this many sampler steps the cache node is not built at all: the
-# start guard already keeps the first two steps real, the final guard the
-# last two, and a distilled 4-8 step run has nothing left between them
-# worth skipping — but steps 3-6 of an 8-step schedule are where its detail
-# resolves, which is exactly the wrong place to hand back a stale output.
+# Below this many sampler steps the cache node is not built at all. Its
+# window is a fraction of the schedule rather than a count of steps, so a
+# short run is not protected more at the ends — it is protected less, in
+# whole steps, and steps 3-6 of an 8-step schedule are where a distilled
+# run's detail resolves. Exactly the wrong place to hand back a reused
+# delta, and nothing between the guards there is worth skipping anyway.
 H3_CACHE_MIN_STEPS = 12
 K2ST_REPO = "https://github.com/nkxx188/ComfyUI-Krea2-StyleTransfer"
 K2ST_REF_NODE = "Krea2StyleReference"
@@ -7189,18 +7190,6 @@ def _h3_graph(
             },
         }
         src = "shift"
-    # Last on the chain, after LoRAs and shift, so what it wraps is the model
-    # the sampler will actually run. Threshold 0.08 rather than the wrapper's
-    # 0.12 — the library's own default, chosen after the harness viewing put
-    # the fidelity cost on fine articulated detail; warmup 4 keeps the first
-    # fifth of a 20-step schedule fully computed, which is where structure
-    # locks in. What is deliberately *not* here is a tail guard: "compute the
-    # final steps in full" exists in cache-dit (`steps_computation_mask`) but
-    # the wrapper node exposes no input for it, and reaching around the
-    # wrapper means owning a fork. `bn_blocks` stays 0 for the same reason it
-    # ships 0 in the pack's preset: it is a per-block knob, not the per-step
-    # one that intent names. If the tail matters, the move is a PR upstream,
-    # not a patch here.
     # Last on the chain, after LoRAs and shift, so what it wraps is the
     # model the sampler actually runs. Every input is spelled because the
     # node's defaults are a second copy of these numbers, and two copies
@@ -7209,8 +7198,8 @@ def _h3_graph(
         graph["cache"] = {
             "class_type": "VisionaryStepCache",
             "inputs": {"model": [src, 0], "rel_l1_thresh": 0.15,
-                       "start_step": 2, "final_steps": 2,
-                       "total_steps": steps},
+                       "start_percent": 0.10, "end_percent": 0.90,
+                       "max_consecutive_skips": 2},
         }
         src = "cache"
     if src != "dit":
