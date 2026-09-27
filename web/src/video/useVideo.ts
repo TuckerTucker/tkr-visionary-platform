@@ -16,6 +16,7 @@ import {
 import { useEdit } from '../edit/useEdit'
 import { arm, continueAtBody, noteCut, outPointOf, snapNote, type Cut } from '../edit/continue'
 import { insertStore } from '../edit/inherit'
+import { insertCondition } from '../edit/stale'
 import { frameAt } from './lastFrame'
 
 /**
@@ -189,7 +190,9 @@ let pageLanded: ((it: GalleryItem) => void) | null = null
  * `slot` is the slot the take was rendered for, written on the take itself —
  * the record of which takes a slot has had (see `edit/slots.ts`).
  */
-function landTake(st: JobStatus, jobId: string, line: string, slot: string | null): string | null {
+function landTake(
+  st: JobStatus, jobId: string, line: string, slot: string | null, conditionedOn: string | null = null,
+): string | null {
   const file = (st.files as string[] | undefined)?.[0] ?? null
   if (!file) return null
   // See useGenerate: the run reports itself rather than the page re-asking the
@@ -204,6 +207,7 @@ function landTake(st: JobStatus, jobId: string, line: string, slot: string | nul
     jobId, file, line,
     ...num('width'), ...num('height'), ...num('seconds'), ...num('frames'), ...num('fps'),
     ...(slot && { slot }),
+    ...(conditionedOn && { conditionedOn }),
   }
   useStore.getState().addTake(take)
   return file
@@ -270,7 +274,7 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
     return () => { if (pageLanded === onLanded) pageLanded = null }
   }, [onLanded])
 
-  const finish = useCallback((st: JobStatus, jobId: string) => {
+  const finish = useCallback((st: JobStatus, jobId: string, conditionedOn: string | null) => {
     const file = (st.files as string[] | undefined)?.[0] ?? null
     noteCut(jobId, {}, st)
     const meta = [
@@ -286,7 +290,8 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
       ...p, running: false, jobId, file, runId: null, percent: 100, phase: '',
       error: null, meta,
     }))
-    landTake(st, jobId, typedProse(useStore.getState().scene), peekLanding(jobId)?.slotId ?? null)
+    landTake(st, jobId, typedProse(useStore.getState().scene), peekLanding(jobId)?.slotId ?? null,
+             conditionedOn)
   }, [])
 
   const start = useCallback(async () => {
@@ -315,7 +320,9 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
     setRun((p) => ({ ...p, runId }))
     poll(runId, {
       progress: (percent, phase) => setRun((p) => ({ ...p, running: true, percent, phase })),
-      completed: (st) => finish(st, runId),
+      // The take it continued, as sent — the status does not name it, and
+      // staleness (edit/stale.ts) walks it.
+      completed: (st) => finish(st, runId, s.continueFrom),
       // See `useGenerate` for why the bare fallback went. The advice differs on
       // this side because the failures do: a clip is the run that dies on card
       // memory, and duration is the one lever in the strip that changes how much
@@ -448,6 +455,9 @@ export async function renderSlot(slotId: string): Promise<void> {
     setSlotRun(slotId, { running: false, runId: null, phase: '', error: ins })
     return
   }
+  // The V1 take an insert opens on the frame of, read as the render starts —
+  // what the landed take was made from (edit/stale.ts).
+  const conditionedOn = ins ? insertCondition(useEdit.getState().project, slotId) : null
   const r = await video(ins ? slotBody(ins.store, null) : slotBody(s, stripLoras(typed) ? null : line))
   if (failed(r)) {
     // Verbatim, on the slot: the route's refusal is the sentence that says
@@ -464,7 +474,7 @@ export async function renderSlot(slotId: string): Promise<void> {
       // Still running as far as the slot is concerned: the file has to be read
       // before it can replace anything. `useEdit` clears this when it lands.
       setSlotRun(slotId, { running: true, runId: null, percent: 100, phase: 'Placing the take…' })
-      if (!landTake(st, runId, line, slotId)) {
+      if (!landTake(st, runId, line, slotId, conditionedOn)) {
         takeLanding(runId)
         setSlotRun(slotId, {
           running: false, phase: '',

@@ -38,7 +38,13 @@ import { clipsOn, slotOf, v1 } from './project'
 /** A take, and the slot it was rendered for. `slot` is optional because a
  *  scene saved before slots existed has takes without one — their slot is the
  *  clip that plays them (see `slotTakes`), and `adoptTakes` stamps it. */
-export type SlotTake = SceneTake & { slot?: string }
+export type SlotTake = SceneTake & {
+  slot?: string
+  /** The job id of the take this one was made from — the take it continued,
+   *  or the V1 take whose frame an insert opened on. What staleness walks
+   *  (stale.ts); absent on a take made from nothing. */
+  conditionedOn?: string
+}
 
 const sameTake = (a: Pick<SceneTake, 'jobId' | 'file'>, b: Pick<SceneTake, 'jobId' | 'file'>): boolean =>
   a.jobId === b.jobId && a.file === b.file

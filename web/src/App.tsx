@@ -9,6 +9,7 @@ import { Export } from './edit/Export'
 import { DropZone, TitleEdit } from './edit/DropZone'
 import { useUndoKeys } from './edit/history'
 import { Slot } from './edit/Slot'
+import { StaleMark } from './edit/StaleMark'
 import { useSaveState } from './edit/persist'
 import { fullScreenStage, stageIsFullScreen } from './edit/Stage'
 import { toggle as toggleCut } from './edit/useEdit'
@@ -725,7 +726,7 @@ function EditSurface({ onExported }: { onExported: (it: GalleryItem) => void }) 
     <section className="edit" id="edit">
       <ErrorNote err={saveError} />
       {hasTime && <Tracks tools={<><UndoBar /><Export onLanded={onExported} /></>}
-                          clipOverlay={(c, t) => <><Slot clip={c} track={t} /><TitleEdit clip={c} /></>}
+                          clipOverlay={(c, t) => <><Slot clip={c} track={t} /><StaleMark clip={c} track={t} /><TitleEdit clip={c} /></>}
                           after={<DropZone />} />}
     </section>
   )
