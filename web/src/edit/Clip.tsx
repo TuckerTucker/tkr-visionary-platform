@@ -42,6 +42,9 @@ import { useEdit } from './useEdit'
  * handles and under the slot's controls (`Slot`, drawn after it), so an edge
  * press is still a trim and a press on ‹ › is still a take: what it takes from
  * the timeline is a sliver of the seek, and only on a clip with sound to give.
+ * On a clip too short for ‹ n/N › to sit on the strip and leave most of it
+ * free, `Slot` puts the stepper in its top row instead (`slotLayout`) — a
+ * drag target you have to find a sliver of is one nobody detaches with.
  *
  * **Room for what comes next is `children`.** A take stepper, a stale badge —
  * each is drawn *on* the clip it is about, never in a panel beside it, so each

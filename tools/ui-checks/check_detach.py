@@ -173,33 +173,33 @@ def clips_of(proj, kind):
     return [c for c in (proj.get("clips") or {}).values() if c.get("type") == kind]
 
 
+# How much of a clip's sound strip a pointer can reach, 0..1 — the rest is
+# under the slot's controls. A short clip with two takes used to draw its
+# ‹ n / N › over all but 16px of it, and this check pressed the one sliver left.
 REACHABLE = """
 (id) => {
   const s = document.querySelector(`.et-sound[data-sound-strip="${id}"]`);
   if (!s) return null;
   const r = s.getBoundingClientRect();
   const y = r.top + r.height / 2;
-  for (let x = r.right - 2; x > r.left; x -= 1) {
-    if (document.elementFromPoint(x, y)?.closest('.et-sound') === s) return x;
+  let hit = 0;
+  for (let x = r.left + 0.5; x < r.right; x += 1) {
+    if (document.elementFromPoint(x, y)?.closest('.et-sound') === s) hit += 1;
   }
-  return null;
+  return hit / Math.max(1, Math.floor(r.width));
 }
 """
 
 
 def drag_strip(pg, clip_id, to, at=1 / 3):
     """A real pointer drag from the clip's sound strip to the point `to`,
-    pressed `at` of the way along it — or, with `at=None`, at the rightmost
-    point a pointer can reach: a slot with more than one take draws its ‹ ›
-    over the strip's left end, and on a short clip over most of it."""
+    pressed `at` of the way along it."""
     strip = pg.locator(f'.et-sound[data-sound-strip="{clip_id}"]')
     box = strip.bounding_box()
     if not box:
         return False
     y = box["y"] + box["height"] / 2
-    x = box["x"] + box["width"] * at if at is not None else pg.evaluate(REACHABLE, clip_id)
-    if x is None:
-        return False
+    x = box["x"] + box["width"] * at
     pg.mouse.move(x, y)
     pg.mouse.down()
     for i in range(1, 9):
@@ -420,7 +420,12 @@ def stays_detached(pg, sid, vid):
           f"{said} {lane_count(pg)}")
     had = sound_clips(pg)
     a2 = pg.locator("#edit-tracks .et-lane.audio").nth(1).bounding_box()
-    said = drag_strip(pg, vid, (a2["x"] + 20, a2["y"] + a2["height"] / 2), at=None) if a2 else False
+    # Two takes on a 3-second clip: the stepper sits in the top row, so the
+    # whole strip is there to press, the middle included.
+    reach = pg.evaluate(REACHABLE, vid)
+    check("a short clip with two takes keeps its whole sound strip reachable",
+          reach is not None and reach > 0.95, str(reach))
+    said = drag_strip(pg, vid, (a2["x"] + 20, a2["y"] + a2["height"] / 2), at=1 / 2) if a2 else False
     check("the ghost names A2", "onto A2" in (said or ""), repr(said))
     sound_id, proj = new_sound(pg, sid, had)
     sounds = take_sounds(proj)

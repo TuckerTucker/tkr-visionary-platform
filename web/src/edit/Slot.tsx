@@ -57,7 +57,9 @@ const stopPress = (e: PointerEvent<HTMLElement>): void => { e.stopPropagation() 
    Two rows rather than one because one did not fit: a 3-second take is 90px,
    and ‹ n / N › with ↻ and → beside it is wider than that once the trim
    handles have their ends. The bottom row says which take (or, while one is
-   rendering, how far along it is); the top row holds what to do next. */
+   rendering, how far along it is); the top row holds what to do next — and,
+   on a clip too short for ‹ n / N › to leave the sound strip under it
+   reachable, the ‹ › as well (`slotLayout`). */
 const ROW = 14
 
 /* Both rows keep off the trim handles (`--et-trim`, tracks.css): a control
@@ -66,8 +68,51 @@ const ROW = 14
    top edge, inside the same inset. */
 const INSET = 'calc(var(--et-trim, 8px) + 2px)'
 
-/* What each control costs, in px, for deciding what a short clip can carry. */
-const COST = { stepper: 2 * ROW + 26, button: ROW + 2, gap: 2 }
+/* What each control costs, in px, for deciding what a short clip can carry.
+   `arrows` is ‹ › without the count between them. */
+const COST = { stepper: 2 * ROW + 26, arrows: 2 * (ROW + 2) + 1, button: ROW + 2, gap: 2 }
+
+/* How much of the sound strip (Clip.tsx, the bottom few px between the trim
+   handles) the bottom row must leave uncovered, px. The row sits on top of the
+   strip, and on a 3-second take with two takes ‹ n / N › covered all but 16px
+   of it — detaching by drag was a hunt for the one sliver left. */
+const STRIP_KEEP = 40
+
+/** What a slot's clip carries, and where, for `room` px between its trim
+ *  handles and `takes` takes. `stepper` is `bottom` (‹ n / N › on the bottom
+ *  row), `split` (‹ › in the top row, `n / N` left on the bottom row as a
+ *  readout a press passes through), or null. `top` is the top row's width,
+ *  which the stale mark (StaleMark) keeps clear of. */
+export type SlotLayout = {
+  stepper: 'bottom' | 'split' | null
+  render: boolean
+  continue: boolean
+  top: number
+}
+
+/**
+ * Which controls a clip this wide carries, and where.
+ *
+ * The top row drops Continue first, then render — each has another way in
+ * (the canvas's Continue, Generate). **On a clip with room for ‹ n / N › but
+ * not for it and a reachable sound strip beside it, the stepper splits**: its
+ * arrows lead the top row and the count stays on the bottom row as a label
+ * every press falls through to the strip. Moving the whole stepper up cost a
+ * 3-second take its ↻ and →; the arrows alone fit beside them.
+ */
+export function slotLayout(room: number, takes: number): SlotLayout {
+  const has = takes > 1 && room >= COST.stepper
+  const bottom = has && room - COST.stepper >= STRIP_KEEP
+  const split = has && !bottom
+  const widths: number[] = split ? [COST.arrows] : []
+  const fits = (w: number): boolean => widths.reduce((n, x) => n + x + COST.gap, 0) + w <= room
+  const render = fits(COST.button)
+  if (render) widths.push(COST.button)
+  const cont = render && fits(COST.button)
+  if (cont) widths.push(COST.button)
+  const top = widths.length ? widths.reduce((n, x) => n + x, 0) + COST.gap * (widths.length - 1) : 0
+  return { stepper: bottom ? 'bottom' : split ? 'split' : null, render, continue: cont, top }
+}
 
 const btn: CSSProperties = {
   width: ROW + 2, height: ROW, padding: 0, border: 0, borderRadius: 'var(--r-inner)',
@@ -142,6 +187,10 @@ function shotMarks(shots: readonly TakeShot[], clip: AnyClip): { n: number; x: n
  *  hover, and the room left for the rows is what is between the two. */
 const handle = (): number => (window.matchMedia('(hover:none)').matches ? 14 : 8)
 
+/** The px a clip has between its trim handles — what its rows are laid in. */
+export const slotRoom = (clip: AnyClip): number =>
+  sec(clip.timing.display.to - clip.timing.display.from) * PX_PER_SEC - 2 * (handle() + 2)
+
 export function Slot({ clip }: SlotProps) {
   const slotId = slotOf(clip)
   const takes = useStore((s) => s.takes)
@@ -165,13 +214,11 @@ export function Slot({ clip }: SlotProps) {
   const shotCuts = recorded ? shotMarks(recorded, clip) : []
 
   // A clip trimmed very short cannot carry every control, and a row that
-  // overflows pushes its last control under the out handle. What goes first
-  // is what has another way in: Continue is also the canvas's, a re-render is
-  // also Generate's; which take the slot plays has no other control at all.
-  const room = sec(clip.timing.display.to - clip.timing.display.from) * PX_PER_SEC - 2 * (handle() + 2)
-  const showStepper = n > 1 && room >= COST.stepper
-  const showRender = room >= COST.button
-  const showContinue = room >= 2 * COST.button + COST.gap
+  // overflows pushes its last control under the out handle — `slotLayout`.
+  const room = slotRoom(clip)
+  const lay = slotLayout(room, n)
+  const showRender = lay.render
+  const showContinue = lay.continue
   const marks = [
     ...(opened && opened.snap > 0 ? [{ kind: 'continued', cut: opened, note: snapNote(opened) }] : []),
     ...(moved ? [{ kind: 'source', cut: moved, note: sourceNote(moved) }] : []),
@@ -180,11 +227,34 @@ export function Slot({ clip }: SlotProps) {
   // a clip with room for only one keeps the one that acts. Not while a render
   // runs — the phase and Stop take that row, and the join may be about to change.
   const running = !!run?.running
-  const beside = showStepper ? COST.stepper + COST.gap : 0
+  const beside = lay.stepper === 'bottom' ? COST.stepper + COST.gap : 0
   const showMarks = marks.length > 0 && !running && room >= beside + marks.length * (MARK + COST.gap)
   const err = run?.error ?? null
   const errText = err === null ? '' : typeof err === 'string' ? err : err.error
   const errDetail = err !== null && typeof err !== 'string' ? err.detail : undefined
+
+  const prev = (
+    <button type="button" className="ico" data-act="prev" style={btn}
+            title="The take before this one — one undo"
+            aria-label="Previous take"
+            disabled={chosen <= 0}
+            onClick={() => void chooseTake(slotId, chosen - 1)}>‹</button>
+  )
+  const next = (
+    <button type="button" className="ico" data-act="next" style={btn}
+            title="The take after this one — one undo"
+            aria-label="Next take"
+            disabled={chosen >= n - 1}
+            onClick={() => void chooseTake(slotId, chosen + 1)}>›</button>
+  )
+  const count = (split: boolean) => (
+    <span className="count" aria-label={`Take ${chosen >= 0 ? String(chosen + 1) : 'none'} of ${String(n)}`}
+          style={{ minWidth: 0, fontSize: 10, padding: '0 1px',
+                   ...(split && { pointerEvents: 'none', background: 'rgba(0,0,0,.45)', borderRadius: 'var(--r-inner)',
+                                  padding: '0 3px', lineHeight: `${String(ROW)}px` }) }}>
+      {chosen >= 0 ? String(chosen + 1) : '–'} / {n}
+    </span>
+  )
 
   return (
     <>
@@ -218,8 +288,13 @@ export function Slot({ clip }: SlotProps) {
         </div>
       )}
 
-      {!running && (showRender || showContinue) && (
+      {!running && (showRender || showContinue || lay.stepper === 'split') && (
         <div className="et-slot-acts" data-slot={slotId} onPointerDown={stopPress} style={row('top')}>
+          {lay.stepper === 'split' && (
+            <div className="film-nav et-slot-nav" data-split="1" style={{ margin: 0, opacity: 1, gap: 1 }}>
+              {prev}{next}
+            </div>
+          )}
           {showRender && <button type="button" data-act="render" style={btn}
                   title={hasProse
                     ? 'Render the prompt into this slot — the take it has stays one ‹ away'
@@ -234,23 +309,17 @@ export function Slot({ clip }: SlotProps) {
         </div>
       )}
 
-      <div className="et-slot" data-slot={slotId} onPointerDown={stopPress} style={row('bottom')}>
-        {showStepper && !running && (
+      {/* With the stepper split, the bottom row is only a readout, and it lets
+          every press through to the sound strip under it. */}
+      <div className="et-slot" data-slot={slotId} onPointerDown={stopPress}
+           style={{ ...row('bottom'), ...(lay.stepper === 'split' && !running && { pointerEvents: 'none' }) }}>
+        {lay.stepper === 'bottom' && !running && (
           <div className="film-nav et-slot-nav" style={{ margin: 0, opacity: 1, gap: 1 }}>
-            <button type="button" className="ico" data-act="prev" style={btn}
-                    title="The take before this one — one undo"
-                    aria-label="Previous take"
-                    disabled={chosen <= 0}
-                    onClick={() => void chooseTake(slotId, chosen - 1)}>‹</button>
-            <span className="count" style={{ minWidth: 0, fontSize: 10, padding: '0 1px' }}>
-              {chosen >= 0 ? String(chosen + 1) : '–'} / {n}
-            </span>
-            <button type="button" className="ico" data-act="next" style={btn}
-                    title="The take after this one — one undo"
-                    aria-label="Next take"
-                    disabled={chosen >= n - 1}
-                    onClick={() => void chooseTake(slotId, chosen + 1)}>›</button>
+            {prev}{count(false)}{next}
           </div>
+        )}
+        {lay.stepper === 'split' && !running && (
+          <div className="film-nav et-slot-nav" data-readout="1" style={{ margin: 0, opacity: 1 }}>{count(true)}</div>
         )}
 
         {running && (

@@ -1,13 +1,12 @@
 import type { CSSProperties, PointerEvent } from 'react'
 import type { AnyClip, IProject, ITrack } from '@openvideo/core'
 
-import { PX_PER_SEC } from '../scene/Timeline'
 import { useStore } from '../store'
 import { renderSlot } from '../video/useVideo'
 import { useContinueCut, type Cut } from './continue'
-import { sec } from './engine'
 import { slotOf } from './project'
-import { chosenTake, useSlotRuns } from './slots'
+import { slotLayout, slotRoom } from './Slot'
+import { chosenTake, slotView, useSlotRuns } from './slots'
 import {
   rootOf, slotLabel, staleSentence, staleSlots, type ConditionedTake, type Staleness,
 } from './stale'
@@ -129,14 +128,10 @@ function offerNote(project: IProject | null, slotId: string, stale: ReadonlyMap<
 
 const ROW = 14
 const INSET = 'calc(var(--et-trim, 8px) + 2px)'
-/** What `Slot`'s ↻ and → take at the top row's right end, px. */
-const SLOT_ACTS = 2 * (ROW + 2) + 4
 /** The button's width at 9px, px — "stale" and its padding. */
 const CHIP = 30
 
 const stopPress = (e: PointerEvent<HTMLElement>): void => { e.stopPropagation() }
-
-const handle = (): number => (window.matchMedia('(hover:none)').matches ? 14 : 8)
 
 const edge: CSSProperties = {
   position: 'absolute', inset: 0, borderRadius: 'var(--r-inner)', pointerEvents: 'none',
@@ -156,16 +151,19 @@ export function StaleMark({ clip, track }: StaleProps) {
   const stale = useStale()
   const project = useEdit((s) => s.project)
   const running = useSlotRuns((s) => (slotId ? !!s[slotId]?.running : false))
+  const takes = useStore((s) => s.takes)
   const why = slotId ? stale.get(slotId) : undefined
   if (!slotId || !why) return null
 
   const sentence = staleSentence(project, why)
   const offer = offerNote(project, slotId, stale)
   const onV1 = !isInsertTrack(track, slotId)
-  const room = sec(clip.timing.display.to - clip.timing.display.from) * PX_PER_SEC - 2 * (handle() + 2)
-  // On V1 the button shares the top row with ↻ →; on an insert it has the
-  // bottom-left to itself, beside the ‹ n/N › that sits at the right.
-  const fits = room >= CHIP + (onV1 ? SLOT_ACTS : 0) + 4
+  const room = slotRoom(clip)
+  // On V1 the button shares the top row with what `Slot` puts there (↻ →,
+  // and ‹ n/N › on a clip too short to keep it off the sound strip); on an
+  // insert it has the bottom-left to itself, beside the ‹ n/N › at the right.
+  const top = onV1 ? slotLayout(room, slotView(takes, slotId, project).takes.length).top : 0
+  const fits = room >= CHIP + top + 4
 
   return (
     <span className="et-stale" data-slot={slotId} data-because={why.because} data-reason={why.reason}
