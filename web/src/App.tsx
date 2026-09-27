@@ -14,6 +14,7 @@ import { useSaveState } from './edit/persist'
 import { fullScreenStage, stageIsFullScreen } from './edit/Stage'
 import { toggle as toggleCut } from './edit/useEdit'
 import { Tracks } from './edit/Tracks'
+import { PendingSlots } from './scene/Timeline'
 import { UndoBar } from './edit/UndoBar'
 import { videoReady } from './console/resolve'
 import { ErrorNote } from './ui/ErrorNote'
@@ -727,6 +728,7 @@ function EditSurface({ onExported }: { onExported: (it: GalleryItem) => void }) 
       <ErrorNote err={saveError} />
       {hasTime && <Tracks tools={<><UndoBar /><Export onLanded={onExported} /></>}
                           clipOverlay={(c, t) => <><Slot clip={c} track={t} /><StaleMark clip={c} track={t} /><TitleEdit clip={c} /></>}
+                          laneOverlay={(t) => <PendingSlots track={t} />}
                           after={<DropZone />} />}
     </section>
   )
