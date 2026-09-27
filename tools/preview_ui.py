@@ -395,6 +395,10 @@ _VIDEO = pull(VIDEO)["VIDEO_MODELS"]
 for _m in STATE["video_models"]:
     _m["supports"] = dict(_VIDEO[_m["key"]]["supports"])
 
+# Pulled for the same reason: a stub that kept its own re-anchor interval would
+# preview a chain that re-anchors at a take the deployment would not.
+STATE["h3mc_reanchor_takes"] = pull({"H3MC_REANCHOR_TAKES"})["H3MC_REANCHOR_TAKES"]
+
 
 # Which Drive outcome the next poll reports. Mutable module state, like
 # DATASETS above and for the same reason: this flow is judged by what the card

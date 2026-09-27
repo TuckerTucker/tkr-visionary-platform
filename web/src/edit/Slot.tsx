@@ -1,12 +1,14 @@
 import type { CSSProperties, PointerEvent } from 'react'
 import type { AnyClip, ITrack } from '@openvideo/core'
 
+import { shotsOf, type TakeShot } from '../scene/model'
 import { PX_PER_SEC } from '../scene/Timeline'
 import { useStore } from '../store'
 import { continueSlot, renderSlot, stopSlot } from '../video/useVideo'
 import { outPointOf, secs, snapNote, useSourceCut, useTakeCut, type Cut } from './continue'
+import { sourceUs } from './cuts'
 import { sec } from './engine'
-import { slotOf } from './project'
+import { slotOf, takeOf } from './project'
 import { clearSlotRun, slotView, useSlotRuns } from './slots'
 import { chooseTake, useEdit } from './useEdit'
 
@@ -106,6 +108,36 @@ const sourceNote = (cut: Cut): string =>
   + 'latent is cut on a 17-frame grid, and without the move those frames would play twice '
   + 'across the join. Undo puts both back.'
 
+/**
+ * Where the `[Shot N]` cuts inside this take fall on the clip, in px from its
+ * left edge — the shots it was rendered from, recorded on the take.
+ *
+ * **Scaled to the file, not taken as seconds.** The document spans each shot
+ * at `beats / total * seconds` (`_compile_h3_scene`), and the file that comes
+ * back is the frames the model could decode — snapped to its 17-frame grid,
+ * capped at one generation — so the recorded seconds are a proportion of what
+ * was delivered, and that is how they are placed. Then through the trim and
+ * the rate, so a cut the trim took off is not drawn and one it kept stays
+ * under the frame it is on.
+ */
+function shotMarks(shots: readonly TakeShot[], clip: AnyClip): { n: number; x: number }[] {
+  const total = shots.reduce((n, s) => n + s.beats, 0)
+  if (shots.length < 2 || total <= 0) return []
+  const t = clip.timing
+  const source = sec(sourceUs(clip))
+  const from = sec(t.trim?.from ?? 0)
+  const rate = t.playbackRate && t.playbackRate > 0 ? t.playbackRate : 1
+  const width = sec(t.display.to - t.display.from)
+  const out: { n: number; x: number }[] = []
+  let run = 0
+  shots.slice(0, -1).forEach((s, i) => {
+    run += s.beats
+    const at = ((run / total) * source - from) / rate
+    if (at > 0 && at < width) out.push({ n: i + 2, x: at * PX_PER_SEC })
+  })
+  return out
+}
+
 /** The trim handle's width here, px — tracks.css widens it where there is no
  *  hover, and the room left for the rows is what is between the two. */
 const handle = (): number => (window.matchMedia('(hover:none)').matches ? 14 : 8)
@@ -125,6 +157,12 @@ export function Slot({ clip }: SlotProps) {
 
   const { takes: list, chosen } = slotView(takes, slotId, project)
   const n = list.length
+  // A slot is one generation and holds the shots rendered in it: H3 makes the
+  // cuts between them inside one take, so they are drawn inside the clip
+  // rather than as clips of their own. A take that recorded none (rendered
+  // before takes kept them, or one shot) draws none rather than guessing.
+  const recorded = shotsOf(takeOf(clip, takes))
+  const shotCuts = recorded ? shotMarks(recorded, clip) : []
 
   // A clip trimmed very short cannot carry every control, and a row that
   // overflows pushes its last control under the out handle. What goes first
@@ -150,6 +188,17 @@ export function Slot({ clip }: SlotProps) {
 
   return (
     <>
+      {shotCuts.length > 0 && (
+        <div className="et-shots" data-shots={recorded?.length} aria-hidden="true"
+             style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {shotCuts.map((c) => (
+            <span key={c.n} className="et-shot-cut" data-shot={c.n}
+                  style={{ position: 'absolute', top: ROW + 2, bottom: ROW + 2, left: c.x, width: 1,
+                           background: 'var(--line-2)' }} />
+          ))}
+        </div>
+      )}
+
       {running && (
         <span aria-hidden="true" style={{
           position: 'absolute', left: 0, bottom: 0, height: 2, pointerEvents: 'none',

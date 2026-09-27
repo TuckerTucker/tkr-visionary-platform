@@ -5,6 +5,7 @@ import { moveClause } from '../console/moveClause'
 import { growRows } from '../console/fieldMax'
 import { resolveVid } from '../console/resolve'
 import { supports, useStore } from '../store'
+import { useEdit } from '../edit/useEdit'
 import { MentionMenu, complete, mentionAt, type Mention } from './Mentions'
 import { Timeline } from './Timeline'
 import { handleOf, times, type Shot } from './model'
@@ -44,6 +45,7 @@ export function Shots({ consoleEl, hide, onSubmit }: {
   // zero; nothing is shown at that point anyway.
   const secs = Number(resolveVid(s).seconds) || 1
   const cuts = times(shots, secs)
+  const edited = useEdit((e) => e.project !== null)
 
   useLayoutEffect(() => {
     growRows(box.current, consoleEl.current)
@@ -57,9 +59,18 @@ export function Shots({ consoleEl, hide, onSubmit }: {
   const sel = shots.find((x) => x.id === s.shotSel) ?? shots[0]
   const at = sel ? shots.indexOf(sel) : 0
 
+  // **One timeline on screen.** Once the scene has a take and the edit
+  // timeline has an arrangement to draw, the shots are drawn there — as the
+  // pending slots after V1 (`PendingSlots`) — and this track would be the same
+  // film drawn a second time at the same scale. Until then it is the only
+  // place time exists. Keyed on the arrangement rather than on the takes
+  // alone, so an editor that is still opening, or failed to, never leaves the
+  // shots with nowhere to be pulled.
+  const editing = useStore((st) => st.takes.length > 0) && edited
+
   return (
     <div className={`tline${hide ? ' hide' : ''}`} ref={box}>
-      <Timeline />
+      {!editing && <Timeline />}
       {sel && (
         <Row key={sel.id} shot={sel} n={at} at={cuts[at]?.[0] ?? 0}
              onSubmit={onSubmit} />
