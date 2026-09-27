@@ -6,7 +6,10 @@ import type { JobStatus } from '../api/types'
 import type { GalleryItem } from '../gallery/types'
 import { readVidChips, stripLoras } from '../lora/tokens'
 import { readShot, useStore, type SceneTake, type Store } from '../store'
-import { readScene, sceneSeconds, typedProse } from '../scene/model'
+import {
+  chainLength, readScene, reanchorDue, sceneSeconds, shotSecs, shotsOf, splitScene, takeShots,
+  typedProse, type Scene, type Shot,
+} from '../scene/model'
 import { resolveVid } from '../console/resolve'
 import { mintSlotId } from '../edit/project'
 import {
@@ -14,7 +17,9 @@ import {
   slotPlaying, takeLanding, useSlotRuns, type SlotTake, type SlotTarget,
 } from '../edit/slots'
 import { useEdit } from '../edit/useEdit'
-import { arm, continueAtBody, noteCut, outPointOf, snapNote, type Cut } from '../edit/continue'
+import {
+  arm, continueAtBody, continueAtFor, noteCut, outPointOf, snapNote, type Cut,
+} from '../edit/continue'
 import { insertStore } from '../edit/inherit'
 import { insertCondition } from '../edit/stale'
 import { frameAt } from './lastFrame'
@@ -57,6 +62,11 @@ export type VideoRun = {
   error: string | ApiError | null
   meta: string[]
 }
+
+/** What a Generate sent, kept for when its take lands: the sentence, the
+ *  shots left for the next generation, the composer's shots as they were (to
+ *  tell whether anybody has written since), and the take's record. */
+type Sent = { line: string; later: Shot[]; shots: Shot[]; record: TakeRecord }
 
 const IDLE: VideoRun = {
   running: false, jobId: null, file: null, runId: null, percent: 0, phase: '',
@@ -171,6 +181,47 @@ function poll(runId: string, ends: Ends): void {
   }, 400)
 }
 
+/** What a run knows when it starts that its status will not say, written on
+ *  the take when it lands. Every field is optional because most runs have
+ *  only some of them, and a field nobody set is left off rather than written
+ *  empty (a sidecar reader keeps what it does not model). */
+type TakeRecord = Pick<SlotTake, 'shots' | 'from' | 'reanchored' | 'conditionedOn'>
+
+/** The first generation of `scene` and the shots left after it — what a
+ *  render sends and what the next one is for. See `splitScene`. */
+function firstGeneration(scene: Scene, menu: string): { now: Scene; later: Shot[]; record: TakeRecord } {
+  const { now, later } = splitScene(scene, shotSecs(scene, Number(menu)))
+  return { now, later, record: { shots: takeShots(now, shotSecs(now, Number(menu))) } }
+}
+
+/** How often a chain re-anchors — served, so the page and the constant never
+ *  disagree; 3 from a deployment that predates the field. */
+const reanchorEvery = (s: Pick<Store, 'state'>): number => s.state?.h3mc_reanchor_takes ?? 3
+
+/**
+ * Whether a continuation of `from` opens from references instead of motion.
+ *
+ * **Every `H3MC_REANCHOR_TAKES`-th continuation re-anchors.** The motion
+ * latent is a photocopy of the take before it, and the pack's README says the
+ * losses compound down a chain with the sound dulling first — so a chain left
+ * to run is a slow fade to mud that no single join shows. The re-anchored take
+ * still opens on the frame at the source's out-point, so the picture joins;
+ * what it gives up is the pinned motion and audio, for one take, in exchange
+ * for the cast's references at full strength again.
+ */
+export function reanchors(s: Pick<Store, 'takes' | 'state'>, from: string | null): boolean {
+  return !!from && reanchorDue(chainLength(s.takes, from), reanchorEvery(s))
+}
+
+/** The sentence a re-anchoring take is explained by, on the Motion tile while
+ *  it is armed and on the meta line once it has landed. */
+export function reanchorNote(s: Pick<Store, 'state'>): string {
+  const n = reanchorEvery(s)
+  return `Re-anchors: after ${String(n)} continuation${n === 1 ? '' : 's'} on the motion latent, this take `
+    + "opens from the cast's references and the frame at the out-point instead — quality compounds "
+    + 'down a chain, and the sound dulls first (the continuation pack’s README).'
+}
+
 /** The page's own landing handler — the gallery's `record` and the regions
  *  going back off the picture. Set by the `useVideo` the page mounts, so a take
  *  a slot rendered reaches the gallery exactly as one the canvas rendered. */
@@ -188,10 +239,12 @@ let pageLanded: ((it: GalleryItem) => void) | null = null
  * — a field the record did not carry is left off rather than written as a guess.
  *
  * `slot` is the slot the take was rendered for, written on the take itself —
- * the record of which takes a slot has had (see `edit/slots.ts`).
+ * the record of which takes a slot has had (see `edit/slots.ts`). `record` is
+ * what the run knew when it started and the status does not say: the shots it
+ * was rendered from, and the take it was made from.
  */
 function landTake(
-  st: JobStatus, jobId: string, line: string, slot: string | null, conditionedOn: string | null = null,
+  st: JobStatus, jobId: string, line: string, slot: string | null, record: TakeRecord = {},
 ): string | null {
   const file = (st.files as string[] | undefined)?.[0] ?? null
   if (!file) return null
@@ -207,7 +260,7 @@ function landTake(
     jobId, file, line,
     ...num('width'), ...num('height'), ...num('seconds'), ...num('frames'), ...num('fps'),
     ...(slot && { slot }),
-    ...(conditionedOn && { conditionedOn }),
+    ...record,
   }
   useStore.getState().addTake(take)
   return file
@@ -274,10 +327,11 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
     return () => { if (pageLanded === onLanded) pageLanded = null }
   }, [onLanded])
 
-  const finish = useCallback((st: JobStatus, jobId: string, conditionedOn: string | null) => {
+  const finish = useCallback((st: JobStatus, jobId: string, sent: Sent) => {
     const file = (st.files as string[] | undefined)?.[0] ?? null
     noteCut(jobId, {}, st)
     const meta = [
+      sent.record.reanchored ? reanchorNote(useStore.getState()) : '',
       cutLine(st),
       st.width ? `${String(st.width)}×${String(st.height)}` : '',
       st.seconds ? `${String(st.seconds)}s · ${String(st.frames)} frames · ${String(st.fps)} fps` : '',
@@ -290,20 +344,53 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
       ...p, running: false, jobId, file, runId: null, percent: 100, phase: '',
       error: null, meta,
     }))
-    landTake(st, jobId, typedProse(useStore.getState().scene), peekLanding(jobId)?.slotId ?? null,
-             conditionedOn)
+    const slot = peekLanding(jobId)?.slotId ?? null
+    // The sentence that was sent, not the composer's now: it may have moved on
+    // to the next beat during the minutes this rendered.
+    if (!landTake(st, jobId, sent.line, slot, sent.record) || !file || !sent.later.length) return
+    // **The rest of the scene is the next Generate, and nothing renders on its
+    // own.** Continue is armed from the take that just landed and the composer
+    // holds the shots still to render, so the pending slots after V1 are the
+    // remainder and one press renders the next generation as a continuation.
+    // Only when the composer is still what was sent: a sentence somebody wrote
+    // while this rendered is theirs, and arming clears the prose.
+    if (useStore.getState().scene.shots !== sent.shots) return
+    void (async () => {
+      setLinking(true)
+      await armContinue({ jobId, file }, null, slot)
+      setLinking(false)
+      useStore.getState().setLaterShots(sent.later)
+    })()
   }, [])
 
   const start = useCallback(async () => {
     const s = useStore.getState()
     if (!stripLoras(typedProse(s.scene))) return
+    // **One generation per render.** The whole scene used to go with its
+    // seconds summed, the server clamped the frames to one generation, and the
+    // document's `[Shot N]` cut times ran past the end of the clip it made —
+    // shots that were asked for and silently never rendered.
+    const { now, later, record } = firstGeneration(s.scene, s.vid.seconds)
+    const from = s.continueFrom
+    const reanchor = reanchors(s, from)
+    const sent: Sent = {
+      line: typedProse(now), later, shots: s.scene.shots,
+      record: {
+        ...record,
+        ...(from && { from, conditionedOn: from }),
+        ...(reanchor && { reanchored: true }),
+      },
+    }
     // Keep the last clip on screen and overlay a progress state on it — see `jobId`
     // above. A cold first run has nothing to keep and shows the full placeholder.
     setRun((p) => ({
       ...p, running: true, runId: null, percent: 0, phase: 'Queued…', error: null,
     }))
     const target = generateTarget(s)
-    const body = videoBody(s)
+    // Re-anchoring is a continuation without the latent: `continue_from` and
+    // `continue_at` go, and the frame Continue read at the out-point — kept as
+    // the first frame all along — is what it opens on, beside the references.
+    const body = videoBody({ ...s, scene: now, ...(reanchor && { continueFrom: null }) })
     const r = await video(body)
     if (failed(r)) {
       // The last clip stays: a request that never started should not blank what you
@@ -322,7 +409,7 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
       progress: (percent, phase) => setRun((p) => ({ ...p, running: true, percent, phase })),
       // The take it continued, as sent — the status does not name it, and
       // staleness (edit/stale.ts) walks it.
-      completed: (st) => finish(st, runId, s.continueFrom),
+      completed: (st) => finish(st, runId, sent),
       // See `useGenerate` for why the bare fallback went. The advice differs on
       // this side because the failures do: a clip is the run that dies on card
       // memory, and duration is the one lever in the strip that changes how much
@@ -423,6 +510,41 @@ function slotBody(s: Store, line: string | null): Record<string, unknown> {
 }
 
 /**
+ * A slot's take made again *as a continuation*, in its own slot: the take it
+ * continues (by job id) and the take being made again — whose sentence and
+ * length it keeps, because it is the same beat, from a source that changed.
+ */
+export type SlotContinuation = { continueFrom: string; take: SlotTake }
+
+/**
+ * The body of a continuation rendered into its own slot — the stale offer's.
+ *
+ * The composer is not read: what is being made is `take` again, so its
+ * sentence is the prompt and its recorded length is the length. The
+ * continuation is this render's own, not the one armed for Generate, so its
+ * out-point is read off the source's clip now, exactly as Generate reads it.
+ * Re-anchoring applies as it does to Generate: when due, no latent, and the
+ * frame at the source's out-point (`frame`) is the first frame.
+ */
+function continuationBody(
+  s: Store, cont: SlotContinuation, reanchor: boolean, frame: string | null,
+): Record<string, unknown> {
+  const base = videoBody({
+    ...s,
+    continueFrom: reanchor ? null : cont.continueFrom,
+    keyframe: { first: reanchor ? frame : null, last: null },
+  })
+  const recorded = shotsOf(cont.take)
+  const seconds = recorded ? recorded.reduce((n, x) => n + x.beats, 0) : cont.take.seconds
+  const body: Record<string, unknown> = {
+    ...base, prompt: stripLoras(cont.take.line), ...(seconds && { seconds }),
+  }
+  delete body.scene
+  delete body.prompt_compiled
+  return body
+}
+
+/**
  * Render a slot again — slot.render's first half. Starts an ordinary
  * `/api/video` job, marks the slot as rendering (page state, not an edit), and
  * aims the take at the slot, where `edit/useEdit` puts it with one command
@@ -432,14 +554,25 @@ function slotBody(s: Store, line: string | null): Record<string, unknown> {
  * One render per slot at a time: a second press while one runs does nothing,
  * because two takes racing into one clip would land in whichever order the GPU
  * finished and the person would not know which one they were looking at.
+ *
+ * A composer longer than one generation renders its first generation here,
+ * for the reason Generate does: a slot is one generation, and the rest would be
+ * cut times past the end of the clip.
+ *
+ * With `cont` it renders `cont.take` again continued from `cont.continueFrom`,
+ * *into this slot* — the stale offer for a continuation. It lands through the
+ * same `slot.render` swap, so one undo puts the stale take back; before, the
+ * offer armed Continue and Generate landed a second slot beside the stale one.
  */
-export async function renderSlot(slotId: string): Promise<void> {
+export async function renderSlot(slotId: string, cont: SlotContinuation | null = null): Promise<void> {
   if (useSlotRuns.getState()[slotId]?.running) return
   const s = useStore.getState()
-  const current = chosenTake(s.takes, slotId, useEdit.getState().project)
+  const project = useEdit.getState().project
+  const current = chosenTake(s.takes, slotId, project)
   const typed = typedProse(s.scene)
-  const line = stripLoras(typed) ? typed : (current?.line ?? '')
-  if (!stripLoras(line)) {
+  const own = !cont && !!stripLoras(typed)
+  const said = cont ? cont.take.line : own ? typed : (current?.line ?? '')
+  if (!stripLoras(said)) {
     setSlotRun(slotId, {
       running: false, runId: null, phase: '',
       error: 'Nothing to render: this slot has no sentence and the prompt is empty. '
@@ -450,15 +583,45 @@ export async function renderSlot(slotId: string): Promise<void> {
   setSlotRun(slotId, { running: true, runId: null, percent: 0, phase: 'Queued…', error: null })
   // An insert renders with what it inherited, not the scene's cast as it
   // stands now — see `edit/inherit.ts`. Null for every other slot.
-  const ins = await insertStore(slotId, s, stripLoras(typed) ? null : line)
+  const ins = cont ? null : await insertStore(slotId, s, own ? null : said)
   if (ins && failed(ins)) {
     setSlotRun(slotId, { running: false, runId: null, phase: '', error: ins })
     return
   }
-  // The V1 take an insert opens on the frame of, read as the render starts —
-  // what the landed take was made from (edit/stale.ts).
-  const conditionedOn = ins ? insertCondition(useEdit.getState().project, slotId) : null
-  const r = await video(ins ? slotBody(ins.store, null) : slotBody(s, stripLoras(typed) ? null : line))
+  let line = said
+  let body: Record<string, unknown>
+  let record: TakeRecord
+  if (cont) {
+    const reanchor = reanchors(s, cont.continueFrom)
+    let frame: string | null = null
+    if (reanchor) {
+      setSlotRun(slotId, { phase: 'Reading the frame at the cut…' })
+      const src = s.takes.find((t) => t.jobId === cont.continueFrom)
+      const at = continueAtFor(cont.continueFrom, project)
+      frame = src ? await frameAt(fileUrl(src.jobId, src.file), at ?? Infinity) : null
+    }
+    body = continuationBody(s, cont, reanchor, frame)
+    const shots = shotsOf(cont.take)
+    record = {
+      from: cont.continueFrom, conditionedOn: cont.continueFrom,
+      ...(reanchor && { reanchored: true }), ...(shots && { shots }),
+    }
+  } else if (ins || own) {
+    const from = ins ? ins.store : s
+    const { now, record: rec } = firstGeneration(from.scene, from.vid.seconds)
+    body = slotBody({ ...from, scene: now }, null)
+    line = ins ? said : typedProse(now)
+    // The V1 take an insert opens on the frame of, read as the render starts —
+    // what the landed take was made from (edit/stale.ts).
+    const on = ins ? insertCondition(project, slotId) : null
+    record = { ...rec, ...(on && { conditionedOn: on }) }
+  } else {
+    body = slotBody(s, said)
+    // That take again: its recorded shots are what this render asks for.
+    const shots = current ? shotsOf(current) : null
+    record = shots ? { shots } : {}
+  }
+  const r = await video(body)
   if (failed(r)) {
     // Verbatim, on the slot: the route's refusal is the sentence that says
     // what to change, and a paraphrase of it is one fact short.
@@ -466,15 +629,19 @@ export async function renderSlot(slotId: string): Promise<void> {
     return
   }
   const runId = r.job_id
+  // A continuation's snap, filed against its source so the landing moves the
+  // source's out-point to meet it — the same record Generate's makes.
+  noteCut(runId, body, r as Record<string, unknown>)
   expectLanding(runId, { kind: 'render', slotId })
   setSlotRun(slotId, { runId })
   poll(runId, {
     progress: (percent, phase) => setSlotRun(slotId, { running: true, percent, phase }),
     completed: (st) => {
+      noteCut(runId, {}, st)
       // Still running as far as the slot is concerned: the file has to be read
       // before it can replace anything. `useEdit` clears this when it lands.
       setSlotRun(slotId, { running: true, runId: null, percent: 100, phase: 'Placing the take…' })
-      if (!landTake(st, runId, line, slotId, conditionedOn)) {
+      if (!landTake(st, runId, line, slotId, record)) {
         takeLanding(runId)
         setSlotRun(slotId, {
           running: false, phase: '',

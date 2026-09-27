@@ -165,6 +165,12 @@ export type AppState = {
   max_ref_videos: number
   max_ref_audios: number
   max_regions: number
+  /** Every this-many continuations the next one opens from the cast's
+   *  references and the source's frame instead of its latent
+   *  (`H3MC_REANCHOR_TAKES`): quality compounds down a chain, audio first.
+   *  Optional because a deployment older than the field serves none, and the
+   *  page then uses the same 3 rather than never re-anchoring. */
+  h3mc_reanchor_takes?: number
   samplers: string[]
   schedulers: string[]
   image_defaults: { sampler: string; scheduler: string }

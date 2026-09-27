@@ -8,6 +8,7 @@ import { dataUrl, shrinkB64, toB64 } from '../media/files'
 import { supports, useStore } from '../store'
 import { useEdit } from '../edit/useEdit'
 import { continueAtFor, cutFor, secs, snapNote, useContinueCut } from '../edit/continue'
+import { reanchorNote, reanchors } from './useVideo'
 
 /**
  * Every picture the model can be given, in one row — and the two halves dim each
@@ -87,6 +88,10 @@ export function SourceRow() {
   }
 
   const motion = !!s.continueFrom
+  // Said on the tile before Generate rather than discovered in the meta line
+  // after: a take that opens without the latent sounds different at the join,
+  // and a difference nobody was told about reads as a fault.
+  const reanchor = motion && reanchors(s, s.continueFrom)
   // The out-point, live: a trim nudged after Continue moves what Generate will
   // send, so the tile reads the clip rather than what Continue captured. The
   // project is subscribed to for exactly that — `continueAtFor` reads it.
@@ -117,18 +122,21 @@ export function SourceRow() {
       {motion && (
         <button type="button" className="drop mini set motion" id="v-motion"
                 data-at={at ?? undefined} data-snap={cut?.snap ?? undefined}
-                title={(at === null
+                data-reanchor={reanchor ? '1' : undefined}
+                title={reanchor ? `${reanchorNote(s)} Take ${s.continueFrom ?? ''}. Click to open on its `
+                    + `${at === null ? 'last frame' : 'frame at the out-point'} without continuing the chain.`
+                  : ((at === null
                   ? `Motion and audio continue from the end of take ${s.continueFrom ?? ''}.`
                   : cut
                     ? `${snapNote(cut)} Take ${s.continueFrom ?? ''}.`
                     : `Motion and audio continue from the cut at ${secs(at)} of take `
                       + `${s.continueFrom ?? ''}; the server snaps it back onto the motion `
                       + 'latent’s 17-frame grid and says how far when you Generate.')
-                  + ` Click to fall back to its ${at === null ? 'last frame' : 'frame at the out-point'}.`}
+                  + ` Click to fall back to its ${at === null ? 'last frame' : 'frame at the out-point'}.`)}
                 onClick={() => s.setContinueFrom(null)}>
           <span className="lead" id="v-motion-at">
-            {at === null ? 'Motion' : `Motion · ${secs(cut?.continuedAt ?? at)}`}
-            {cut && cut.snap > 0 ? ` (−${secs(cut.snap)})` : ''}
+            {reanchor ? 'Re-anchor' : at === null ? 'Motion' : `Motion · ${secs(cut?.continuedAt ?? at)}`}
+            {!reanchor && cut && cut.snap > 0 ? ` (−${secs(cut.snap)})` : ''}
           </span>
         </button>
       )}

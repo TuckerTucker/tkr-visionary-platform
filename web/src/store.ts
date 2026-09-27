@@ -37,7 +37,7 @@ import type { AppState, ShotGroup, ShotItem, ShotPill, VideoModel } from './api/
 import type { LoraChip } from './lora/tokens'
 import {
   emptyScene, handleOf, newMember, newShot, rename,
-  type CastKind, type CastMember, type PoolFile, type Scene, type Shot,
+  type CastKind, type CastMember, type PoolFile, type Scene, type Shot, type TakeShot,
 } from './scene/model'
 
 export type Kind = 'image' | 'video'
@@ -205,6 +205,19 @@ export type SceneTake = {
   seconds?: number
   frames?: number
   fps?: number
+  /** The shots it was rendered from, each with the seconds it asked for
+   *  (`takeShots`) — how its slot draws the `[Shot N]` cuts inside the clip
+   *  after the composer has moved on to the next beat. Absent on a take from
+   *  before they were kept, whose slot then draws no cuts rather than guessing. */
+  shots?: TakeShot[]
+  /** The job it continued, on every continuation — re-anchored ones too. The
+   *  durable record of a chain: `chainLength` walks it to decide when the next
+   *  continuation re-anchors, and staleness prefers it. A take that did not
+   *  continue has none. */
+  from?: string
+  /** It opened on the cast's references and the source's frame instead of the
+   *  latent (`reanchorDue`), so a chain counted back from here stops at it. */
+  reanchored?: boolean
 }
 
 /** Everything that is per-kind and lives at the root while its kind is showing.
@@ -493,6 +506,12 @@ export type Store = {
    *  volume about work the page watched finish — see `useVideo.finish`. */
   addTake: (t: SceneTake) => void
   setContinueFrom: (jobId: string | null) => void
+  /**
+   * The composer's shots, replaced by what is left of the scene after a
+   * generation rendered (`splitScene`'s `later`). The cast, the look and the
+   * pool stay: they belong to the scene, and the rest of it is the same people.
+   */
+  setLaterShots: (shots: Shot[]) => void
   /** Start over. The cast stays: it belongs to the scene, not to a take. */
   clearTakes: () => void
   setScene: (patch: Partial<Scene>) => void
@@ -690,6 +709,9 @@ export const useStore = create<Store>((set, get) => ({
   setContinueFrom: (continueFrom) => set({ continueFrom }),
   addTake: (t) => set((s) => ({ takes: [...s.takes, t] })),
   clearTakes: () => set({ takes: [], continueFrom: null }),
+  setLaterShots: (shots) => set((s) => (shots.length
+    ? { scene: { ...s.scene, shots }, shotSel: shots[0]!.id }
+    : {})),
   setDocOpen: (docOpen) => set({ docOpen }),
   setDoc: (doc) => set({ doc }),
   setScene: (patch) => set((s) => ({ scene: { ...s.scene, ...patch } })),

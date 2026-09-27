@@ -10,8 +10,9 @@
  * and by then it may be in an export.
  *
  * **The record is on the take, and staleness is arithmetic over it.** A take
- * says which take it was made from (`conditionedOn`, a job id, written when it
- * lands — see `ConditionedTake`); the arrangement says which take each slot
+ * says which take it was made from (`from` on a continuation, `conditionedOn`
+ * on anything made from another take — job ids, written when it lands; see
+ * `ConditionedTake`); the arrangement says which take each slot
  * plays now (the clip's metadata, in the Core). A slot is stale when the slot
  * holding its source take plays a different take. Nothing is written when a
  * slot goes stale, so nothing has to be unwritten: an undo of the re-render, or
@@ -130,11 +131,15 @@ export function conditioningEdges(
   const edges: Edge[] = []
   for (const [slot, job] of playing) {
     const rec = takes.find((t) => t.jobId === job && t.slot === slot) ?? takes.find((t) => t.jobId === job)
-    const onTake = (typeof rec?.conditionedOn === 'string' && rec.conditionedOn) || fallback(job)
+    // `from` first: it is the chain's own record, written on every
+    // continuation (re-anchored ones too), where `conditionedOn` is the
+    // general "made from" that inserts share.
+    const cont = typeof rec?.from === 'string' && rec.from ? rec.from : null
+    const onTake = cont || (typeof rec?.conditionedOn === 'string' && rec.conditionedOn) || fallback(job)
     if (!onTake || onTake === job) continue
     const on = takes.find((t) => t.jobId === onTake && t.slot)?.slot ?? slotPlaying(onTake)
     if (!on || on === slot) continue
-    edges.push({ slot, on, onTake, how: isInsert(project, slot) ? 'frame' : 'continue' })
+    edges.push({ slot, on, onTake, how: !cont && isInsert(project, slot) ? 'frame' : 'continue' })
   }
   return edges
 }

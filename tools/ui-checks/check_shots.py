@@ -27,6 +27,16 @@ What it holds, and the failure each one is for:
 - **Past the cap the shots spill into a second pending slot**, and a shot
   longer than one generation spans several, numbered by part.
 - **Clearing the takes brings the composer's track back.**
+- **One generation per render.** A 4s shot then a 30s shot: Generate sends
+  the first generation alone (the whole scene with its seconds summed was
+  clamped to one generation by the server, and its cut times ran past the
+  clip); when it lands Continue is armed from it and the pending slots are the
+  remainder. Each Generate after that sends the next generation as a
+  continuation of the take before, and nothing renders on its own.
+- **Every third continuation re-anchors** (`h3mc_reanchor_takes`): the Motion
+  tile says so before Generate, and the request carries no `continue_from`
+  and the frame at the out-point as its first frame. Each continued take
+  records `from`, the re-anchored one `reanchored`.
 """
 import json
 import sys
@@ -301,6 +311,74 @@ with sync_playwright() as pw:
     check("with the takes cleared the composer's timeline is back", o["tls"] == 1 and o["rules"] == 1, str(o))
     cut_marks = pg.locator(".tl .tl-cut").count()
     check("and draws the long shot's generation breaks inside its bar", cut_marks == 3, str(cut_marks))
+
+    # ---- one generation per render ------------------------------------------
+    bodies: list[dict] = []
+    pg.on("request", lambda q: bodies.append(q.post_data_json or {})
+          if q.url.endswith("/api/video") and q.method == "POST" else None)
+    every = st.get("h3mc_reanchor_takes") or 3
+    generate(pg, 1)
+    first = bodies[-1] if bodies else {}
+    check("Generate sends the first generation alone: the 4s shot, not 34s",
+          len(bodies) == 1 and first.get("seconds") == 4 and first.get("prompt") == "a man walks into the kitchen",
+          json.dumps({k: first.get(k) for k in ("seconds", "prompt")}))
+    try:
+        pg.wait_for_selector("#v-motion", timeout=10_000)
+        armed = True
+    except Exception:
+        armed = False
+    check("when it lands Continue is armed from it", armed)
+    pg.wait_for_timeout(400)
+    p = pending(pg)
+    parts = [(x["shot"], x["part"], x["parts"]) for g in p for x in g["bars"]]
+    check("the pending slots are the remainder: the 30s shot, in three generations",
+          len(p) == 3 and [x[1:] for x in parts] == [(1, 3), (2, 3), (3, 3)]
+          and len({x[0] for x in parts}) == 1, str(parts))
+    end = pg.evaluate(V1_END)
+    check("and they start where V1 ends", p and abs(p[0]["left"] - end) < 2, f"{p[0]['left'] if p else None} {end}")
+    pg.wait_for_timeout(1500)
+    check("nothing rendered on its own", len(bodies) == 1, str(len(bodies)))
+
+    jobs = [c for c in pg.evaluate(f"() => [...document.querySelectorAll('{V1} .et-clip')].map((c) => c.dataset.job)")]
+    for n, secs in ((2, 14), (3, 14), (4, 2)):
+        tile = pg.locator("#v-motion")
+        due = (n - 1) % every == 0
+        said = tile.get_attribute("data-reanchor") if tile.count() else None
+        if due:
+            check(f"before take {n} the Motion tile says it re-anchors, and why",
+                  said == "1" and "Re-anchor" in (tile.text_content() or "")
+                  and "sound dulls first" in (tile.get_attribute("title") or ""),
+                  f"{said} {tile.text_content() if tile.count() else ''}")
+        generate(pg, n)
+        body = bodies[-1]
+        jobs = pg.evaluate(f"() => [...document.querySelectorAll('{V1} .et-clip')].map((c) => c.dataset.job)")
+        if due:
+            check(f"take {n} re-anchors: no continue_from, the out-point's frame as its first frame, {secs}s",
+                  "continue_from" not in body and "continue_at" not in body
+                  and isinstance(body.get("first_frame"), str) and len(body["first_frame"]) > 100
+                  and body.get("seconds") == secs,
+                  json.dumps({k: (body.get(k) if k != "first_frame" else bool(body.get(k)))
+                              for k in ("continue_from", "first_frame", "seconds")}))
+        else:
+            check(f"take {n} continues take {n - 1}, one generation ({secs}s)",
+                  body.get("continue_from") == (jobs[n - 2] if len(jobs) >= n else None)
+                  and body.get("seconds") == secs and body.get("first_frame") is None,
+                  json.dumps({k: body.get(k) for k in ("continue_from", "seconds")}) + f" {jobs}")
+    check("four takes on V1, one request each", len(jobs) == 4 and len(bodies) == 4, f"{jobs} {len(bodies)}")
+    pg.wait_for_timeout(2500)
+    sid = http("/api/scenes")["scenes"][0]["id"]
+    takes = {t["jobId"]: t for t in (http(f"/api/scenes/{sid}").get("intent") or {}).get("takes") or []}
+    recs = [takes.get(j, {}) for j in jobs]
+    check("each continued take records the take it continued as `from`",
+          [r.get("from") for r in recs] == [None, jobs[0], jobs[1], jobs[2]] if len(jobs) == 4 else False,
+          str([r.get("from") for r in recs]))
+    check("and the re-anchored one says so", [bool(r.get("reanchored")) for r in recs] == [False, False, False, True],
+          str([r.get("reanchored") for r in recs]))
+    check("each take records the shots it was rendered from",
+          [[x.get("beats") for x in r.get("shots") or []] for r in recs] == [[4], [14], [14], [2]],
+          str([[x.get("beats") for x in r.get("shots") or []] for r in recs]))
+    check("no stale marks on a chain nothing was re-rendered in",
+          pg.locator("#edit-tracks .et-stale").count() == 0)
 
     check("no page errors", not errors, "; ".join(errors[:3]))
     b.close()
