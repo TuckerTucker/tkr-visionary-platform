@@ -29,6 +29,7 @@ import type { Command, Core, HistoryEntry } from '@openvideo/core'
 
 import { useStore } from '../store'
 import { SLOT_CONTINUE, SLOT_RENDER, TAKE_CHOOSE } from './commands'
+import { CLIP_DETACH } from './detach'
 import { redo, undo, useEdit } from './useEdit'
 
 export type Chord = 'undo' | 'redo'
@@ -145,11 +146,24 @@ const canRedoNow = (): boolean => (useEdit.getState().core?.store.getState().fut
 
 /* ---- what an entry was, in a word --------------------------------------- */
 
-type Added = { clip?: { type?: string } }
+type Added = { clip?: { type?: string; metadata?: Record<string, unknown> } }
 
 const addsOf = (c: Command): Added[] => {
   if (c.type !== 'clip.add') return []
   return Array.isArray(c.payload) ? (c.payload as Added[]) : [c.payload as Added]
+}
+
+/** What a clip added by a gesture that is not a take landing was put there
+ *  as — read off the metadata each of those gestures writes, so no two of
+ *  them are told apart by clip type alone. An Audio clip is a detached
+ *  soundtrack only when it names the clip it came from (`detach.ts`); music
+ *  dropped on an A track is an Audio clip too, and was once called a detach. */
+function kindAdded(a: Added): 'detach' | 'title' | 'drop' | null {
+  const m = a.clip?.metadata
+  if (a.clip?.type === 'Audio' && typeof m?.linkedTo === 'string') return 'detach'
+  if (m?.title === true) return 'title'
+  if (typeof m?.dropped === 'string') return 'drop'
+  return null
 }
 
 /**
@@ -158,34 +172,51 @@ const addsOf = (c: Command): Added[] => {
  *
  * Single commands carry their own type. A `batch` does not (Core names every
  * batch "batch"), so it is read from what is inside, in the order that
- * separates the gestures `cuts.ts` and `useEdit` actually make:
- * - an Audio clip added is a soundtrack detached from its take;
+ * separates the gestures `cuts.ts`, `drop.ts`, `detach.ts` and `useEdit`
+ * actually make:
+ * - `clip.detach`, or an Audio clip added that names its take in
+ *   `metadata.linkedTo`, is a soundtrack detached;
+ * - a title or a dropped file, each on the new track the batch makes, is that;
  * - a track's clip order restated is a reorder (a reorder may also drop a
  *   crossfade whose clips are no longer neighbours, so this comes first);
  * - a Transition added, or a clip removed without a reorder, is a crossfade
  *   put on or taken off — nothing else removes a clip in one gesture;
  * - another clip added is a take landing on the end of V1;
- * - clip updates alone are a trim, which ripples the clips after it.
+ * - clip updates alone are a trim, which ripples the clips after it — except
+ *   a title's words retyped, which is the title's.
  */
 export function wordFor(command: Command): string | null {
   switch (command.type) {
     case SLOT_RENDER: return 'render'
     case TAKE_CHOOSE: return 'take choice'
     case SLOT_CONTINUE: return 'continue'
-    case 'clip.add': return addsOf(command).some((a) => a.clip?.type === 'Audio') ? 'detach' : 'new take'
-    case 'clip.update': return 'trim'
+    case CLIP_DETACH: return 'detach'
+    case 'clip.add': return addsOf(command).map(kindAdded).find((k) => k) ?? 'new take'
+    case 'clip.update': return retitles(command) ? 'title' : 'trim'
     case 'batch': break
     default: return null
   }
   const inner = Array.isArray(command.payload) ? (command.payload as Command[]) : []
   const types = new Set(inner.map((c) => c.type))
   const added = inner.flatMap(addsOf)
-  if (added.some((a) => a.clip?.type === 'Audio')) return 'detach'
+  if (types.has(CLIP_DETACH)) return 'detach'
+  const kind = added.map(kindAdded).find((k) => k)
+  if (kind) return kind
   if (types.has('track.update')) return 'reorder'
   if (added.some((a) => a.clip?.type === 'Transition') || types.has('clip.remove')) return 'crossfade'
   if (added.length) return 'new take'
   if (types.size && [...types].every((t) => t === 'clip.update')) return 'trim'
   return null
+}
+
+/** Whether a `clip.update` changes a title's words (`drop.ts`'s
+ *  `setTitleText`) — the one update that is not a re-timing. */
+function retitles(c: Command): boolean {
+  const list = Array.isArray(c.payload) ? c.payload : [c.payload]
+  return list.some((u) => {
+    const updates = (u as { updates?: Record<string, unknown> } | null)?.updates
+    return !!updates && typeof updates.text === 'string' && !('timing' in updates)
+  })
 }
 
 /** "Undo trim", or plain "Undo" for an entry with no word. */
