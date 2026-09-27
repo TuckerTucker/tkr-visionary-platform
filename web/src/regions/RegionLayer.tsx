@@ -35,6 +35,12 @@ const CLICK_SLOP = 8
  * deletes the whole class of fault: React owns the placement, and `<Frame>` and the
  * first `.shot` each just include one.
  *
+ * **The boxes belong to the still slot, not to a host.** A still is a zero-duration
+ * scene of one slot, and `store.regions` is that slot's regions — so whichever host
+ * shows the slot draws the same set, and a trip to the video side and back finds
+ * them where they were. A video slot is never a host: `/api/video` takes no regions,
+ * and the stage mounts `StageRegions` instead, which says so.
+ *
  * Every coordinate in here is a percentage, so nothing measures the host. The drag
  * measures this element's own rect, which is the host's content box — `inset: 0` makes
  * those the same box on the frame, and `bottom: var(--acts-h)` is what keeps them the
