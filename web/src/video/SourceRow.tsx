@@ -6,6 +6,8 @@ import { usePopover } from '../ui/Popover'
 import { DropTile } from '../media/DropTile'
 import { dataUrl, shrinkB64, toB64 } from '../media/files'
 import { supports, useStore } from '../store'
+import { useEdit } from '../edit/useEdit'
+import { continueAtFor, cutFor, secs, snapNote, useContinueCut } from '../edit/continue'
 
 /**
  * Every picture the model can be given, in one row — and the two halves dim each
@@ -85,6 +87,19 @@ export function SourceRow() {
   }
 
   const motion = !!s.continueFrom
+  // The out-point, live: a trim nudged after Continue moves what Generate will
+  // send, so the tile reads the clip rather than what Continue captured. The
+  // project is subscribed to for exactly that — `continueAtFor` reads it.
+  useEdit((e) => e.project)
+  const armed = useContinueCut((c) => c.armed)
+  useContinueCut((c) => c.cuts)
+  const at = s.continueFrom ? continueAtFor(s.continueFrom) : null
+  const cut = s.continueFrom && at !== null ? cutFor(s.continueFrom, Number(at.toFixed(3))) : null
+  // The frame tile holds the out-point's frame when Continue read it there and
+  // nobody has replaced it since — the one case the tile has to say so, because
+  // "First frame" over a picture from the middle of a take reads as a mistake.
+  const cutFrame = !motion && armed?.at != null && armed.frame !== null
+    && s.keyframe.first === armed.frame ? armed.at : null
   return (
     <div className="opts" id="v-src-sec">
       {/* **The Motion tile is the lever, and it is visible where every other
@@ -96,13 +111,36 @@ export function SourceRow() {
           apart, none hidden inside the Continue button. Not a DropTile:
           nothing can be dropped on it, because its value is a fact about the
           last take rather than a file. */}
+      {/* Wide enough for its words: `.set` is sized for a thumbnail, and a
+          Motion tile with no picture and its lead hidden was an empty square
+          nobody could read the cut off. */}
       {motion && (
         <button type="button" className="drop mini set" id="v-motion"
-                title={`Motion and audio continue from take ${s.continueFrom ?? ''}.`
-                       + ' Click to fall back to its last frame.'}
+                data-at={at ?? undefined} data-snap={cut?.snap ?? undefined}
+                style={{ width: 'auto', padding: '0 8px' }}
+                title={(at === null
+                  ? `Motion and audio continue from the end of take ${s.continueFrom ?? ''}.`
+                  : cut
+                    ? `${snapNote(cut)} Take ${s.continueFrom ?? ''}.`
+                    : `Motion and audio continue from the cut at ${secs(at)} of take `
+                      + `${s.continueFrom ?? ''}; the server snaps it back onto the motion `
+                      + 'latent’s 17-frame grid and says how far when you Generate.')
+                  + ` Click to fall back to its ${at === null ? 'last frame' : 'frame at the out-point'}.`}
                 onClick={() => s.setContinueFrom(null)}>
           <span className="lead">Motion ›</span>
+          {/* A <b>, not a span: `.drop.mini>span` is pinned to a 16px icon box
+              and `.set>.lead` is hidden, so either would carry nothing. */}
+          <b id="v-motion-at">
+            {at === null ? 'Motion' : `Motion · ${secs(cut?.continuedAt ?? at)}`}
+            {cut && cut.snap > 0 ? ` (−${secs(cut.snap)})` : ''}
+          </b>
         </button>
+      )}
+      {cutFrame !== null && (
+        <b id="v-cut-frame" className="lead"
+           title="Continue read this frame at the trimmed take’s out-point rather than its last frame, so the next take opens on what you kept.">
+          at {secs(cutFrame)}
+        </b>
       )}
       <DropTile id="v-drop-first" label="First frame" value={s.keyframe.first}
                 off={!!n || motion}

@@ -7520,6 +7520,144 @@ def _h3_ctx_name(job_id: str) -> str:
     return f"{_h3_ctx_prefix(job_id)}_{H3MC_SLOT:05d}.safetensors"
 
 
+# ── continuing from an out-point ──────────────────────────────────────────────
+#
+# A take trimmed because its last second went wrong has to continue from the
+# cut, not from that second — and the pack only ever reads the *end* of the
+# latent it loads (`_video_tail_from_latent` / `_audio_tail_from_latent` in its
+# nodes.py). So the out-point is honoured by cutting the saved latent to end
+# there before the load node sees it. Whether that is sound is decided by two
+# facts from the pinned pack, not by taste:
+#
+#   The video latent's steps cover 1, 4, 4, 4, 4 pixel frames, cycling
+#   (FRAME_PER_TOKEN), so 5g+2 steps are the 17g+5 frames `_h3_frames` snaps to.
+#   The pack refuses to slice a context whose first step is not at cycle
+#   position 0, and its windows are 2/7/12/17 steps — so a cut latent has to
+#   end on 5m+2 steps, which is a 17m+5 frame boundary. Anywhere else is a
+#   latent the pack refuses, or worse, one whose steps disagree with the frame
+#   positions it writes for them. The snap is therefore DOWN onto that grid:
+#   the trimmed-away frames are the ones somebody cut because they went wrong,
+#   and snapping up would carry up to half a second of them back in.
+#
+#   The audio latent is 40 Hz and the pack reads it off the end at any step,
+#   checking only that its length is within half a step of 5/3 x the video's
+#   frames (H3 rounds that grid to the nearest step). Cut to exactly that
+#   rounding, the pack's overhang arithmetic is the same as on an uncut take.
+#
+# The load node checks the file for its "video" and "audio" keys and nothing
+# else — no length, no metadata — so a cut file is a file it takes as its own.
+H3_LATENT_CYCLE = 5   # steps per 17 frames: the 1, 4, 4, 4, 4 above
+H3_LATENT_BASE = 2    # steps covering the leading 5 frames (1 + 4)
+H3_AUDIO_HZ = 40      # H3's audio latent rate — 5/3 steps per 24fps frame
+
+
+def _h3_out_point_bounds(delivered_frames: int) -> tuple[float, float]:
+    """
+    The out-points a take can be continued from, in delivered seconds.
+
+    The floor is the context window: the pack pins H3MC_CONTEXT_FRAMES of the
+    source, and an out-point earlier than that asks it to read frames from
+    before the take began. The ceiling is the take's own end.
+    """
+    return H3MC_CONTEXT_FRAMES / H3_FPS, delivered_frames / H3_FPS
+
+
+def _validate_continue_at(raw: Any, *, delivered_frames: int, source: str) -> float:
+    """
+    `continue_at` as seconds into the source's delivered clip, or ValueError
+    naming the bound it broke and the two ways on.
+
+    Half a frame of slack at the top, because the page sends a trim that is
+    frame-snapped in microseconds and a round trip through a float can land a
+    hair past the end of a take that was never trimmed at the tail at all.
+    """
+    try:
+        at = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"continue_at must be seconds, got {raw!r}.") from None
+    if not math.isfinite(at):
+        raise ValueError(f"continue_at must be seconds, got {raw!r}.")
+    lo, hi = _h3_out_point_bounds(delivered_frames)
+    if at < lo:
+        raise ValueError(
+            f"The out-point is at {at:.2f}s, before the {lo:.2f}s of motion the "
+            f"continuation reads back from it — trim {source} to at least "
+            f"{lo:.2f}s, or clear the Motion tile to open on the frame at the "
+            f"out-point instead.")
+    if at > hi + 0.5 / H3_FPS:
+        raise ValueError(
+            f"The out-point is at {at:.2f}s, past the end of {source} "
+            f"({hi:.2f}s long) — the take in the cut is not the take the Motion "
+            f"tile points at. Press Continue again on the take you mean.")
+    return min(at, hi)
+
+
+def _h3_cut_index(continue_at: float, continued_source: bool) -> dict[str, Any]:
+    """
+    Where a saved latent is cut so the pack's context ends at an out-point.
+
+    `continue_at` is seconds into the *delivered* clip. A continued source's
+    saved latent still holds the H3MC_CONTEXT_FRAMES of pinned head its own
+    Trim node removed after decode, so its delivered frame 0 is latent frame
+    22 — the offset every index below carries. Returned:
+
+        frames        saved-latent pixel frames kept (17m+5)
+        video_steps   video latent steps kept (5m+2)
+        audio_steps   40 Hz audio steps kept
+        head          the pinned-head offset applied
+        requested     the out-point asked for, in delivered seconds
+        continued_at  where the context now ends, in delivered seconds
+        snap          seconds the cut moved back to reach the grid (>= 0)
+    """
+    at = float(continue_at)
+    lo = H3MC_CONTEXT_FRAMES / H3_FPS
+    if not math.isfinite(at) or at < lo:
+        raise ValueError(f"An out-point at {at!r}s is before the {lo:.2f}s "
+                         f"context window.")
+    head = H3MC_CONTEXT_FRAMES if continued_source else 0
+    wanted = round(at * H3_FPS) + head
+    frames = wanted - (wanted - H3_FRAME_BASE) % H3_FRAME_STEP
+    steps = (frames - H3_FRAME_BASE) // H3_FRAME_STEP * H3_LATENT_CYCLE + H3_LATENT_BASE
+    continued_at = round((frames - head) / H3_FPS, 3)
+    return {
+        "frames": frames, "video_steps": steps,
+        "audio_steps": round(frames * H3_AUDIO_HZ / H3_FPS),
+        "head": head, "requested": round(at, 3), "continued_at": continued_at,
+        "snap": round(max(0.0, at - continued_at), 3),
+    }
+
+
+def _h3_cut_context(src: Path, dest: Path, cut: dict[str, Any]) -> dict[str, Any]:
+    """
+    Write `src`'s saved AV latent to `dest`, cut to end where `cut` says.
+
+    GPU container only — torch and safetensors are in comfy_image, not in the
+    web image, which is why the arithmetic above is separate and this is the
+    only part that touches a tensor. The cut is never longer than the latent:
+    a source shorter than the index (a take rendered at a clamped length) is
+    kept whole, and what comes back is the cut that was actually made, so the
+    sidecar records what the pack read rather than what was asked for.
+    """
+    from safetensors.torch import load_file, save_file
+
+    data = load_file(str(src))
+    video, audio = data["video"], data["audio"]
+    # Time is the third axis from the end of a [B,C,T,H,W] or an unbatched
+    # [C,T,H,W] video latent, and the last axis of [B,C,2,T] audio — the pack
+    # reads both ranks, so this does too.
+    total = int(video.shape[-3])
+    steps = min(int(cut["video_steps"]), total)
+    frames = (steps - H3_LATENT_BASE) // H3_LATENT_CYCLE * H3_FRAME_STEP + H3_FRAME_BASE
+    a_steps = min(round(frames * H3_AUDIO_HZ / H3_FPS), int(audio.shape[-1]))
+    save_file({"video": video[..., :steps, :, :].contiguous(),
+               "audio": audio[..., :a_steps].contiguous()},
+              str(dest), metadata={"format": "h3_motion_context_av_v1"})
+    continued_at = round((frames - int(cut["head"])) / H3_FPS, 3)
+    return {**cut, "frames": frames, "video_steps": steps, "audio_steps": a_steps,
+            "total_steps": total, "continued_at": continued_at,
+            "snap": round(max(0.0, float(cut["requested"]) - continued_at), 3)}
+
+
 def _h3_canvas(aspect: str, tier: str) -> tuple[int, int]:
     """(width, height) for an aspect ratio at an H3 tier's short edge."""
     if tier not in H3_TIERS:
@@ -10588,6 +10726,7 @@ class VideoGenerator:
         # ceiling comes out shorter rather than refused, which is the right
         # trade for a cap the duration menu already respects.
         continue_from = str(params.get("continue_from") or "") or None
+        cut_at: dict[str, Any] | None = None
         if continue_from:
             src = OUTPUTS / continue_from / H3MC_SIDECAR
             # Diagnose here, on this container, with the three facts that
@@ -10603,7 +10742,41 @@ class VideoGenerator:
                     f"last frame instead.")
             dest = COMFY / "output" / _h3_ctx_name(continue_from)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dest)
+            continue_at = params.get("continue_at")
+            if continue_at is None:
+                shutil.copyfile(src, dest)
+            else:
+                # The source's own sidecar says whether its latent carries a
+                # pinned head, and it was committed in the same breath as the
+                # latent the route just found — so a missing one is a record
+                # gone bad, not a race, and guessing the offset would put the
+                # join 22 frames from where the cut is.
+                src_meta_path = OUTPUTS / continue_from / OUTPUT_META
+                try:
+                    src_meta = json.loads(src_meta_path.read_text())
+                except (OSError, ValueError) as exc:
+                    raise FileNotFoundError(
+                        f"Cannot place the out-point in {continue_from}: its "
+                        f"record {src_meta_path} is unreadable ({exc}), and "
+                        f"whether its latent opens on a pinned head is written "
+                        f"only there. Untrim the take to continue from its "
+                        f"end.") from exc
+                cut = _h3_cut_index(float(continue_at),
+                                    bool(src_meta.get("continued_from")))
+                # The cut file goes exactly where the load node reads, under
+                # the same name — nothing downstream knows it was cut, which
+                # is the point. Container disk, gone with the container.
+                done = _h3_cut_context(src, dest, cut)
+                print(f"[video] {job_id} continues {continue_from} from "
+                      f"{done['requested']:.3f}s (asked); the latent is cut "
+                      f"at {done['continued_at']:.3f}s (snapped back "
+                      f"{done['snap']:.3f}s) because the pack only slices "
+                      f"context that ends on the VAE's 17-frame cycle — "
+                      f"{done['video_steps']}/{done['total_steps']} video "
+                      f"steps, {done['audio_steps']} audio steps kept"
+                      + (f", {done['head']} frames of pinned head counted"
+                         if done["head"] else ""), flush=True)
+                cut_at = done
             frames = _h3_frames(params["seconds"]
                                 + H3MC_CONTEXT_FRAMES / H3_FPS)
         seed = params.get("seed")
@@ -10686,13 +10859,19 @@ class VideoGenerator:
         if continue_from:
             meta["continued_from"] = continue_from
         shown = frames - H3MC_CONTEXT_FRAMES if continue_from else frames
-        return {
-            "graph": graph,
-            "info": {"width": width, "height": height, "frames": shown,
-                     "seconds": round(shown / H3_FPS, 2), "fps": H3_FPS,
-                     "seed": seed, "steps": steps},
-            "meta": meta,
-        }
+        info: dict[str, Any] = {
+            "width": width, "height": height, "frames": shown,
+            "seconds": round(shown / H3_FPS, 2), "fps": H3_FPS,
+            "seed": seed, "steps": steps}
+        # In `info`, not `meta`: info reaches the status the page polls *and*
+        # the sidecar, and the slot is what has to say how far the cut moved —
+        # a snap written only to the record is a join that jumps back half a
+        # second with nothing on screen saying why. (The two dicts are spread
+        # into one sidecar call, so a key in both would be a TypeError.)
+        if cut_at is not None:
+            info["continued_at"] = cut_at["continued_at"]
+            info["continue_snap"] = cut_at["snap"]
+        return {"graph": graph, "info": info, "meta": meta}
 
 
 
@@ -13126,8 +13305,10 @@ def web():
                         f"That take's motion context is no longer on the "
                         f"volume ({continue_from}) — it was rendered before "
                         f"chaining existed, or its generation was deleted. "
-                        f"Clear the Motion tile to continue from its last "
-                        f"frame instead."}
+                        f"Clear the Motion tile to continue from its "
+                        + ("frame at the out-point"
+                           if payload.get("continue_at") not in (None, "")
+                           else "last frame") + " instead."}
             # A pinned context anchors the opening the way a first frame would,
             # and the two are different transformers' jobs — sending both would
             # be two answers to "where does this take open". The page never
@@ -13139,7 +13320,43 @@ def web():
                                  "or clear the Motion tile, but not both ways "
                                  "at once."}
 
-        refs = [r for r in (payload.get("references") or []) if r]
+        # The out-point, when the take was trimmed: seconds into its delivered
+        # clip. Bounded here, on CPU, against the source's own record — the
+        # floor is the context window and the ceiling its length — because the
+        # alternative is a GPU renting itself to discover the cut is before
+        # the take began. The snap is pure arithmetic, so it is answered now
+        # too: the page can say how far the cut will move before a step runs.
+        continue_at: float | None = None
+        cut_reply: dict[str, Any] = {}
+        raw_at = payload.get("continue_at")
+        if raw_at not in (None, ""):
+            if not continue_from:
+                return {"error": "continue_at is an out-point in the take being "
+                                 "continued, and no take is (continue_from is "
+                                 "empty). Press Continue on the take first."}
+            meta_path = OUTPUTS / continue_from / OUTPUT_META
+            try:
+                src_meta = json.loads(meta_path.read_text())
+                delivered = int(src_meta.get("frames") or round(
+                    float(src_meta["seconds"]) * H3_FPS))
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                return {"error":
+                        f"Cannot place the out-point in {continue_from}: its "
+                        f"record ({meta_path}) is unreadable or has no length "
+                        f"({type(exc).__name__}). Untrim the take to continue "
+                        f"from its end, or clear the Motion tile to open on "
+                        f"the frame at the out-point."}
+            try:
+                continue_at = _validate_continue_at(
+                    raw_at, delivered_frames=delivered,
+                    source=f"take {continue_from}")
+            except ValueError as exc:
+                return {"error": str(exc)}
+            cut = _h3_cut_index(continue_at, bool(src_meta.get("continued_from")))
+            cut_reply = {"continued_at": cut["continued_at"],
+                         "continue_snap": cut["snap"]}
+
+        refs =[r for r in (payload.get("references") or []) if r]
         vids = [v for v in (payload.get("ref_videos") or []) if v]
         auds = [a for a in (payload.get("ref_audios") or []) if a]
         if (refs or vids or auds) and not supports["references"]:
@@ -13255,6 +13472,7 @@ def web():
             "shot": shot,
             "scene": scene,
             "continue_from": continue_from,
+            "continue_at": continue_at,
             "ref_roles": roles,
             # No negative prompt on this path at all. H3 is guidance-distilled,
             # so one would not be applied — and a sidecar that records an input
@@ -13290,7 +13508,8 @@ def web():
             "last_frame": last,
         })
         _log_spawn("video", job_id, payload, t_route)
-        return {"ok": True, "job_id": job_id, "model": model, "mode": task}
+        return {"ok": True, "job_id": job_id, "model": model, "mode": task,
+                **cut_reply}
 
     @api.get("/api/gallery")
     def gallery(before: float = 0.0, limit: int = 200) -> dict[str, Any]:
