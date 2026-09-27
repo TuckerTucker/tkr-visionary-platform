@@ -64,6 +64,19 @@ export type GalleryItem = {
   ref_videos?: number
   ref_roles?: string[]
   region_weight?: number
+  /** `edit` on a cut exported from the timeline (`exp…` folders); absent on
+   *  every render. An export has no model, seed or prompt of its own — what
+   *  identifies it is the scene it came from and the takes in it, in order. */
+  source?: 'edit'
+  scene?: string
+  takes?: { job_id: string; file: string; line?: string }[]
+  /** The OpenVideo version that encoded it. */
+  openvideo?: string
+}
+
+/** A cut exported from the timeline rather than a render. */
+export function isExport(it: GalleryItem): boolean {
+  return it.source === 'edit'
 }
 
 export type Filter = 'all' | 'image' | 'video'

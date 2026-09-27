@@ -5607,6 +5607,119 @@ def _write_output_meta(out_dir: Path, **fields: Any) -> None:
         print(f"[meta] {out_dir.name}: {exc}")
 
 
+# ── an edited cut, landing as an output ─────────────────────────────────────
+#
+# The page encodes the cut itself (OpenVideo's Compositor, WebCodecs) and posts
+# the MP4 here, so an export is a result like any render: its own folder under
+# outputs/, a sidecar, listed by `_gallery`, served by `/api/file`, deleted like
+# the rest. Nothing here decodes it — the web image has no ffmpeg, and the bytes
+# were produced by the page that is about to play them back.
+
+# Generous, and named, because the refusal has to say what the ceiling is. The
+# engine's default is 5 Mbps, so this is well over an hour of cut; a body past
+# it is not a scene, it is a mistake, and it is refused while streaming rather
+# than after the disk has already paid for it.
+EXPORT_MAX_BYTES = 4 << 30
+# The sidecar fields the page may set. Everything else it sends is dropped: the
+# sidecar is spread into every gallery row (`**meta` in `_gallery`), so a key
+# the client chose would be a field the listing serves back under our name.
+EXPORT_META_MAX = 64 << 10
+EXPORT_MAX_TAKES = 256
+
+
+def _export_job_id() -> str:
+    """`exp` + the time + 4 hex: the shape of every other job id, so NAME_RE and
+    the gallery's sort treat an export exactly as they treat a render."""
+    return f"exp{time.strftime('%Y%m%d%H%M%S')}{os.urandom(2).hex()}"
+
+
+def _sniff_mp4(head: bytes) -> str | None:
+    """
+    None for the start of an MP4, else a sentence naming what arrived instead.
+
+    By the bytes, not the filename or the part's content type — both are the
+    client's say-so, and a WebM from a browser that could not encode H.264 is
+    exactly the file that would arrive labelled `cut.mp4`. An ISO BMFF file
+    opens with a box whose type, at offset 4, is `ftyp`.
+    """
+    if len(head) >= 8 and head[4:8] == b"ftyp":
+        return None
+    if not head:
+        what = "an empty file"
+    elif head.startswith(b"\x1a\x45\xdf\xa3"):
+        what = "a WebM/Matroska file"
+    elif head.startswith(b"\x89PNG"):
+        what = "a PNG image"
+    elif head.startswith(b"\xff\xd8\xff"):
+        what = "a JPEG image"
+    elif head.startswith(b"RIFF"):
+        what = "a RIFF (WAV/AVI) file"
+    elif head.lstrip()[:1] in (b"{", b"<"):
+        what = "text, not video"
+    else:
+        what = f"{len(head)}+ bytes starting {head[:8].hex(' ')}"
+    return f"The export is not an MP4 — it is {what}. Only MP4 lands in the gallery."
+
+
+def _export_meta(raw: str) -> dict[str, Any]:
+    """
+    The client's `meta` field as sidecar fields, or ValueError naming what is wrong.
+
+    Only known keys, each checked for its kind: a number that is a string would
+    reach `aspectOf` on every gallery load, and a take list with a traversal in
+    it would be a path the metadata sheet shows as if it were a file of ours.
+    """
+    if len(raw) > EXPORT_META_MAX:
+        raise ValueError(f"The export's meta is {len(raw)} bytes; the limit is "
+                         f"{EXPORT_META_MAX}.")
+    try:
+        m = json.loads(raw or "{}")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"The export's meta does not parse as JSON: {exc}") from None
+    if not isinstance(m, dict):
+        raise ValueError(f"The export's meta is a {type(m).__name__}, not an object.")
+    out: dict[str, Any] = {}
+    if m.get("scene") is not None:
+        out["scene"] = _check_scene_id(str(m["scene"]))
+    for key, lo, hi in (("width", 16, 8192), ("height", 16, 8192), ("fps", 1, 240)):
+        v = m.get(key)
+        if v is None:
+            continue
+        if isinstance(v, bool) or not isinstance(v, int) or not lo <= v <= hi:
+            raise ValueError(f"The export's {key} is {v!r}; it has to be a whole "
+                             f"number from {lo} to {hi}.")
+        out[key] = v
+    if m.get("seconds") is not None:
+        v = m["seconds"]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 < v <= 86400:
+            raise ValueError(f"The export's seconds is {v!r}; it has to be a "
+                             "positive number.")
+        out["seconds"] = round(float(v), 3)
+    if m.get("openvideo") is not None:
+        v = str(m["openvideo"])
+        if not OPENVIDEO_RE.match(v):
+            raise ValueError(f"The export's openvideo version {v!r} is not a version.")
+        out["openvideo"] = v
+    takes = m.get("takes")
+    if takes is not None:
+        if not isinstance(takes, list) or len(takes) > EXPORT_MAX_TAKES:
+            raise ValueError(f"The export's takes has to be a list of at most "
+                             f"{EXPORT_MAX_TAKES}.")
+        clean = []
+        for i, t in enumerate(takes):
+            job = str((t or {}).get("job_id") or "") if isinstance(t, dict) else ""
+            name = str(t.get("file") or "") if isinstance(t, dict) else ""
+            if not NAME_RE.match(job) or not OUTPUT_FILE_RE.match(name):
+                raise ValueError(f"The export's take {i + 1} ({t!r:.80}) does not "
+                                 "name a job and a file.")
+            entry: dict[str, Any] = {"job_id": job, "file": name}
+            if t.get("line"):
+                entry["line"] = _oneline(str(t["line"]))[:SHOT_VALUE_MAX]
+            clean.append(entry)
+        out["takes"] = clean
+    return out
+
+
 def _keep_entry(job: str, name: str) -> bool:
     """
     Is `outputs/{job}/{name}` a result, rather than something beside one?
@@ -10817,8 +10930,9 @@ def _gate_page() -> str:
 #
 # Awaiting the `.aio()` variants would have silenced that warning without
 # fixing it — the Dict call is the part Modal can see, not the part that costs
-# the most. `/api/upload` is the one exception and stays async, because it
-# awaits the multipart stream itself; its one Modal call is `.aio()`d in place.
+# the most. `/api/upload` and `/api/outputs` are the exceptions and stay async,
+# because each awaits a multipart stream itself; their one Modal call is
+# `.aio()`d in place.
 # --------------------------------------------------------------------------
 
 
@@ -11511,6 +11625,74 @@ def web():
         # Same-named files overwrite rather than duplicate, so re-dropping the
         # same folder is idempotent instead of doubling the dataset.
         return JSONResponse({"dataset": dataset, "added": count, **_dataset_stats(raw)})
+
+    @api.post("/api/outputs")
+    async def save_export(request: Request) -> JSONResponse:
+        """
+        Land an edited cut: multipart `file` (the MP4) and `meta` (a JSON
+        string) → `{ok, job_id, name}`.
+
+        Async for `/api/upload`'s reason — it awaits the multipart stream. A
+        refusal is 200 `{error}`, like every other POST here, so the page's
+        `failed()` reads it; only a crash is a 500, and it says what crashed.
+        """
+        try:
+            return await _do_export(request)
+        except Exception as exc:
+            import traceback
+
+            traceback.print_exc()
+            return JSONResponse({"error": f"{type(exc).__name__}: {exc}"},
+                                status_code=500)
+
+    async def _do_export(request: Request) -> JSONResponse:
+        form = await request.form()
+        try:
+            meta = _export_meta(str(form.get("meta") or ""))
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)})
+        up = form.get("file")
+        if up is None or not hasattr(up, "read"):
+            return JSONResponse({"error": "No `file` in the export — the page sent "
+                                          "meta without the MP4."})
+        head = await up.read(64)
+        refused = _sniff_mp4(head)
+        if refused:
+            return JSONResponse({"error": refused})
+
+        job_id = _export_job_id()
+        while (OUTPUTS / job_id).exists():
+            job_id = _export_job_id()
+        out_dir = OUTPUTS / job_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        name = f"{time.strftime('%H%M%S')}.mp4"
+        # Written under a dot-name and renamed whole: `_keep_entry` skips dot
+        # files, so a listing that lands mid-write shows nothing rather than a
+        # card whose clip stops halfway.
+        part = out_dir / f".{name}.part"
+        size = len(head)
+        try:
+            with open(part, "wb") as out:
+                out.write(head)
+                while chunk := await up.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > EXPORT_MAX_BYTES:
+                        raise ValueError(
+                            f"The export passed {EXPORT_MAX_BYTES >> 30} GiB and was "
+                            "refused before it finished — that is hours of cut at the "
+                            "encoder's bitrate, so something is wrong with the encode.")
+                    out.write(chunk)
+            part.replace(out_dir / name)
+        except (ValueError, OSError) as exc:
+            shutil.rmtree(out_dir, ignore_errors=True)
+            return JSONResponse({"error": str(exc) if isinstance(exc, ValueError)
+                                 else f"Could not write {out_dir / name}: {exc}"})
+        _write_output_meta(out_dir, kind="video", source="edit", job_id=job_id,
+                           created=time.time(), bytes=size, **meta)
+        await volume.commit.aio()
+        print(f"[export] {job_id}/{name} {size} bytes from scene "
+              f"{meta.get('scene', '?')}", flush=True)
+        return JSONResponse({"ok": True, "job_id": job_id, "name": name})
 
     def _dataset_or_error(name: str):
         """Resolve a dataset name, returning (dir, None) or (None, error dict)."""

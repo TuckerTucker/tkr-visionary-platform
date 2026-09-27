@@ -4,7 +4,7 @@ import { IconClose } from '../icons'
 import { Sheet } from '../ui/Sheet'
 import { shotItem, useStore } from '../store'
 import { reuse } from './reuse'
-import type { GalleryItem } from './types'
+import { isExport, type GalleryItem } from './types'
 
 /**
  * Everything the sidecar kept about one run.
@@ -22,10 +22,16 @@ export function MetaSheet({ item, onClose }: { item: GalleryItem; onClose: () =>
   const vocab = useStore((s) => s.state?.shot_vocab) ?? []
   const roles = useStore((s) => s.state?.shot_roles) ?? []
   const [copied, setCopied] = useState(false)
-  const typed = item.prompt_typed || item.prompt || ''
+  const cut = isExport(item)
+  // A cut has no prompt of its own; its sentences are the takes', in the order
+  // they play, which is what you would recognise it by and what Copy should give.
+  const typed = cut
+    ? (item.takes ?? []).map((t, n) => `${String(n + 1)}. ${t.line || `${t.job_id}/${t.file}`}`).join('\n')
+    : item.prompt_typed || item.prompt || ''
 
   const rows: [string, string | number | undefined][] = [
-    ['Kind', item.kind],
+    ['Kind', cut ? 'video · edited cut' : item.kind],
+    ['Scene', item.scene],
     ['Model', item.model],
     ['Job', item.job_id],
     ['Size', item.width ? `${item.width}×${item.height}` : ''],
@@ -66,7 +72,7 @@ export function MetaSheet({ item, onClose }: { item: GalleryItem; onClose: () =>
         <h1 className="grow">Metadata</h1>
         <button className="ico" type="button" onClick={onClose}><IconClose /></button>
       </div>
-      <label>Prompt</label>
+      <label>{cut ? 'Takes' : 'Prompt'}</label>
       <textarea rows={5} readOnly value={typed} />
       {item.prompt_typed && item.prompt_typed !== item.prompt && (
         <>
@@ -97,9 +103,13 @@ export function MetaSheet({ item, onClose }: { item: GalleryItem; onClose: () =>
                   await navigator.clipboard.writeText(typed)
                   setCopied(true)
                 }}>
-          {copied ? 'Copied' : 'Copy prompt'}
+          {copied ? 'Copied' : cut ? 'Copy lines' : 'Copy prompt'}
         </button>
-        <button className="s" id="m-reuse" type="button"
+        {/* Greyed rather than hidden on a cut: it has no model, seed or size
+            of its own to put back, and a button that vanished would read as
+            a sheet missing a feature rather than a thing with nothing to reuse. */}
+        <button className="s" id="m-reuse" type="button" disabled={cut}
+                title={cut ? 'An edited cut has no render settings — reuse a take from the scene instead' : undefined}
                 onClick={() => { onClose(); reuse(item) }}>
           Reuse settings
         </button>

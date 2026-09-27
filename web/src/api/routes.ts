@@ -13,8 +13,8 @@
  */
 import { api, post, type Res } from './client'
 import type {
-  AppState, CompileResult, DupeReport, Insight, JobStatus, SceneIntent, SceneRecord,
-  SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, Session, ShotPill,
+  AppState, CompileResult, DupeReport, ExportMeta, Insight, JobStatus, OutputSaved,
+  SceneIntent, SceneRecord, SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, Session, ShotPill,
 } from './types'
 
 const seg = encodeURIComponent
@@ -329,4 +329,19 @@ export const purgeOutputs = (body?: unknown) =>
  */
 export async function upload(form: FormData): Promise<Res<Record<string, unknown>>> {
   return api<Record<string, unknown>>('/api/upload', { method: 'POST', body: form })
+}
+
+/**
+ * An edited cut, landing as an output: the MP4 the page encoded, and its meta.
+ *
+ * Multipart for `upload`'s reason — a cut is tens of megabytes, and base64 in a
+ * JSON body would be a third larger and held whole in memory at both ends. The
+ * FormData is built here rather than by the caller so the field names are
+ * written once, beside the route that reads them.
+ */
+export async function exportOutput(file: Blob, meta: ExportMeta): Promise<Res<OutputSaved>> {
+  const form = new FormData()
+  form.append('file', file, 'cut.mp4')
+  form.append('meta', JSON.stringify(meta))
+  return api<OutputSaved>('/api/outputs', { method: 'POST', body: form })
 }

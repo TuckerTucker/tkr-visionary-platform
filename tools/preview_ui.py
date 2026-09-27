@@ -802,6 +802,48 @@ def clip_mp4(job: str) -> Path | None:
         return out
 
 
+# Exported cuts, as `POST /api/outputs` lands them.
+#
+# The page encodes the cut in the browser and uploads the MP4; what it is
+# judged by is the card that appears in the gallery and plays those bytes, so
+# the stub keeps them and `/api/file` serves them back rather than a test card —
+# an export that came back as somebody else's clip would pass every structural
+# check and be the wrong file. The refusals are app.py's own (`_sniff_mp4`,
+# `_export_meta`), pulled rather than retyped, so a check that provokes one reads
+# the sentence the deployment would say.
+EXPORT_NAMES = {"NAME_RE", "OUTPUT_FILE_RE", "OPENVIDEO_RE", "SHOT_VALUE_MAX", "_oneline",
+                "_check_scene_id", "EXPORT_MAX_BYTES", "EXPORT_META_MAX",
+                "EXPORT_MAX_TAKES", "_export_job_id", "_sniff_mp4", "_export_meta"}
+EXPORTS: dict = {}
+
+
+def export_api() -> dict:
+    stamp = APP.stat().st_mtime_ns
+    if _APP_CACHE.get("export_stamp") != stamp:
+        ns = pull(EXPORT_NAMES)
+        ns["os"] = os
+        _APP_CACHE.update(export_stamp=stamp, export=ns)
+    return _APP_CACHE["export"]
+
+
+def multipart(body: bytes, ctype: str) -> dict:
+    """{field: bytes} out of a multipart body — stdlib `email`, since `cgi` is
+    gone from 3.13 and this file takes no dependencies."""
+    from email import policy
+    from email.parser import BytesParser
+
+    msg = BytesParser(policy=policy.HTTP).parsebytes(
+        b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + body)
+    out: dict = {}
+    if not msg.is_multipart():
+        return out
+    for part in msg.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if name:
+            out[name] = part.get_payload(decode=True) or b""
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -971,6 +1013,29 @@ class Handler(BaseHTTPRequestHandler):
                              "volume — reopen Settings to refresh the list."})
             STATE["loras"].remove(row)
             return self.reply({"ok": True})
+
+        if path == "/api/outputs":
+            ex = export_api()
+            form = multipart(body, self.headers.get("Content-Type") or "")
+            try:
+                meta = ex["_export_meta"]((form.get("meta") or b"").decode())
+            except (ValueError, UnicodeDecodeError) as exc:
+                return self.reply({"error": str(exc)})
+            if "file" not in form:
+                return self.reply({"error": "No `file` in the export — the page sent "
+                                            "meta without the MP4."})
+            refused = ex["_sniff_mp4"](form["file"][:64])
+            if refused:
+                return self.reply({"error": refused})
+            job = ex["_export_job_id"]()
+            name = f"{time.strftime('%H%M%S')}.mp4"
+            dest = CLIP_DIR / f"export-{job}.mp4"
+            dest.write_bytes(form["file"])
+            EXPORTS[job] = (name, dest)
+            now = time.time()
+            GALLERY.insert(0, {**meta, "job_id": job, "kind": "video", "files": [name],
+                               "created": now, "modified": now, "source": "edit"})
+            return self.reply({"ok": True, "job_id": job, "name": name})
 
         m = re.match(r"/api/scenes/([^/]+)/project$", path)
         if m:
@@ -1493,6 +1558,12 @@ class Handler(BaseHTTPRequestHandler):
         # A take's own file is a real clip — see `clip_mp4`. A job id with
         # "missing" in it is a take whose file is gone from the volume, which is
         # the one failure the editor has to draw on the clip rather than hide.
+        # An export's own bytes, never a test card — see `EXPORTS`.
+        if m and m.group(1) in EXPORTS:
+            name, dest = EXPORTS[m.group(1)]
+            if m.group(2) != name:
+                return self.reply({"error": "Not found."}, code=404)
+            return self.reply_file(dest, "video/mp4")
         if m and path.startswith("/api/file/") and m.group(2).endswith(".mp4"):
             if "missing" in m.group(1):
                 return self.reply({"error": f"No {m.group(2)!r} for job "

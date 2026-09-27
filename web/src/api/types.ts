@@ -417,3 +417,22 @@ export type SceneSaved = { ok: true; id: string; modified: number }
 export type SceneProject = { openvideo: string; project: unknown }
 
 export type SceneProjectSaved = { ok: true; modified: number }
+
+/**
+ * The `meta` field of an export, as `_export_meta` in app.py accepts it. Every
+ * other key is dropped server-side — the sidecar is spread into each gallery
+ * row, so a field the page chose would come back as if the server had said it.
+ */
+export type ExportMeta = {
+  scene?: string
+  width?: number
+  height?: number
+  fps?: number
+  seconds?: number
+  openvideo?: string
+  takes?: { job_id: string; file: string; line?: string }[]
+}
+
+/** What `POST /api/outputs` answers: the folder and file the cut now lives at,
+ *  which is everything `/api/file` needs to serve it back. */
+export type OutputSaved = { ok: true; job_id: string; name: string }

@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 
-import { ago, coverOf, fullUrl, type GalleryItem } from './types'
+import { ago, coverOf, fullUrl, isExport, type GalleryItem } from './types'
 import { IconMore, IconPhoto, IconPlay } from '../icons'
 import { useNearViewport } from '../media/inview'
 import { Thumb } from '../media/thumb'
@@ -98,7 +98,11 @@ export function Card({
       )}
 
       <div className="foot">
-        <span className="kind">{item.kind === 'video' ? <IconPlay /> : <IconPhoto />}</span>
+        {/* A cut is a video to every reader — same card, same viewer — and only
+            says what else it is to the pointer, since the grid is pictures. */}
+        <span className="kind" title={isExport(item) ? 'Edited cut' : undefined}>
+          {item.kind === 'video' ? <IconPlay /> : <IconPhoto />}
+        </span>
         <span className="when">
           {ago(item.created ?? item.modified)}
           {extra}
