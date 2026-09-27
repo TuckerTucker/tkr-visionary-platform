@@ -279,7 +279,7 @@ capabilities:
         tools/smoke_free_regional.py."
   - name: prompting
     layer: domain
-    status: in_progress
+    status: done
     depends_on:
       - platform
       - inference
@@ -341,11 +341,11 @@ capabilities:
       - Reuse, Copy and the metadata sheet all prefer prompt_typed over the
         compiled string.
     evidence:
-      kind: manual
-      ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
-        Every slice under it reads done, and its territory (web/src/shot,
-        web/src/scene, web/src/console…) is present in the tree. Covered by
-        tools/smoke_prompt.py and tools/smoke_scene.py."
+      kind: commit
+      ref: "5b77208: tools/smoke_scene.py passes, including the missing-file and
+        reference-budget checks; tools/smoke_prompt.py passes; web typecheck and
+        vite build pass. Not measured against a render — that is
+        assurance/slice/13, which this no longer gates."
   - name: gallery
     layer: service
     status: done

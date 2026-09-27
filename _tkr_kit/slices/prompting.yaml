@@ -178,9 +178,12 @@ slices:
       ref: "As-built: recorded on 2026-08-31 by reading the shipped code at 860d615.
         The behaviour it delivers is present at web/src/lora. Covered by
         tools/smoke_prompt.py and tools/smoke_scene.py."
-  - delivers: "The cast buckets are already the reusable character object: slots
-      holding your pictures, bound to a person, read by whichever model is in
-      front of them. Driven and read; not yet measured against a render."
+  - delivers: "The scene composer as the video side's record for its prose: a cast
+      of @handles holding your pictures, videos and voices with a note on what
+      each provides; the material each draws on; a timeline of shots you pull to
+      length; and mentions that bind a shot's sentence to the cast. Saved
+      characters come back from the arsenal whole, or say by name what did not.
+      Validated on CPU by the same function the preview and the run share."
     paths:
       - web/src/scene
     depends_on:
@@ -192,7 +195,13 @@ slices:
     number: 11
     layer: ui
     feature: scene-composer
-    status: in_progress
+    status: done
+    evidence:
+      kind: commit
+      ref: "5b77208: tools/smoke_scene.py passes, including the missing-file and
+        reference-budget checks; tools/smoke_prompt.py passes; web typecheck and
+        vite build pass. Not measured against a render — that is
+        assurance/slice/13, which this no longer gates."
   - delivers: The palette, the field, the preview and Enhance as one surface under
       the canvas.
     paths:

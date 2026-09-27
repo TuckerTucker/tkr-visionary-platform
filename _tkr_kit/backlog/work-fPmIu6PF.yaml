@@ -1,0 +1,17 @@
+id: work-fPmIu6PF
+title: Saved characters are recalled only on the video side
+kind: follow-up
+severity: medium
+status: open
+capabilityId: prompting
+anchors:
+  - web/src/scene/Mentions.tsx
+  - web/src/scene/arsenal.ts
+  - web/src/regions
+createdAt: 2026-09-27T03:35:23.867Z
+updatedAt: 2026-09-27T03:35:23.867Z
+remedy: The arsenal stores a character in no model's syntax, which is what lets
+  it cross families — but hydrate() is called only from the scene composer's @
+  menu, so a Krea 2 region cannot take a saved likeness. Offer the same recall
+  where a region takes its likeness, through the same intake and the same
+  missing-file refusal, rather than a second picker.

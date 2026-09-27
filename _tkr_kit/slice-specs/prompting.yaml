@@ -1,61 +1,82 @@
 capability: prompting
 slice_specs:
-  - status: draft
-    title: The scene composer — the contract it still owes
-    purpose: "The composer is built, driven and read. What it does not have is a
-      measurement, and one claim in it is load-bearing: that a scene assembled
-      from cast, material and a timeline produces a better render than the same
-      intent typed flat. Until that is measured the feature is asserted. This
-      spec states the contract the composer must hold so the measurement in
-      assurance/spec/13 can be run against it, and so a cast object survives the
-      model swap it exists to survive."
+  - status: done
+    title: The scene composer — the contract it holds
+    purpose: "The composer is built, driven and read. This spec states the contract
+      it holds, written from the shipped code, so the measurement in
+      assurance/spec/13 has a fixed thing to measure and so a saved character
+      survives the recall it exists for. The measurement itself belongs to
+      assurance: this slice settles on its contract, and assurance measures what
+      shipped. Gating the one on the other made each wait for the other."
     interface:
-      - "`H3_CAST_KINDS` — the bucket vocabulary a cast member's reference slots
-        are drawn from. Stable across model families; a new family maps onto it
-        rather than extending it."
-      - A cast member is `{handle, kind -> [reference files]}`, persisted under
-        `characters/{handle}/` and served by `/api/characters` and
-        `/api/character-file/{handle}/{name}`.
-      - "`/api/compile` accepts a scene and returns the compiled document for
-        the selected family, exactly as it does for a single shot — the composer
-        adds no second compile path."
-      - A shot in the timeline carries the same `prompt_typed` + `shot` pair a
-        standalone render does, so a scene is a sequence of records, not a new
-        record type.
+      - One cast kind, `H3_SUBJECT`, because the guide has one label. Whatever
+        kind a client sends is normalised to it rather than refused —
+        character/place/thing was our vocabulary and a stale tab still speaks
+        it.
+      - A cast member on the wire is `{id, name, note, retention, refs[],
+        missing?}`. A ref points into the request's uploads by `{kind, index}`
+        and carries `slots` (the channel it arrived on, one of `H3_SLOT_MEDIA`),
+        an optional `note` in the person's words, a `sheet` mark (images only)
+        and a `role` (video and audio). `missing` lists `{file, kind}` a
+        recalled character did not come back with.
+      - A saved character is `characters/{handle}/` — plain files plus a
+        note.txt — served by `/api/characters`, `/api/characters/{handle}` and
+        `/api/character-file/{handle}/{name}`. Saving is a press on the card,
+        never a side effect.
+      - "`/api/compile` accepts a scene for the video kind and validates it with
+        the same `_validate_scene` `/api/video` runs — the composer adds no
+        second compile path. The image kind ignores `scene`."
+      - A shot carries `line`, `beats`, `pills` and `say`; mentions are literal
+        `@handle` text in the line.
+      - "`_ref_over_budget` is the one reference-budget check, called by both
+        `/api/compile` and `/api/video`."
     behavior:
-      - "A cast member is bound to a person, not to a job: the same handle
-        referenced from two shots resolves to one reference set."
-      - Switching model family recompiles every shot in the scene from its typed
-        intent. Nothing stored in the scene is family-specific.
-      - A scene outlives a generation. Closing and reopening the page restores
-        it; a completed render does not clear it.
-      - Reference budget is enforced per shot at compile time, on CPU, before
-        any job is spawned — a scene that would exceed twelve references for H3
-        is refused with the shot named.
-      - The composer produces no prompt the user is expected to read or edit. If
-        a scene cannot be expressed through the vocabulary, that is a vocabulary
-        gap, not a reason to expose the string.
+      - The scene is H3's. It is the video side's record for its prose and
+        belongs to that kind alone; switching to Krea 2 does not recompile it,
+        and nothing reads a scene left standing on the image side. The saved
+        character is the part built to cross families — plain files and a
+        note.txt in no model's syntax — but only the video side's @ menu recalls
+        it today; the image side does not.
+      - A handle referenced from two shots resolves to one cast member and one
+        reference set.
+      - "A scene outlives a generation within the page: a completed render does
+        not clear it. Surviving a reload is not this slice's — it arrives with
+        the scene folder on the volume in editing/slice/2, and a browser-side
+        stash now would be a second persistence path that slice then has to
+        retire."
+      - "The reference budget is per request, because a scene is one generation:
+        9 images, 3 videos, 3 audio, 12 in total. It is refused on CPU before
+        any job is spawned, and refused in the preview the same way, so the
+        preview never disagrees with the run."
+      - The composer produces no prompt the user is expected to read or edit. A
+        scene the vocabulary cannot express is a vocabulary gap, not a reason to
+        expose the string.
     errors:
-      - A cast handle referenced by a shot but absent from `characters/` — name
-        the handle and the shot, do not silently drop the reference. A dropped
-        reference renders something plausible and wrong, which is the worst
-        available outcome.
-      - A reference file that no longer exists on the volume — name the file and
-        the cast slot; do not fall back to the remaining references, because a
-        four-reference identity rendered from three is a different identity.
-      - A scene exceeding the family's reference budget — refuse at compile time
-        with the offending shot named and the budget stated. Never truncate.
+      - A handle used in a shot that names nobody in the cast — refused with the
+        handle named, at compile time, so it is a sentence under the timeline
+        the moment it is typed.
+      - A ref pointing at an upload that does not exist — refused naming the
+        handle, the media and the index against how many were uploaded.
+      - "A recalled character with files that did not come back — refused naming
+        the handle and each file, until they are attached again or 'Continue
+        with what is here' is pressed on the card. Never rendered from the
+        remainder: an identity from three of its four references is a different
+        identity."
+      - "Over the reference budget — refused with the count, the cap and how
+        many to remove. Never truncated: which picture fell off the end is the
+        choice that decides who is in the shot."
     tests:
-      - "smoke_scene.py: a scene of three shots against two cast members
-        compiles to three documents, each carrying the cast's references, with
-        no network and no GPU."
-      - A scene compiled for H3 and then for Krea 2 yields two different
-        documents from one unchanged stored scene — the family-independence
-        check.
-      - A cast handle deleted between compiles produces the named error rather
-        than a render.
-      - The measurement itself is assurance/spec/13; this slice is not done
-        until that has run and its result is in the coverage ledger.
+      - "tools/smoke_scene.py, with no network and no GPU: the guide's own
+        three-shot example compiles to MiniMax's published grammar; subjects are
+        numbered by first mention and pictures by upload position; an undefined
+        handle, an empty row and a dialogue pill inside a scene are each refused
+        by name; no scene leaves the flat path byte-for-byte."
+      - "tools/smoke_scene.py: a recalled character with a missing file is
+        refused naming the handle and the file; an empty missing list compiles."
+      - "tools/smoke_scene.py: `_ref_over_budget` accepts 9+3+0, refuses 10
+        images, 4 videos and 9+3+1 by name."
+      - The measurement against real renders is assurance/spec/13, and it gates
+        assurance, not this slice.
     data_lifecycle: "`characters/{handle}/` is a new store. Retention: op — deletion
       is operator-driven through the character routes, in the same shape as
       dataset and LoRA deletion, and reference files are the operator's own
@@ -67,3 +88,9 @@ slice_specs:
       - docs/roadmap.md
       - web/CLAUDE.md
     slice: 11
+    evidence:
+      kind: commit
+      ref: "5b77208: tools/smoke_scene.py passes, including the missing-file and
+        reference-budget checks; tools/smoke_prompt.py passes; web typecheck and
+        vite build pass. Not measured against a render — that is
+        assurance/slice/13, which this no longer gates."
