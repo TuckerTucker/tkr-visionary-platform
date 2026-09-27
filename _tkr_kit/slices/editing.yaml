@@ -269,6 +269,8 @@ slices:
       - tools/smoke_graphs.py
       - web/src/video
       - web/src/edit/continue.ts
+      - tools/preview_ui.py
+      - tools/ui-checks/check_continue_at.py
     depends_on:
       - 4
       - 7

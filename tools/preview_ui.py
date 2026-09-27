@@ -826,6 +826,48 @@ def export_api() -> dict:
     return _APP_CACHE["export"]
 
 
+# Files dropped on the timeline, as `POST /api/scenes/{id}/media` lands them.
+#
+# On disk rather than in `SCENES`, for the reason exports are: the engine reads
+# a clip in byte ranges and a picture by its real pixels, so what the stub
+# serves back has to be the bytes that were dropped. The sniff, the naming and
+# the content types are app.py's own, pulled rather than retyped, so a refused
+# drop on the preview says the sentence the deployment would — and the naming
+# runs against a real folder, which is what its collision check reads.
+MEDIA_NAMES = {"NAME_RE", "MEDIA_TYPES", "SCENE_MEDIA_TYPES", "SCENE_FILE_DIRS",
+               "SCENE_FILE_RE", "SCENE_MEDIA_MAX_BYTES", "SCENE_MEDIA_STEM_MAX",
+               "SCENE_MEDIA_ACCEPTS", "_STILL_BRANDS", "_check_scene_id",
+               "_check_scene_file", "_sniff_scene_media", "_scene_media_name"}
+MEDIA_ROOT = CLIP_DIR / "scenes"
+
+
+def media_api() -> dict:
+    stamp = APP.stat().st_mtime_ns
+    if _APP_CACHE.get("media_stamp") != stamp:
+        ns = pull(MEDIA_NAMES)
+        ns.update(os=os, SCENES=MEDIA_ROOT)
+        _APP_CACHE.update(media_stamp=stamp, media=ns)
+    return _APP_CACHE["media"]
+
+
+def multipart_files(body: bytes, ctype: str) -> dict:
+    """{field: (filename, bytes)} — `multipart` without the filename is a
+    dropped file that cannot be named after itself."""
+    from email import policy
+    from email.parser import BytesParser
+
+    msg = BytesParser(policy=policy.HTTP).parsebytes(
+        b"Content-Type: " + ctype.encode() + b"\r\n\r\n" + body)
+    out: dict = {}
+    if not msg.is_multipart():
+        return out
+    for part in msg.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        if name:
+            out[name] = (part.get_filename() or "", part.get_payload(decode=True) or b"")
+    return out
+
+
 def multipart(body: bytes, ctype: str) -> dict:
     """{field: bytes} out of a multipart body — stdlib `email`, since `cgi` is
     gone from 3.13 and this file takes no dependencies."""
@@ -1036,6 +1078,35 @@ class Handler(BaseHTTPRequestHandler):
             GALLERY.insert(0, {**meta, "job_id": job, "kind": "video", "files": [name],
                                "created": now, "modified": now, "source": "edit"})
             return self.reply({"ok": True, "job_id": job, "name": name})
+
+        m = re.match(r"/api/scenes/([^/]+)/media$", path)
+        if m:
+            sid = m.group(1)
+            mapi = media_api()
+            try:
+                mapi["_check_scene_id"](sid)
+            except ValueError as exc:
+                return self.reply({"error": str(exc)})
+            form = multipart_files(body, self.headers.get("Content-Type") or "")
+            if "file" not in form:
+                return self.reply({"error": "No `file` in the drop — the page sent "
+                                            "the request without the file."})
+            filename, data = form["file"]
+            # The stub's refs live in memory; they are written out as empty
+            # names so the collision check sees them, as it sees the volume's.
+            refs_dir = MEDIA_ROOT / sid / "refs"
+            refs_dir.mkdir(parents=True, exist_ok=True)
+            for ref in (SCENES.get(sid) or {}).get("refs", {}):
+                (refs_dir / ref).touch()
+            try:
+                kind, ext = mapi["_sniff_scene_media"](data[:64], filename)
+                name = mapi["_scene_media_name"](sid, filename, ext)
+            except ValueError as exc:
+                return self.reply({"error": str(exc)})
+            dest = MEDIA_ROOT / sid / "media" / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+            return self.reply({"ok": True, "name": name, "kind": kind, "bytes": len(data)})
 
         m = re.match(r"/api/scenes/([^/]+)/project$", path)
         if m:
@@ -1473,6 +1544,12 @@ class Handler(BaseHTTPRequestHandler):
         if m:
             name = m.group(2).rsplit("/", 1)[-1]
             data = (SCENES.get(m.group(1)) or {}).get("refs", {}).get(name)
+            dropped = MEDIA_ROOT / m.group(1) / "media" / name
+            if data is None and SCENE_NAME.match(m.group(1)) and SCENE_FILE.match(name) \
+                    and dropped.is_file():
+                ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+                return self.reply_file(dropped, media_api()["SCENE_MEDIA_TYPES"].get(
+                    ext, "application/octet-stream"))
             if data is None:
                 return self.reply({"error": f"No {name!r} in scene "
                                             f"{m.group(1)!r}."}, code=404)

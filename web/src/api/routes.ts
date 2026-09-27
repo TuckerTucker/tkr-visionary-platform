@@ -14,7 +14,7 @@
 import { api, post, type Res } from './client'
 import type {
   AppState, CompileResult, DupeReport, ExportMeta, Insight, JobStatus, OutputSaved,
-  SceneIntent, SceneRecord, SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, Session, ShotPill,
+  SceneIntent, SceneMediaSaved, SceneRecord, SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, Session, ShotPill,
 } from './types'
 
 const seg = encodeURIComponent
@@ -299,6 +299,17 @@ export const saveProject = (id: string, body: SceneProject) =>
   post<SceneProjectSaved>(`/api/scenes/${seg(id)}/project`, body)
 export const sceneFileUrl = (id: string, name: string) =>
   `/api/scene-file/${seg(id)}/${seg(name)}`
+/**
+ * A file dropped on the timeline, into the scene's own `media/` — never a
+ * dataset. Multipart for `upload`'s reason: a clip is megabytes, and base64 in
+ * a JSON body would be a third larger and held whole at both ends. The answer's
+ * `name` is what `sceneFileUrl` serves it back by.
+ */
+export async function sceneMedia(id: string, file: File): Promise<Res<SceneMediaSaved>> {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  return api<SceneMediaSaved>(`/api/scenes/${seg(id)}/media`, { method: 'POST', body: form })
+}
 
 export const gallery = (before = 0, limit = 200) =>
   api<Record<string, unknown>>(`/api/gallery?before=${before}&limit=${limit}`)

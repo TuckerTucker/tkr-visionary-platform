@@ -436,3 +436,13 @@ export type ExportMeta = {
 /** What `POST /api/outputs` answers: the folder and file the cut now lives at,
  *  which is everything `/api/file` needs to serve it back. */
 export type OutputSaved = { ok: true; job_id: string; name: string }
+
+/** What `POST /api/scenes/{id}/media` answers for a file dropped on the
+ *  timeline: the name it was saved under in the scene's `media/` (its own stem,
+ *  the sniffed extension), what the bytes turned out to be, and their size. */
+export type SceneMediaSaved = {
+  ok: true
+  name: string
+  kind: 'video' | 'image' | 'audio'
+  bytes: number
+}
