@@ -6,29 +6,36 @@ features:
       to play and export as one cut, so that a scene longer than 14.4 seconds is
       a thing I have rather than a folder of clips.
     description: The first stage, and usable alone. The takes already recorded on
-      the store become clips on V1 of an OpenVideo project, compiled from a
-      scene record kept on the volume. Playback, trim, reorder, a crossfade at
-      every cut by default because each H3 take carries its own soundtrack, and
-      export in the page. Generation does not change.
+      the store become clips on V1 of an OpenVideo project kept in a scene
+      folder on the volume. The IProject is the arrangement's only record from
+      the first clip on — the scene folder's intent sidecars hold no trim, order
+      or position, so there is never a second copy of V1 to disagree with it.
+      Playback, trim, reorder, hard cuts with a crossfade available on any cut,
+      and export in the page. Generation does not change.
     acceptance_criteria:
       - Continue twice, and the three takes are on V1 in order without any
         further gesture.
       - A trim or a reorder is reflected in playback on the next frame, with
         nothing re-fetched.
-      - Each cut has a short audio crossfade unless you change it; no cut jumps
-        in level.
+      - A cut is hard unless you give it a crossfade, and a crossfade is set per
+        cut. A join made by Continue is already seamless — the pinned context is
+        trimmed off at decode — so a crossfade there would overlap audio that
+        already continues.
       - Export encodes in the page and the MP4 appears in the gallery as an
-        output.
+        output, through a route that writes outputs — never through
+        /api/upload, which stages images into a training dataset.
       - In Firefox the scene previews and export is disabled with the reason on
         the control.
       - Closing and reopening the page restores the scene, its trims and its
         order.
     consumes_api:
-      - /api/upload
+      - /api/scenes/{id}
+      - /api/outputs
       - /api/file/{job_id}/{name}
       - /api/gallery
     wiring_assignment:
       territory:
+        - app.py
         - web/package.json
         - web/src/edit
         - web/src/store.ts
@@ -41,9 +48,10 @@ features:
     description: Multi-track, on OpenVideo's arrangement as-is. A track is made by
       dropping something below the last one — your own footage, your own
       photographs, text, audio — never by an add-track button. An H3 take's
-      soundtrack travels with its clip until you drag it onto an A track. The
-      arrangement is stored as a pinned IProject beside the intent sidecars, and
-      the reader keeps every field it does not model.
+      soundtrack travels with its clip until you drag it onto an A track. Your
+      own files are stored in the scene folder, not in a dataset, because a
+      clip dropped on V2 is not training material and nothing should make it
+      one by accident. The IProject's reader keeps every field it does not model.
     acceptance_criteria:
       - Dropping a file below V1 makes V2 and places it at the drop time;
         dropping audio makes an A track.
@@ -54,8 +62,9 @@ features:
       - An arrangement saved at one pinned OpenVideo version reloads with every
         field intact, including ones the page does not read.
       - No surface offers browsing or searching media that is not yours.
+      - A dropped file lands in scenes/{id}/media and appears in no dataset.
     consumes_api:
-      - /api/upload
+      - /api/scenes/{id}/media
     wiring_assignment:
       territory:
         - web/src/edit
@@ -69,20 +78,32 @@ features:
     description: slot.render, take.choose and slot.continue registered as OpenVideo
       custom commands, each one a normal Visionary job over /api/video,
       /api/status and /api/stop. A slot's takes step with the same ‹ 1 / 4 › the
-      canvas already uses for a batch. The shot bars in scene/Timeline.tsx
-      become V1 slots and stop keeping their own model, and a shot longer than
-      one generation becomes several takes chained by Continue. Continue starts
-      from the frame at the out-point, not the file's last frame.
+      canvas already uses for a batch. A slot is one generation and holds the
+      shots rendered in it — the `[Shot N]` cuts H3 makes inside one take — so
+      scene/Timeline.tsx's shot bars move inside the V1 slots and its break
+      mark becomes the slot boundary, rather than each shot becoming a
+      generation of its own and losing the cuts the model makes for free. A
+      shot longer than one generation spans several slots chained by Continue,
+      re-anchored from the cast's references at an interval named beside
+      H3MC_CONTEXT_FRAMES, because the pack's own README says quality compounds
+      down a chain and audio dulls first. Continue from a trimmed take cuts the
+      saved motion latent at the out-point on the server, so motion and audio
+      still continue from where the cut is rather than from a still.
     acceptance_criteria:
       - Undo after a render returns the slot to its previous take; the bytes of
         the undone take stay on the volume.
       - A trim followed by a render undoes in that order from one history.
-      - Scene actions no longer call confirm(); the ones that destroy bytes on
-        the volume keep a dialog that states the blast radius.
-      - "There is one timeline on screen: the shot bars are the V1 slots."
+      - No scene action asks for confirmation; undo is the recovery for every
+        one of them.
+      - "There is one timeline on screen: the shot bars sit inside the V1 slot
+        that renders them."
+      - A slot whose prose names three shots renders as one take with its three
+        cuts, not as three takes.
       - A 30-second shot renders as three chained takes that play as one clip on
-        V1.
-      - Continue from a trimmed take opens on the frame at the trim point.
+        V1, and the chain re-anchors from references at the named interval.
+      - Continue from a trimmed take carries motion and audio from the out-point,
+        snapped to the latent's frame grid with the snap shown on the slot; with
+        no saved latent it opens on the frame at the out-point and says so.
     consumes_api:
       - /api/video
       - /api/status/{job_id}
@@ -94,8 +115,7 @@ features:
         - web/src/scene
         - web/src/video
         - web/src/canvas
-        - web/src/gallery
-        - web/src/datasets
+        - app.py
   - name: cross-track-context
     status: planned
     user_story: As a director cutting away mid-scene, I want the insert to know
@@ -131,15 +151,19 @@ features:
       surface to hold it.
     description: "The Pixi stage becomes the canvas for both domains. A still is a
       zero-duration scene: one slot and no time axis until time is added.
-      Regions draw over the frame at the playhead and belong to the slot under
-      it, which answers what a region means on video by making it per-slot."
+      Regions draw over the frame at the playhead and belong to the still slot
+      under it. /api/video takes no regions, so over a video slot the region
+      tool is shown disabled with that reason rather than drawing boxes nothing
+      will read."
     acceptance_criteria:
       - A first-run image session shows no timeline and no track.
       - The canvas behaviours already specified in web/CLAUDE.md — a render
         replaced when the next lands, a click addressing what is under it, the
         30% console budget — hold on the Pixi stage.
-      - Regions drawn at the playhead apply to the slot under it and move with
-        that slot.
+      - Regions drawn at the playhead apply to the still slot under it and move
+        with that slot.
+      - Over a video slot the region tool is disabled and says H3 takes no
+        regions.
       - Stepping a batch still costs a compositor frame and re-fetches nothing.
     consumes_api:
       - /api/generate

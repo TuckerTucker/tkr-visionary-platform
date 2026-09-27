@@ -548,9 +548,10 @@ capabilities:
     paths:
       - web/src/edit
     description: "Takes become a scene you can cut. OpenVideo (@openvideo/core with
-      the Pixi renderer) arranges, previews and exports; Visionary generates
+      @openvideo/engine-pixi) arranges, previews and exports; Visionary generates
       what goes on the tracks. The two meet at the slot: a place on a track that
-      is empty (intent), rendering (a job), or filled (a take). Today `takes` is
+      is empty (intent), rendering (a job), or filled (a take). A slot is one
+      generation and holds the shots rendered in it. Today `takes` is
       recorded on the store and nothing ever assembles it — this capability is
       what does."
     scope_in:
@@ -560,7 +561,8 @@ capabilities:
         add-track button."
       - Intent is Visionary's and stays in sidecars (prose, pills, cast, LoRAs,
         every take a slot has had); arrangement is OpenVideo's IProject stored
-        verbatim at a pinned commit. Mirroring a full NLE schema in our own
+        verbatim at a pinned version, and it is the only record of arrangement
+        from the first clip on V1. Mirroring a full NLE schema in our own
         format would be a second way to do the first thing.
       - Generation as OpenVideo custom commands (slot.render, take.choose,
         slot.continue) over the existing job/status/stop contract, so a trim and
@@ -581,6 +583,9 @@ capabilities:
         bed or a voice-over is your own file.
       - Export in Firefox. OpenVideo supports preview only there; the control is
         shown disabled with the reason rather than hidden.
+      - Regions on a video slot. /api/video takes none; H3 has no regional
+        conditioning to give them to. The region tool over a video slot is
+        shown disabled with that reason.
     acceptance_criteria:
       - Two takes from one scene play back as one cut and export as one MP4 that
         appears in the gallery.

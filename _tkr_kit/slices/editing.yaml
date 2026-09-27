@@ -2,28 +2,36 @@ capability: editing
 slices:
   - number: 1
     feature: scene-assembly
-    delivers: "@openvideo/core and the Pixi renderer at a commit SHA, built into the
-      image with the rest of web/. When upstream force-pushes, the build does
-      not change under us, and nothing at runtime needs Node."
+    delivers: "@openvideo/core and @openvideo/engine-pixi at exact versions with
+      the lockfile's integrity hashes, built into the image with the rest of
+      web/. Both are published from the scenify/scenify monorepo, where a commit
+      SHA would mean building the packages from source; a published npm version
+      cannot be re-pointed, which is what a SHA buys elsewhere. When upstream
+      force-pushes, the build does not change under us, and nothing at runtime
+      needs Node."
     paths:
       - web/package.json
       - web/package-lock.json
       - web/vite.config.ts
-    depends_on: []
+    depends_on:
+      - 17
     story_ids: []
     title: OpenVideo pinned into the image build
     layer: integration
     status: planned
   - number: 2
     feature: scene-assembly
-    delivers: scenes/{id}/ holding the scene record and the intent sidecars, beside
-      the takes it references by job and file. A new route is behind the
-      password by existing; the reader keeps every field it does not model,
-      because a sidecar is read years after it is written.
+    delivers: scenes/{id}/ holding the intent sidecars, beside the takes they
+      reference by job and file, read and written through /api/scenes/{id}.
+      Intent only — no trim, order or position, which are the IProject's
+      (slice 10). The route is behind the password by existing; the reader
+      keeps every field it does not model, because a sidecar is read years
+      after it is written.
     paths:
       - app.py
       - web/src/api
-    depends_on: []
+    depends_on:
+      - 17
     story_ids: []
     title: A scene folder on the volume, and the route that reads and writes it
     layer: data
@@ -31,38 +39,45 @@ slices:
   - number: 3
     feature: scene-assembly
     delivers: The store's `takes` compiled into an IProject on V1 and played on the
-      OpenVideo stage. Continue appends; nothing else has to be done for a take
-      to be in the cut.
+      OpenVideo stage, saved through slice 10's store from the first clip.
+      Continue appends; nothing else has to be done for a take to be in the
+      cut.
     paths:
       - web/src/edit
       - web/src/store.ts
     depends_on:
       - 1
       - 2
+      - 10
     story_ids: []
     title: Takes become V1 clips on the Pixi stage
     layer: ui
     status: planned
   - number: 4
     feature: scene-assembly
-    delivers: In and out points and order, on the track. Each H3 take carries its
-      own soundtrack, so every cut is a level jump unless something smooths it —
-      a short crossfade is the default and each cut can change it.
+    delivers: In and out points and order, on the track. Cuts are hard by default,
+      and any cut can be given a crossfade. A join made by Continue is already
+      seamless — the pinned context is trimmed off at decode — so a default
+      crossfade would overlap audio that already continues.
     paths:
       - web/src/edit
     depends_on:
       - 3
     story_ids: []
-    title: Trim, reorder, and a crossfade at every cut
+    title: Trim, reorder, and a crossfade on any cut
     layer: ui
     status: planned
   - number: 5
     feature: scene-assembly
-    delivers: WebCodecs encodes the cut in the browser and the MP4 is uploaded as an
-      output, so it is found where every render is. Progress says which clip it
-      is encoding. In Firefox the control is disabled with the reason on it, not
-      hidden and not failing after the press.
+    delivers: WebCodecs encodes the cut in the browser and POST /api/outputs writes
+      the MP4 into a job directory of its own, so it is found where every render
+      is. /api/upload is not the route — it stages images into a training
+      dataset. Progress says which clip it is encoding. In Firefox the control
+      is disabled with the reason on it, not hidden and not failing after the
+      press.
     paths:
+      - app.py
+      - web/src/api
       - web/src/edit
       - web/src/gallery
     depends_on:
@@ -75,8 +90,12 @@ slices:
     feature: tracks
     delivers: "Dropping below the last track makes one of the right kind at the drop
       time: footage and photographs on V, text on T, audio on A. There is no
-      add-track button and no media browser; the files are yours."
+      add-track button and no media browser; the files are yours. They land in
+      scenes/{id}/media through /api/scenes/{id}/media, never in a dataset —
+      a clip dropped on V2 is not training material."
     paths:
+      - app.py
+      - web/src/api
       - web/src/edit
       - web/src/media
     depends_on:
@@ -128,16 +147,18 @@ slices:
     layer: ui
     status: planned
   - number: 10
-    feature: tracks
+    feature: scene-assembly
     delivers: OpenVideo's project JSON written verbatim into the scene folder,
-      tagged with the pinned OpenVideo commit it was written at, and linked to
-      the intent sidecars by slot id. Reloading at the same pin loses no field.
+      tagged with the pinned @openvideo/core version it was written at, and
+      linked to the intent sidecars by slot id. It is the arrangement's only
+      record from the first clip on V1, so there is never a second copy to
+      disagree with it. Reloading at the same pin loses no field.
     paths:
       - app.py
       - web/src/edit
     depends_on:
+      - 1
       - 2
-      - 6
     story_ids: []
     title: The arrangement stored as a pinned IProject
     layer: data
@@ -146,25 +167,28 @@ slices:
     feature: generative-commands
     delivers: Trim, reorder, choose a take and render all undo from one history.
       Undoing a render returns the previous take and leaves the bytes on the
-      volume. The dialogs that stay are the ones that destroy bytes, and they
-      state the blast radius.
+      volume. No scene action asks for confirmation; undo is the recovery.
     paths:
       - web/src/edit
-      - web/src/gallery
-      - web/src/datasets
     depends_on:
+      - 4
       - 7
     story_ids: []
-    title: One undo stack, and scene actions without confirm()
+    title: One undo stack for every scene edit
     layer: ui
     status: planned
   - number: 12
     feature: generative-commands
-    delivers: "The next slot opens on the frame at the cut, read with extractFrame,
-      rather than the file's last frame — a take trimmed because its last second
-      went wrong should not be continued from that second. Still best-effort: no
-      frame, and the next take opens cold."
+    delivers: "Continue carries motion and audio from the out-point, not the
+      file's end — a take trimmed because its last second went wrong should not
+      be continued from that second. The saved latent (H3MC_SIDECAR) is cut on
+      the server so its context window ends at the out-point, snapped to the
+      latent's frame grid and to the 40 Hz audio grid, with the snap shown on
+      the slot. Without a saved latent it degrades to the frame at the
+      out-point, read with extractFrame, and says it did; with no frame either,
+      the next take opens cold."
     paths:
+      - app.py
       - web/src/video
       - web/src/edit
     depends_on:
@@ -176,16 +200,22 @@ slices:
     status: planned
   - number: 13
     feature: generative-commands
-    delivers: scene/Timeline.tsx stops keeping its own model; one timeline on
-      screen. A shot longer than H3's cap becomes several takes chained by
-      Continue that play as one clip.
+    delivers: One timeline on screen. A slot is one generation and holds the
+      shots rendered in it, so scene/Timeline.tsx's shot bars move inside the V1
+      slots and its break mark becomes the slot boundary — the `[Shot N]` cuts
+      H3 makes inside one take stay one take. A shot longer than H3's cap spans
+      several takes chained by Continue that play as one clip, re-anchored from
+      the cast's references at an interval named beside H3MC_CONTEXT_FRAMES,
+      because the pack's README says quality compounds down a chain and audio
+      dulls first.
     paths:
+      - app.py
       - web/src/scene
       - web/src/edit
     depends_on:
       - 7
     story_ids: []
-    title: The shot bars are the V1 slots
+    title: The shot bars live inside the V1 slots
     layer: ui
     status: planned
   - number: 14
@@ -212,6 +242,7 @@ slices:
     paths:
       - web/src/edit
     depends_on:
+      - 5
       - 12
       - 14
     story_ids: []
@@ -220,8 +251,10 @@ slices:
     status: planned
   - number: 16
     feature: one-canvas
-    delivers: Regions belong to the slot under the playhead and move with it, which
-      is what a region means on video.
+    delivers: Regions belong to the still slot under the playhead and move with
+      it. /api/video takes no regions, so over a video slot the region tool is
+      shown disabled with that reason rather than drawing boxes nothing will
+      read.
     paths:
       - web/src/regions
       - web/src/edit
@@ -237,7 +270,7 @@ slices:
       replaced by the editing scope, keeping the frame/shot/scene argument for
       why generation stops at a take; docs/roadmap.md gains the editing phase. A
       rule that no longer holds and is still in context vetoes the work it
-      describes.
+      describes, which is why slices 1 and 2 depend on this one.
     paths:
       - web/CLAUDE.md
       - docs/roadmap.md
