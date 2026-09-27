@@ -19,7 +19,7 @@
  * in a console nobody is watching.
  */
 import type { ApiError } from '../api/client'
-import type { Core, IProject } from '@openvideo/core'
+import type { CommandHandler, Core, IProject } from '@openvideo/core'
 import type { Compositor, Studio } from '@openvideo/engine-pixi'
 
 /**
@@ -96,6 +96,23 @@ export interface Engine {
   /** The exporter. A class rather than a factory because its static
    * `isSupported()` is what decides whether Export is offered at all. */
   Compositor: typeof Compositor
+  /**
+   * Teach every Core a command type: `handler(state, cmd)` returns the patches
+   * the command makes, and Core records them — with their inverse — as one
+   * undo entry.
+   *
+   * The package's registry is one module-level map shared by every Core, so a
+   * type is registered once per page rather than per Core; registering it again
+   * replaces the handler, which is what makes a hot reload harmless. Handed out
+   * through here, not imported, for the reason this file exists: a value import
+   * of `commandRegistry` from anywhere on the first-load path is the whole
+   * engine in the entry chunk.
+   */
+  registerCommand(type: string, handler: CommandHandler): void
+  /** Whether a command type has a handler — a Core asked to run one that does
+   *  not only warns in the console and does nothing, which reads as an edit
+   *  that silently failed. */
+  hasCommand(type: string): boolean
 }
 
 /** Raised when a Studio is asked to draw on a canvas that is not yet in the
@@ -180,5 +197,7 @@ async function load(): Promise<Engine | ApiError> {
       return studio
     },
     Compositor: pixiMod.Compositor,
+    registerCommand: (type, handler) => coreMod.commandRegistry.register(type, handler),
+    hasCommand: (type) => coreMod.commandRegistry.has(type),
   }
 }

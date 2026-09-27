@@ -25,8 +25,13 @@
  * **The arrangement's only record is the Core.** On open it is imported from
  * the scene's project.json when there is one; otherwise the scene's takes are
  * laid onto V1 in order and that becomes the record. From then on a take that
- * lands is appended to V1 and nothing else — the intent never learns where a
- * take sits (see persist.ts).
+ * lands goes where its run was aimed when it was started (see `SlotTarget`):
+ * the end of V1, into a slot it re-renders, or after the slot it continues —
+ * each one command, so each is one undo. The intent never learns where a take
+ * sits (see persist.ts); it learns which slot a take was rendered for.
+ *
+ *   chooseTake         step a slot to another of its takes (`take.choose`)
+ *   undo / redo        Core's history — the only one
  */
 import { create } from 'zustand'
 import type { AnyClip, Command, Core, IProject } from '@openvideo/core'
@@ -38,8 +43,16 @@ import { loadEngine, OPENVIDEO_PIN, us, type Engine } from './engine'
 import { attachProjectSaver, loadedProject, pinNote, saveProject } from './persist'
 import {
   appendTake, atEndOfV1, emptyProject, mediaSrcs, mintSlotId, park, readProject, rebase,
-  settingsFor, takePayload, takeSrc, v1, V1_ID, v1Track, withParked, type Parked,
+  settingsFor, slotOf, takePayload, takeSrc, v1, V1_ID, v1Track, withParked, type Parked,
 } from './project'
+import {
+  registerCommands, SLOT_CONTINUE, SLOT_RENDER, TAKE_CHOOSE,
+  type SlotContinuePayload, type SlotRenderPayload, type TakeChoosePayload,
+} from './commands'
+import {
+  adoptTakes, clearSlotRun, clipOfSlot, setSlotRun, slotView, takeLanding, useSlotRuns,
+  type SlotTake,
+} from './slots'
 
 export type EditPhase = 'off' | 'loading' | 'ready' | 'failed'
 
@@ -100,6 +113,25 @@ export function batch(commands: EditCommand[]): boolean {
   const core = useEdit.getState().core
   if (!core) return false
   core.batch(commands.map(withId))
+  return true
+}
+
+/**
+ * Step back one edit on the open scene's history — a trim, a render, a take
+ * chosen — or forward again. Core's history only: the Studio keeps one of its
+ * own for canvas drags, which this page never makes, and two stacks would be
+ * two answers to "what does undo do". False with no scene open.
+ */
+export function undo(): boolean {
+  const core = useEdit.getState().core
+  if (!core) return false
+  core.undo()
+  return true
+}
+export function redo(): boolean {
+  const core = useEdit.getState().core
+  if (!core) return false
+  core.redo()
   return true
 }
 
@@ -308,6 +340,10 @@ type Session = {
   known: SceneTake[]
   core: Core | null
   cleanup: Array<() => void>
+  /** The engine's reading of each take file this session has placed, by URL.
+   *  Stepping a slot back to a take it had is then a command and nothing else —
+   *  no second metadata read of a file the page already knows the length of. */
+  reads: Map<string, AnyClip>
 }
 
 let session: Session | null = null
@@ -341,12 +377,35 @@ function close(): void {
     for (const f of s.cleanup) f()
     s.core?.pause()
   }
+  // A slot's "placing the take" belongs to the arrangement that is going
+  // away, and would otherwise sit on a slot of the next scene with the same id
+  // forever. A job still running keeps running; its take joins `store.takes`.
+  useSlotRuns.setState({}, true)
   useEdit.setState({ ...OFF })
 }
 
-/** Lay `takes` onto V1 of a new project, reading each file once. */
-async function compile(eng: Engine, takes: readonly SceneTake[], probes: Array<Probe | ApiError>):
-  Promise<{ project: IProject; broken: Record<string, ApiError> }> {
+/**
+ * The takes an arrangement is compiled from, one per slot, in the order each
+ * slot first appeared — and in each slot the latest take, because that is the
+ * one a render put there. A take from before slots existed is a slot of its
+ * own. Only these are read: a slot's other takes are not on the timeline.
+ */
+function laidOut(takes: readonly SlotTake[]): Array<{ take: SlotTake; slotId: string | null }> {
+  const out: Array<{ take: SlotTake; slotId: string | null }> = []
+  const at = new Map<string, number>()
+  for (const t of takes) {
+    if (!t.slot) { out.push({ take: t, slotId: null }); continue }
+    const i = at.get(t.slot)
+    if (i === undefined) { at.set(t.slot, out.length); out.push({ take: t, slotId: t.slot }) }
+    else out[i] = { take: t, slotId: t.slot }
+  }
+  return out
+}
+
+/** Lay `layout` onto V1 of a new project, reading each file once. */
+async function compile(eng: Engine, layout: ReadonlyArray<{ take: SceneTake; slotId: string | null }>,
+  probes: Array<Probe | ApiError>): Promise<{ project: IProject; broken: Record<string, ApiError> }> {
+  const takes = layout.map((l) => l.take)
   const first = probes.find((p): p is Probe => !failed(p))
   const settings = settingsFor({
     width: first?.width || takes[0]?.width,
@@ -357,8 +416,8 @@ async function compile(eng: Engine, takes: readonly SceneTake[], probes: Array<P
   const scratch = eng.createCore(emptyProject(settings))
   let project = emptyProject(settings)
   const broken: Record<string, ApiError> = {}
-  for (const [i, take] of takes.entries()) {
-    const slotId = mintSlotId(project)
+  for (const [i, { take, slotId: stamped }] of layout.entries()) {
+    const slotId = stamped ?? mintSlotId(project)
     const pr = probes[i]!
     const read = failed(pr) ? pr : await prepare(scratch, take, slotId)
     if (failed(read)) {
@@ -375,7 +434,7 @@ async function compile(eng: Engine, takes: readonly SceneTake[], probes: Array<P
 async function open(): Promise<void> {
   const gen = ++generation
   const takes = [...useStore.getState().takes]
-  const s: Session = { gen, known: takes, core: null, cleanup: [] }
+  const s: Session = { gen, known: takes, core: null, cleanup: [], reads: new Map() }
   session = s
   parked = []
   useEdit.setState({ ...OFF, phase: 'loading' })
@@ -387,6 +446,10 @@ async function open(): Promise<void> {
     useEdit.setState({ ...OFF, phase: 'failed', error: eng })
     return
   }
+  // Before any Core runs a command: a Core asked for a type nobody registered
+  // warns in the console and does nothing, which is a render that landed and
+  // silently went nowhere.
+  registerCommands(eng)
 
   const notes: Array<string | ApiError> = []
   const lp = loadedProject()
@@ -422,8 +485,9 @@ async function open(): Promise<void> {
       probe({ jobId: String(c.metadata!.jobId), file: String(c.metadata!.file) })))
     clips.forEach((c, i) => { const p = probes[i]!; if (failed(p)) broken[c.id] = p })
   } else {
-    const probes = await Promise.all(takes.map(probe))
-    ;({ project, broken } = await compile(eng, takes, probes))
+    const layout = laidOut(takes)
+    const probes = await Promise.all(layout.map((l) => probe(l.take)))
+    ;({ project, broken } = await compile(eng, layout, probes))
   }
   if (gen !== generation) return
 
@@ -451,9 +515,10 @@ async function open(): Promise<void> {
         + 'laid onto V1 again in the order they were made.',
       detail: e instanceof Error ? `${e.name}: ${e.message}` : String(e),
     })
-    const probes = await Promise.all(takes.map(probe))
+    const layout = laidOut(takes)
+    const probes = await Promise.all(layout.map((l) => probe(l.take)))
     if (gen !== generation) return
-    const again = await compile(eng, takes, probes)
+    const again = await compile(eng, layout, probes)
     if (gen !== generation) return
     broken = again.broken
     const split2 = park(again.project, new Set(Object.keys(broken)))
@@ -470,21 +535,84 @@ async function open(): Promise<void> {
     phase: 'ready', error: null, core, engine: eng, project: snapshot(core), parked, broken, notes,
     playing: false,
   })
+  // A scene from before slots existed: every take on the timeline is stamped
+  // with the slot it sits in, so its slot's list survives the slot being
+  // rendered again. `known` is compared by job and file, so this is not a
+  // different scene to `sync`.
+  const adopted = adoptTakes(useStore.getState().takes, snapshot(core))
+  if (adopted) useStore.setState({ takes: adopted })
   // Whatever landed while this was opening.
   void sync()
 }
 
-/**
- * One take, onto the end of V1: read, placed, added as one command. A file
- * that will not load is parked in its place instead, and the saver is told,
- * because a parked clip is not a Core change it would otherwise see.
- */
-async function append(s: Session, core: Core, take: SceneTake): Promise<void> {
+/** The engine's reading of a take, from the session's cache when it has one.
+ *  A file that will not load is never cached, so the next ask is the retry. */
+async function readTake(s: Session, core: Core, take: SceneTake, slotId: string): Promise<AnyClip | ApiError> {
+  const key = takeSrc(take)
+  const had = s.reads.get(key)
+  if (had) return had
   const pr = await probe(take)
+  if (failed(pr)) return pr
+  const read = await prepare(core, take, slotId)
+  if (!failed(read)) s.reads.set(key, read)
+  return read
+}
+
+/** A copy of a cached reading with an id of its own, for a clip that is new
+ *  to the arrangement — two clips sharing an id are one clip to the Core. */
+const fresh = (c: AnyClip): AnyClip => ({ ...c, id: crypto.randomUUID() })
+
+/**
+ * One take that has landed, into the arrangement where its run was aimed (see
+ * `SlotTarget`) — each as one command, so each is one undo:
+ *
+ * - into the slot it re-rendered (`slot.render`), the slot's old take kept in
+ *   its list and on the volume;
+ * - after the slot it continues (`slot.continue`);
+ * - otherwise onto the end of V1.
+ *
+ * A file that will not load is parked in its place instead, and the saver is
+ * told, because a parked clip is not a Core change it would otherwise see. A
+ * re-render whose file will not load leaves the slot on the take it had, and
+ * says so on the slot — the new take is still in its list.
+ */
+async function land(s: Session, core: Core, take: SlotTake): Promise<void> {
+  const target = takeLanding(take.jobId)
+  const slotId = target?.slotId ?? take.slot ?? mintSlotId(snapshot(core))
+  const read = await readTake(s, core, take, slotId)
   if (session !== s) return
-  const slotId = mintSlotId(snapshot(core))
-  const read = failed(pr) ? pr : await prepare(core, take, slotId)
-  if (session !== s) return
+
+  if (target?.kind === 'render') {
+    clearSlotRun(slotId)
+    if (failed(read)) { setSlotRun(slotId, { error: read }); return }
+    if (clipOfSlot(core.store.getState(), slotId)) {
+      const payload: SlotRenderPayload = { slotId, clip: read }
+      core.execute(withId({ type: SLOT_RENDER, payload }))
+      return
+    }
+    const held = parked.find((p) => slotOf(p.clip) === slotId)
+    if (held) {
+      // The slot's old file never loaded, so its clip is not in the Core. The
+      // new take goes where that one sat, and the stand-in is let go of — the
+      // slot plays now.
+      parked = parked.filter((p) => p !== held)
+      useEdit.setState((st) => {
+        const rest = { ...st.broken }
+        delete rest[held.clip.id]
+        return { broken: rest }
+      })
+      const d = held.clip.timing.display
+      const payload: SlotRenderPayload = {
+        slotId, clip: fresh(read), trackId: held.trackId, at: d.from, span: d.to - d.from,
+      }
+      core.execute(withId({ type: SLOT_RENDER, payload }))
+      return
+    }
+    // The slot left the cut (undone, or its clip removed) while the take
+    // rendered. The take is still the slot's; it goes on the end of V1 rather
+    // than nowhere.
+  }
+
   // Placed against the drawn project, parked clips included, so a take after
   // a missing one does not slide into the missing one's place.
   const now = snapshot(core)
@@ -497,7 +625,12 @@ async function append(s: Session, core: Core, take: SceneTake): Promise<void> {
     void saveProject()
     return
   }
-  const placed = atEndOfV1(now, read)
+  if (target?.kind === 'continue') {
+    const payload: SlotContinuePayload = { fromSlotId: target.from, slotId, clip: fresh(read) }
+    core.execute(withId({ type: SLOT_CONTINUE, payload }))
+    return
+  }
+  const placed = atEndOfV1(now, fresh(read))
   // A Core with no V1 left (a later edit removed it) gets one back in the same
   // undo entry; a clip added to a track id that does not exist is a clip on no
   // track, which nothing draws or plays.
@@ -506,6 +639,28 @@ async function append(s: Session, core: Core, take: SceneTake): Promise<void> {
   cmds.push(withId({ type: 'clip.add', payload: { clip: placed, trackId: track?.id ?? V1_ID } }))
   if (cmds.length === 1) core.execute(cmds[0]!)
   else core.batch(cmds)
+}
+
+/**
+ * Put take `index` of `slotId`'s list in the slot's clip — `take.choose`, one
+ * undo entry. Resolves false when there is nothing to do (no scene, no such
+ * take, already chosen, the slot's clip held out of the Core) or the take's
+ * file will not load, in which case the slot says why.
+ */
+export async function chooseTake(slotId: string, index: number): Promise<boolean> {
+  const s = session
+  const core = s?.core
+  if (!s || !core) return false
+  const view = slotView(useStore.getState().takes, slotId, snapshot(core))
+  const take = view.takes[index]
+  if (!take || index === view.chosen) return false
+  if (!clipOfSlot(core.store.getState(), slotId)) return false
+  const read = await readTake(s, core, take, slotId)
+  if (session !== s) return false
+  if (failed(read)) { setSlotRun(slotId, { error: read }); return false }
+  const payload: TakeChoosePayload = { slotId, index, clip: read }
+  core.execute(withId({ type: TAKE_CHOOSE, payload }))
+  return true
 }
 
 let syncing = false
@@ -530,7 +685,7 @@ async function sync(): Promise<void> {
       }
       const next = takes[s.known.length]
       if (!next) return
-      await append(s, core, next)
+      await land(s, core, next)
       if (session !== s) return
       s.known = [...s.known, next]
     }
@@ -567,6 +722,9 @@ export function retry(): void {
  * Returns the stop.
  */
 export function startEditing(): () => void {
+  // The history, reachable from a UI check before a control draws it — the
+  // `__eye` convention. It runs the same two functions a button would.
+  ;(window as unknown as Record<string, unknown>).__edit = { undo, redo }
   const unsub = useStore.subscribe((st, prev) => {
     if (st.takes !== prev.takes || st.kind !== prev.kind) reconcile(st)
   })
