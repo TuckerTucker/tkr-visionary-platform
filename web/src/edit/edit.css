@@ -1,0 +1,71 @@
+/* ── the edit surface ────────────────────────────────────────────────────
+   The cut, under the canvas: the stage's monitor on the left, the timeline
+   beside it. Mounted only on the video side and only once the scene has a take,
+   so a still session never pays a pixel for it. Sized as one short band because
+   every pixel of it comes out of the canvas above — the picture is height-bound
+   at every aspect on a laptop — and the stage is here only until it moves into
+   the canvas's own video slot. */
+.edit{flex:none;display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 14px;
+  align-items:start;padding:8px 28px 6px;border-top:1px solid var(--wash-3)}
+.edit > .err-box{grid-column:1 / -1;margin:0 0 8px}
+
+/* The monitor. Its aspect is the project's; the Studio letterboxes inside it
+   and re-fits on every resize (see `Stage`). */
+.edit-stage{position:relative;height:96px;max-width:240px;border-radius:var(--r-inner);
+  overflow:hidden;background:#000}
+.edit-stage-host{position:absolute;inset:0}
+.edit-stage-host canvas{display:block;width:100%;height:100%}
+.edit-stage .err-box{position:absolute;inset:0;margin:0;overflow:auto;font-size:11px}
+
+.edit-tracks{min-width:0;display:flex;flex-direction:column;gap:2px;outline:none}
+/* The transport, and the end of the row where controls for the whole cut sit.
+   One row that carries content — the clock — so it is a row worth its height. */
+.et-head{display:flex;align-items:center;gap:6px;min-height:28px}
+.et-head .ico{width:28px;height:28px}
+.et-head .ico svg{width:16px;height:16px}
+.et-head .ico:disabled{opacity:.4;cursor:default}
+.et-clock{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+.et-note{display:flex;align-items:flex-start;gap:8px;margin:2px 0 4px;font-size:11.5px}
+.et-note .err-box{flex:1;margin:0}
+.et-note button{flex:none;height:28px;padding:0 12px;border-radius:var(--r-control);
+  border:1px solid var(--line);background:var(--wash-2);color:var(--fg);cursor:pointer}
+
+/* A fixed scale that scrolls — see `Tracks`. */
+.et-scroll{position:relative;overflow-x:auto;overflow-y:hidden;padding-bottom:3px;
+  scrollbar-width:thin;cursor:text;touch-action:pan-x}
+.et-scroll::-webkit-scrollbar{height:3px}
+.et-scroll::-webkit-scrollbar-thumb{background:var(--line)}
+.et-body{position:relative;min-width:100%}
+.et-rule{position:relative;height:12px;pointer-events:none}
+.et-tick{position:absolute;top:0;font-size:9px;color:#3a3a40;transform:translateX(-1px);
+  font-variant-numeric:tabular-nums}
+.et-lane{position:relative;height:34px;margin-top:3px;border-radius:var(--r-inner);
+  background:var(--wash-1)}
+.et-lane.audio{height:22px}
+
+.et-clip{position:absolute;top:0;bottom:0;display:flex;align-items:center;gap:6px;
+  padding:0 8px;border-radius:var(--r-inner);background:var(--wash-3);
+  border:1px solid var(--line);overflow:hidden;cursor:inherit}
+.et-line{flex:1;min-width:0;font-size:11.5px;color:var(--fg);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.et-line i{color:var(--dim);font-style:normal}
+.et-secs{flex:none;font-size:9.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+/* A clip whose file did not load keeps its place and says why, on itself.
+   The critical red, because nothing plays there. */
+.et-clip.broken{background:var(--crit-fill);border-color:var(--crit-line)}
+.et-fail{flex:1;min-width:0;font-size:11px;color:#fca5a5;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+
+.et-playhead{position:absolute;top:0;bottom:0;left:0;width:1px;background:var(--fg);
+  pointer-events:none;will-change:transform}
+.et-playhead::before{content:"";position:absolute;top:0;left:-3px;width:7px;height:7px;
+  border-radius:0 0 var(--r-mark) var(--r-mark);background:var(--fg)}
+
+/* The phone keeps the two side by side with a smaller monitor. Stacked, the
+   monitor went full width — 220px of a 844px screen for a second copy of the
+   picture the canvas is there to show — and that is the canvas's height it
+   was spending. */
+@media (max-width:1023px){
+  .edit{gap:0 10px;padding:8px 16px 6px}
+  .edit-stage{height:64px}
+}

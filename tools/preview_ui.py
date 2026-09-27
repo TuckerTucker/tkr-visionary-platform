@@ -34,11 +34,15 @@ Stdlib only, and never imported by app.py: this must run on a laptop with no
 torch, no modal, and no credentials.
 """
 
+import atexit
 import base64
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 from html import escape
@@ -736,6 +740,68 @@ def swatch(w: int, h: int, label: str, seed: int) -> bytes:
     ).encode()
 
 
+# A real clip per job, for the editor.
+#
+# The SVG swatch below is what every other media route serves, and for a
+# `<video>` it is enough: the element paints nothing and the page around it is
+# what is being looked at. The editor is different — OpenVideo reads a clip's
+# size and length off the file, downloads it whole into its cache and decodes
+# frames from it, so a stub that is not an MP4 is a take that fails to load and
+# a timeline that can never be seen with anything on it. So a job's `.mp4` is a
+# real one, muxed by ffmpeg the first time it is asked for: 640x360, 3 seconds
+# at 24fps, the job id drawn on the test card and a tone pitched by it, so two
+# takes side by side are visibly and audibly two different files.
+#
+# H.264 baseline with AAC, because that is what H3 delivers and what the
+# engine's WebCodecs path is written for. `+faststart` so the metadata a
+# `<video preload=metadata>` asks for is in the first bytes, the way a real
+# take's is.
+#
+# Without ffmpeg on the PATH this falls back to the swatch, and the editor's
+# checks say so rather than pass on nothing.
+FFMPEG = shutil.which("ffmpeg")
+CLIP_DIR = Path(tempfile.mkdtemp(prefix="visionary-preview-clips-"))
+atexit.register(shutil.rmtree, CLIP_DIR, ignore_errors=True)
+CLIP_SECONDS, CLIP_W, CLIP_H, CLIP_FPS = 3, 640, 360, 24
+_CLIP_LOCK = threading.Lock()
+
+
+def clip_mp4(job: str) -> Path | None:
+    """The job's clip, muxed once and kept for the life of the server; None
+    when there is no ffmpeg or it refused."""
+    if not FFMPEG:
+        return None
+    out = CLIP_DIR / f"{job}.mp4"
+    with _CLIP_LOCK:
+        if out.exists():
+            return out
+        tone = 220 + (sum(job.encode()) % 12) * 40
+        label = re.sub(r"[^A-Za-z0-9_-]", "", job)
+        cmd = [
+            FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i",
+            f"testsrc=size={CLIP_W}x{CLIP_H}:rate={CLIP_FPS}:duration={CLIP_SECONDS}",
+            "-f", "lavfi", "-i", f"sine=frequency={tone}:duration={CLIP_SECONDS}",
+            "-vf", f"drawtext=text='{label}':fontsize=56:fontcolor=white:"
+                   "box=1:boxcolor=black@0.6:x=24:y=24",
+            "-c:v", "libx264", "-profile:v", "baseline", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(out),
+        ]
+        try:
+            subprocess.run(cmd, check=True, timeout=60, capture_output=True)
+        except (subprocess.SubprocessError, OSError):
+            # drawtext needs a build with freetype; the card without the label
+            # is still a distinct file per job by its tone.
+            cmd = [c for c in cmd if not c.startswith("drawtext")]
+            cmd.remove("-vf")
+            try:
+                subprocess.run(cmd, check=True, timeout=60, capture_output=True)
+            except (subprocess.SubprocessError, OSError):
+                out.unlink(missing_ok=True)
+                return None
+        return out
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -749,6 +815,40 @@ class Handler(BaseHTTPRequestHandler):
             body = body.encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def reply_file(self, path: Path, ctype: str):
+        """Bytes off disk with Range, as FileResponse serves them: the engine
+        and the `<video>` element both read an MP4 in ranges, and a server that
+        answers every range with the whole file is one that seeks by
+        re-downloading."""
+        data = path.read_bytes()
+        size = len(data)
+        rng = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+        if rng and (rng.group(1) or rng.group(2)):
+            if rng.group(1):
+                start = int(rng.group(1))
+                end = int(rng.group(2)) if rng.group(2) else size - 1
+            else:
+                start, end = max(0, size - int(rng.group(2))), size - 1
+            if start >= size or start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            end = min(end, size - 1)
+            body = data[start:end + 1]
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            body = data
+            self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
@@ -1390,6 +1490,16 @@ class Handler(BaseHTTPRequestHandler):
         # run's stills off this route by (job, file), so a pattern that only
         # matched `job\d+` served the gallery and left the canvas broken.
         m = re.match(r"/api/(?:file|cover)/([A-Za-z0-9_-]+)/(.+)$", path)
+        # A take's own file is a real clip — see `clip_mp4`. A job id with
+        # "missing" in it is a take whose file is gone from the volume, which is
+        # the one failure the editor has to draw on the clip rather than hide.
+        if m and path.startswith("/api/file/") and m.group(2).endswith(".mp4"):
+            if "missing" in m.group(1):
+                return self.reply({"error": f"No {m.group(2)!r} for job "
+                                            f"{m.group(1)!r}."}, code=404)
+            mp4 = clip_mp4(m.group(1))
+            if mp4:
+                return self.reply_file(mp4, "video/mp4")
         if m:
             item = next((i for i in GALLERY if i["job_id"] == m.group(1)), None)
             w, h = (item["width"], item["height"]) if item else (1024, 1024)
@@ -1485,11 +1595,17 @@ class Handler(BaseHTTPRequestHandler):
                     "total_steps": total - 2, "eta": "%ds" % (2 * (total - job["polls"])),
                     "percent": int(step * 100 / (total - 2)),
                 })
+            # What the file behind it is, when there is one: a record saying
+            # 1280x720 for five seconds over a 640x360 three-second clip is a
+            # stub the editor's fallback would read as the truth.
+            real = bool(FFMPEG)
             return self.reply({
                 "status": "completed", "percent": 100, "files": ["clip.mp4"],
-                "job_id": m.group(1), "width": 1280, "height": 720,
-                "seconds": 5, "frames": 120, "fps": 24, "seed": 4242,
-                "steps": 20, "duration_s": 214.0,
+                "job_id": m.group(1),
+                "width": CLIP_W if real else 1280, "height": CLIP_H if real else 720,
+                "seconds": CLIP_SECONDS if real else 5,
+                "frames": CLIP_SECONDS * CLIP_FPS if real else 120, "fps": 24,
+                "seed": 4242, "steps": 20, "duration_s": 214.0,
             })
 
         # Hours, not seconds — so the fields a long run is read by are the ones
@@ -1572,4 +1688,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"Visionary UI preview  ->  http://127.0.0.1:{PORT}")
     print(f"Serving {DIST} with a stubbed API; compilers pulled from {APP}.")
+    print(f"Clips: {'muxed by ' + FFMPEG + ' into ' + str(CLIP_DIR) if FFMPEG else 'no ffmpeg on PATH — .mp4 routes serve an SVG swatch'}.")
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()

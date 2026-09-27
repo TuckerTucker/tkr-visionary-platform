@@ -133,8 +133,20 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
       // on to add another — a scene with one take in it is just a scene you have
       // not continued yet, which is what keeps `Continue` from being a mode you
       // enter.
+      //
+      // What the job said about the file rides along, where it said it: the
+      // editor lays the first take out at its size and holds a take that will
+      // not load at its length. Only numbers are kept — a field the record did
+      // not carry is left off rather than written as a guess.
       const st2 = useStore.getState()
-      st2.addTake({ jobId, file, line: typedProse(st2.scene) })
+      const num = (k: string): { [key: string]: number } => {
+        const v = st[k]
+        return typeof v === 'number' && Number.isFinite(v) && v > 0 ? { [k]: v } : {}
+      }
+      st2.addTake({
+        jobId, file, line: typedProse(st2.scene),
+        ...num('width'), ...num('height'), ...num('seconds'), ...num('frames'), ...num('fps'),
+      })
     }
   }, [onLanded])
 

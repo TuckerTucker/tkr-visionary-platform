@@ -5,6 +5,9 @@ import { fileUrl, getState, warm } from './api/routes'
 import { Canvas } from './canvas/Canvas'
 import { useGenerate } from './canvas/useGenerate'
 import { Console } from './console/Console'
+import { useSaveState } from './edit/persist'
+import { Stage } from './edit/Stage'
+import { Tracks } from './edit/Tracks'
 import { videoReady } from './console/resolve'
 import { ErrorNote } from './ui/ErrorNote'
 import { Gallery, useGallery } from './gallery/Gallery'
@@ -609,6 +612,7 @@ export function App() {
                     : 'Loading…'
                 }
               />
+              {s.kind === 'video' && <EditSurface />}
               <Console run={gen.run} vidRun={vid.run} onGenerate={fire} onStop={stopRun}
                        lastShot={<LastShot items={items}
                                            onOpen={(rows, i) => setShown({ rows, i })} />} />
@@ -659,6 +663,40 @@ export function App() {
         onReload={() => void reloadState()}
       />
     </>
+  )
+}
+
+/**
+ * The cut, and what the scene's saving has to say.
+ *
+ * Between the canvas and the console, on the video side only. **Duration starts
+ * at zero**: a still session never mounts this, and the video side mounts the
+ * stage and the timeline only once the scene has a take — until then there is
+ * no time to show, and a timeline with nothing on it is a lesson in motion for
+ * somebody who has not asked for one. The engine itself is loaded by
+ * `useEdit`'s session on the same condition, so nothing here downloads it.
+ *
+ * The save note sits here because this is where the scene is: a failed save or
+ * a scene that could not be reopened is about the takes and the arrangement,
+ * and saying so beside them is saying it where the loss would be.
+ *
+ * `tools` is where controls for the whole cut mount — Export, Undo — at the end
+ * of the timeline's transport row.
+ */
+function EditSurface() {
+  const hasTime = useStore((st) => st.takes.length > 0)
+  const saveError = useSaveState((st) => st.error)
+  if (!hasTime && !saveError) return null
+  return (
+    <section className="edit" id="edit">
+      <ErrorNote err={saveError} />
+      {hasTime && (
+        <>
+          <Stage />
+          <Tracks tools={null} />
+        </>
+      )}
+    </section>
   )
 }
 

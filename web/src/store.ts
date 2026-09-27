@@ -191,7 +191,21 @@ export type Keyframes = { first: string | null; last: string | null }
 /** One generation that has landed, as a link in a scene. `line` is the prose it
  *  was made from, kept so the strip can say what a take was without refetching a
  *  sidecar for something the page watched happen. */
-export type SceneTake = { jobId: string; file: string; line: string }
+export type SceneTake = {
+  jobId: string
+  file: string
+  line: string
+  /** What the job reported about the file it delivered. Optional because a
+   *  scene saved before these were kept has none, and because nothing depends
+   *  on them: the editor reads the file itself. They are the fallback when it
+   *  cannot — the frame a project is laid out at, and the length a take that
+   *  will not load still holds its place on V1 for. */
+  width?: number
+  height?: number
+  seconds?: number
+  frames?: number
+  fps?: number
+}
 
 /** Everything that is per-kind and lives at the root while its kind is showing.
  *  `shot` is in here because pills compile *into* the prompt — a rail left
