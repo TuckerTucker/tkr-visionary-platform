@@ -44,7 +44,8 @@ def check(label: str, cond: object, detail: str = "") -> None:
 HELPERS = {"NAME_RE", "MEDIA_TYPES", "SCENE_JSON", "SCENE_VERSION",
            "SCENE_FILE_DIRS", "SCENE_FILE_RE", "_check_scene_id",
            "_check_scene_file", "_read_scene", "_scene_refs", "_list_scenes",
-           "_save_scene", "_scene_file"}
+           "_save_scene", "_scene_file", "PROJECT_JSON", "OPENVIDEO_RE",
+           "_read_project", "_save_project"}
 ns = pull(HELPERS)
 # `os` is app.py's own import, and `_from_app` seeds only the ones its other
 # callers need; `SCENES` is a path under /workspace, which is the one thing
@@ -143,7 +144,8 @@ print("\n=== routes, lifted from web() ===")
 lines = SRC.splitlines(keepends=True)
 web = next(n for n in ast.parse(SRC).body
            if isinstance(n, ast.FunctionDef) and n.name == "web")
-wanted = {"list_scenes", "get_scene", "save_scene", "scene_file"}
+wanted = {"list_scenes", "get_scene", "save_scene", "scene_file",
+          "save_scene_project"}
 pieces: list[str] = []
 for node in web.body:
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in wanted:
@@ -227,6 +229,85 @@ r = c.get("/api/scene-file/bad%20id/00-image.png")
 check("a bad id is 400", r.status_code == 400)
 r = c.get(f"/api/scene-file/{sid}/nope.png")
 check("a missing file is 404", r.status_code == 404)
+
+print("\n=== the arrangement ===")
+# An IProject as a later engine might write it: fields nobody here models, at
+# every depth, in an order that is not sorted. The server reads none of them,
+# so every one has to come back — and in the same order, since "byte-for-byte"
+# is what the page relies on when it compares what it exported to what it read.
+project = {"settings": {"width": 1280, "height": 720, "fps": 24, "duration": 5.5e6,
+                        "zz_future": {"nested": [1, 2.5, None, "ü"]}},
+           "tracks": [{"id": "t1", "name": "Video Track", "type": "video",
+                       "clipIds": ["c1"], "accepts": ["video", "image"]}],
+           "clips": {"c1": {"id": "c1", "type": "Video", "name": "take",
+                            "timing": {"display": {"from": 0, "to": 5500000},
+                                       "trim": {"from": 250000, "to": 5750000}},
+                            "metadata": {"jobId": "vid1", "unknown": {"deep": True}}}},
+           "aaa_unmodelled": ["kept"]}
+before = Volume.commits
+r = c.post(f"/api/scenes/{sid}/project",
+           json={"openvideo": "1.4.0", "project": project}).json()
+check("POST project answers {ok, modified}", r.get("ok") and r.get("modified"), str(r))
+check("and commits the volume", Volume.commits == before + 1)
+r = c.get(f"/api/scenes/{sid}").json()
+check("GET returns the project with its unknown fields", r.get("project") == project)
+check("in the order it was sent",
+      json.dumps(r.get("project")) == json.dumps(project))
+check("and the pin it was written at", r.get("openvideo") == "1.4.0")
+check("the intent is still there beside it", r.get("intent", {}).get("unmodelled") == "yes")
+stored = json.loads((ns["SCENES"] / sid / "project.json").read_text())
+check("project.json is {openvideo, saved, project}",
+      set(stored) == {"openvideo", "saved", "project"} and stored["project"] == project)
+
+r = c.get(f"/api/scenes/{ok}").json()
+check("a scene with no arrangement answers null for both",
+      r.get("project") is None and r.get("openvideo") is None and "project_error" not in r)
+check("the older scene lists below the newer one",
+      [s["id"] for s in c.get("/api/scenes").json()["scenes"]][:2] == [sid, ok])
+c.post(f"/api/scenes/{ok}/project", json={"openvideo": "1.4.0", "project": {}})
+listing = [s["id"] for s in c.get("/api/scenes").json()["scenes"]]
+check("an arrangement save moves a scene to the top of the listing",
+      listing[:2] == [ok, sid], str(listing))
+
+for bad, why in (({"openvideo": "1.4.0", "project": [1]}, "object"),
+                 ({"openvideo": "", "project": {}}, "version"),
+                 ({"openvideo": "1.4.0 ; rm", "project": {}}, "version"),
+                 ({"project": {}}, "version")):
+    r = c.post(f"/api/scenes/{sid}/project", json=bad).json()
+    check(f"refuses {bad!r} naming the {why}", why in r.get("error", ""), r.get("error", "")[:70])
+r = c.post("/api/scenes/bad%20id/project", json={"openvideo": "1.4.0", "project": {}}).json()
+check("a bad id is refused naming it", "'bad id'" in r.get("error", ""))
+
+(ns["SCENES"] / sid / "project.json").write_text('{"openvideo": "1.4.0", "proj')
+r = c.get(f"/api/scenes/{sid}").json()
+check("a corrupt project.json is reported naming the file and the parse error",
+      "project.json" in (r.get("project_error") or "")
+      and "does not parse" in r["project_error"], str(r.get("project_error"))[:80])
+check("while the intent still loads, so the page can recompile from it",
+      r.get("intent", {}).get("unmodelled") == "yes" and r.get("project") is None
+      and "error" not in r)
+r = c.post(f"/api/scenes/{sid}/project",
+           json={"openvideo": "1.4.0", "project": {"recompiled": True}}).json()
+check("the recompiled arrangement saves over it", r.get("ok"), str(r))
+aside = sorted((ns["SCENES"] / sid).glob("project.damaged-*.json"))
+check("and the damaged bytes are set aside, not destroyed",
+      len(aside) == 1 and aside[0].read_text() == '{"openvideo": "1.4.0", "proj')
+check("the new one reads back",
+      c.get(f"/api/scenes/{sid}").json().get("project") == {"recompiled": True})
+
+new_sid = "scn20260926140000cafe"
+r = c.post(f"/api/scenes/{new_sid}/project",
+           json={"openvideo": "1.4.0", "project": project}).json()
+check("an arrangement saved before any intent creates the folder", r.get("ok"), str(r))
+r = c.get(f"/api/scenes/{new_sid}").json()
+check("and reads back with a null intent and no error",
+      r.get("project") == project and r.get("intent") is None and "error" not in r, str(r)[:80])
+row = next(s for s in c.get("/api/scenes").json()["scenes"] if s["id"] == new_sid)
+check("it lists undamaged, with no takes", "error" not in row and row["takes"] == 0, str(row))
+c.post(f"/api/scenes/{new_sid}", json={"intent": {"takes": [1]}})
+r = c.get(f"/api/scenes/{new_sid}").json()
+check("the intent that follows lands beside it",
+      r.get("intent") == {"takes": [1]} and r.get("project") == project)
 
 print()
 if fails:

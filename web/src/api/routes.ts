@@ -14,7 +14,8 @@
 import { api, post, type Res } from './client'
 import type {
   AppState, CompileResult, DupeReport, Insight, JobStatus, SceneIntent, SceneRecord,
-  SceneSaved, SceneSummary, Session, ShotPill } from './types'
+  SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, Session, ShotPill,
+} from './types'
 
 const seg = encodeURIComponent
 
@@ -292,6 +293,10 @@ export const saveScene = (
   id: string,
   body: { intent: SceneIntent; refs?: Record<string, string> },
 ) => post<SceneSaved>(`/api/scenes/${seg(id)}`, body)
+/** The arrangement, on its own route: it saves on every Core change, and the
+ *  intent's route carries photographs on first sight. Stored as sent. */
+export const saveProject = (id: string, body: SceneProject) =>
+  post<SceneProjectSaved>(`/api/scenes/${seg(id)}/project`, body)
 export const sceneFileUrl = (id: string, name: string) =>
   `/api/scene-file/${seg(id)}/${seg(name)}`
 

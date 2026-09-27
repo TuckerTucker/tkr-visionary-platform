@@ -388,7 +388,32 @@ export type ScenePoolRef = { name: string; kind: string; ref: string }
  *  does not parse — the folder is listed as damaged rather than left out. */
 export type SceneSummary = { id: string; modified: number; takes: number; error?: string }
 
-/** `/api/scenes/{id}`: the intent exactly as stored, and what is in `refs/`. */
-export type SceneRecord = { id: string; intent: SceneIntent | null; refs: string[] }
+/**
+ * `/api/scenes/{id}`: the intent exactly as stored, what is in `refs/`, and the
+ * arrangement.
+ *
+ * `project` is OpenVideo's IProject, typed `unknown` here on purpose: naming
+ * `IProject` would import the engine's types into the module every first load
+ * reads, and the api layer has no business knowing the engine's shape — the
+ * server does not read it either. `edit/` narrows it where the Core takes it.
+ * `intent` is null for a folder whose arrangement landed before its intent.
+ */
+export type SceneRecord = {
+  id: string
+  intent: SceneIntent | null
+  refs: string[]
+  /** The arrangement as last saved, or null when the scene has none yet. */
+  project: unknown
+  /** The `@openvideo/core` version `project` was written at, or null. */
+  openvideo: string | null
+  /** Set when project.json does not parse: the file and the parse error. The
+   *  intent still loads, and the takes are recompiled from it. */
+  project_error?: string
+}
 
 export type SceneSaved = { ok: true; id: string; modified: number }
+
+/** What `/api/scenes/{id}/project` stores: the pin and the IProject verbatim. */
+export type SceneProject = { openvideo: string; project: unknown }
+
+export type SceneProjectSaved = { ok: true; modified: number }

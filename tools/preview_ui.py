@@ -872,6 +872,33 @@ class Handler(BaseHTTPRequestHandler):
             STATE["loras"].remove(row)
             return self.reply({"ok": True})
 
+        m = re.match(r"/api/scenes/([^/]+)/project$", path)
+        if m:
+            # Kept as the parsed object and handed back as-is, which is what
+            # the real route's no-field-read storage amounts to on the wire.
+            sid = m.group(1)
+            if not SCENE_NAME.match(sid):
+                return self.reply({"error": f"Scene id {sid!r} is not 1-64 "
+                                            "letters, numbers, _ or -."})
+            try:
+                data = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                data = {}
+            ov = data.get("openvideo")
+            if not isinstance(ov, str) or not re.match(r"^[0-9A-Za-z.+-]{1,32}$", ov):
+                return self.reply({"error": f"openvideo {ov!r} is not a version "
+                                            "string."})
+            if not isinstance(data.get("project"), dict):
+                return self.reply({"error": "A scene's project is an object."})
+            # Created when absent, as app.py's `_save_project` does: the first
+            # arrangement save can land before the first intent save.
+            rec = SCENES.setdefault(sid, {"created": time.time(), "refs": {},
+                                          "intent": None})
+            rec["project"] = data["project"]
+            rec["openvideo"] = ov
+            rec["modified"] = time.time()
+            return self.reply({"ok": True, "modified": rec["modified"]})
+
         m = re.match(r"/api/scenes/([^/]+)$", path)
         if m:
             sid = m.group(1)
@@ -1265,7 +1292,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/scenes":
             return self.reply({"scenes": sorted(
                 ({"id": k, "modified": v["modified"],
-                  "takes": len(v["intent"].get("takes") or [])}
+                  "takes": len((v.get("intent") or {}).get("takes") or [])}
                  for k, v in SCENES.items()),
                 key=lambda r: r["modified"], reverse=True)})
         m = re.match(r"/api/scenes/([^/]+)$", path)
@@ -1273,8 +1300,10 @@ class Handler(BaseHTTPRequestHandler):
             rec = SCENES.get(m.group(1))
             if not rec:
                 return self.reply({"error": f"No scene {m.group(1)!r}."})
-            return self.reply({"id": m.group(1), "intent": rec["intent"],
-                               "refs": sorted(rec["refs"])})
+            return self.reply({"id": m.group(1), "intent": rec.get("intent"),
+                               "refs": sorted(rec["refs"]),
+                               "project": rec.get("project"),
+                               "openvideo": rec.get("openvideo")})
         m = re.match(r"/api/scene-file/([^/]+)/(.+)$", path)
         if m:
             name = m.group(2).rsplit("/", 1)[-1]

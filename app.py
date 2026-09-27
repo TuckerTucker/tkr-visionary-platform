@@ -4018,6 +4018,14 @@ def _name_taken(name: str) -> bool:
 
 SCENE_JSON = "scene.json"
 SCENE_VERSION = 1
+# The arrangement: OpenVideo's IProject as the page exported it, beside the
+# intent rather than inside it. Two files because they are written by two
+# savers at two rates — a trim drag is not a reason to rewrite every prose line,
+# and a damaged arrangement must not take the intent down with it.
+PROJECT_JSON = "project.json"
+# `@openvideo/core`'s version as the page states it. Short and plain because
+# it is echoed into a sentence when a project written at another pin loads.
+OPENVIDEO_RE = re.compile(r"^[0-9A-Za-z.+-]{1,32}$")
 # The subfolders a scene file is served out of, in the order they are looked
 # in: what the person gave first, then what was rendered or exported for it.
 SCENE_FILE_DIRS = ("refs", "media")
@@ -4068,6 +4076,80 @@ def _read_scene(d: Path) -> dict:
     return rec
 
 
+def _read_project(d: Path) -> dict[str, Any]:
+    """
+    `{project, openvideo}` for one scene folder — both None when it has no
+    arrangement yet — or ValueError naming the file and what broke.
+
+    A separate failure from `_read_scene`'s on purpose: the intent is the
+    record and the arrangement is derived from it, so a project.json that does
+    not parse is reported beside an intent that still loads, and the page
+    recompiles the takes onto V1 from that intent rather than losing the scene.
+    """
+    f = d / PROJECT_JSON
+    if not f.exists():
+        return {"project": None, "openvideo": None}
+    try:
+        rec = json.loads(f.read_text())
+    except OSError as exc:
+        raise ValueError(f"Could not read {f}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{f} does not parse: {exc}") from exc
+    if not isinstance(rec, dict) or not isinstance(rec.get("project"), dict):
+        raise ValueError(f"{f} holds no project object.")
+    ov = rec.get("openvideo")
+    return {"project": rec["project"],
+            "openvideo": ov if isinstance(ov, str) else None}
+
+
+def _save_project(sid: str, openvideo: Any, project: Any) -> dict[str, Any]:
+    """
+    Write one scene's arrangement. Raises ValueError with a sentence.
+
+    **No field of `project` is read.** It is OpenVideo's own shape at the
+    pin the page names, and a server that validated it would have to be
+    upgraded in lockstep with an engine it never runs — the first field a later
+    engine added would be refused, or worse, dropped. It is written back out as
+    it arrived; only its being an object is checked.
+
+    **A missing folder is created**, rather than refused until an intent has
+    been saved. The two savers are debounced separately, so the first
+    arrangement save can land before the first intent save; refusing it would
+    drop an edit to protect an ordering nobody can see. The listing shows such
+    a folder with no takes until its intent lands.
+
+    **A project.json that does not parse is set aside, not overwritten.** The
+    page has already said so and recompiled from the intent, so this save is
+    the recovery; the damaged bytes move to `project.damaged-{ts}.json` beside
+    it, where somebody can still read them, instead of being the one thing a
+    save silently destroys.
+    """
+    _check_scene_id(sid)
+    if not isinstance(openvideo, str) or not OPENVIDEO_RE.match(openvideo):
+        raise ValueError(f"openvideo {openvideo!r} is not a version string — "
+                         "the page sends its pinned @openvideo/core version.")
+    if not isinstance(project, dict):
+        raise ValueError("A scene's project is an object; this one was "
+                         f"{type(project).__name__}.")
+    d = SCENES / sid
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / PROJECT_JSON
+    now = time.time()
+    if f.exists():
+        try:
+            _read_project(d)
+        except ValueError:
+            os.replace(f, d / f"project.damaged-{int(now)}.json")
+    tmp = d / f".{PROJECT_JSON}.tmp"
+    # Renamed over for `_save_scene`'s reason: a half-written project.json is
+    # the file `_read_project` refuses, so a crash mid-write would turn one lost
+    # save into an arrangement that has to be recompiled.
+    tmp.write_text(json.dumps({"openvideo": openvideo, "saved": now,
+                               "project": project}, separators=(",", ":")))
+    os.replace(tmp, f)
+    return {"ok": True, "modified": now}
+
+
 def _scene_refs(d: Path) -> list[str]:
     r = d / "refs"
     if not r.is_dir():
@@ -4088,15 +4170,27 @@ def _list_scenes() -> list[dict[str, Any]]:
             continue
         row: dict[str, Any] = {"id": d.name, "modified": d.stat().st_mtime,
                                "takes": 0}
-        try:
-            rec = _read_scene(d)
-        except ValueError as exc:
-            row["error"] = str(exc)
+        proj = d / PROJECT_JSON
+        # The arrangement's mtime rather than its `saved` field: this runs
+        # for every folder on every page load, and parsing each scene's whole
+        # IProject to read one number is the listing touching every scene's
+        # bytes, which it exists not to do.
+        edited = proj.stat().st_mtime if proj.exists() else 0.0
+        if not (d / SCENE_JSON).exists() and edited:
+            # Arranged before its intent landed — see `_save_project`. Not
+            # damage, so it lists without an error.
+            row["modified"] = edited
         else:
-            row["modified"] = float(rec.get("modified") or row["modified"])
-            takes = (rec.get("intent") or {}).get("takes") \
-                if isinstance(rec.get("intent"), dict) else None
-            row["takes"] = len(takes) if isinstance(takes, list) else 0
+            try:
+                rec = _read_scene(d)
+            except ValueError as exc:
+                row["error"] = str(exc)
+            else:
+                row["modified"] = max(float(rec.get("modified") or row["modified"]),
+                                      edited)
+                takes = (rec.get("intent") or {}).get("takes") \
+                    if isinstance(rec.get("intent"), dict) else None
+                row["takes"] = len(takes) if isinstance(takes, list) else 0
         out.append(row)
     out.sort(key=lambda r: r["modified"], reverse=True)
     return out
@@ -11596,11 +11690,21 @@ def web():
         d = SCENES / sid
         if not d.is_dir():
             return {"error": f"No scene {sid!r} under {SCENES}."}
+        rec: dict = {}
+        if (d / SCENE_JSON).exists() or not (d / PROJECT_JSON).exists():
+            try:
+                rec = _read_scene(d)
+            except ValueError as exc:
+                return {"error": str(exc)}
+        out: dict[str, Any] = {"id": sid, "intent": rec.get("intent"),
+                               "refs": _scene_refs(d)}
         try:
-            rec = _read_scene(d)
+            out.update(_read_project(d))
         except ValueError as exc:
-            return {"error": str(exc)}
-        return {"id": sid, "intent": rec.get("intent"), "refs": _scene_refs(d)}
+            # Beside the intent, not instead of it: the intent is the record,
+            # and the page recompiles the takes from it.
+            out.update(project=None, openvideo=None, project_error=str(exc))
+        return out
 
     @api.post("/api/scenes/{sid}")
     def save_scene(sid: str, payload: dict) -> dict[str, Any]:
@@ -11616,6 +11720,23 @@ def web():
         _reload_volume()
         try:
             out = _save_scene(sid, payload.get("intent"), payload.get("refs"))
+        except (ValueError, OSError) as exc:
+            return {"error": str(exc)}
+        volume.commit()
+        return out
+
+    @api.post("/api/scenes/{sid}/project")
+    def save_scene_project(sid: str, payload: dict) -> dict[str, Any]:
+        """
+        Save one scene's arrangement: `{openvideo, project}` → `{ok, modified}`.
+
+        Its own route rather than a field on the intent's, because it changes at
+        a different rate — every trim nudge — and the intent's save carries
+        photographs on first sight. Stored as sent; see `_save_project`.
+        """
+        _reload_volume()
+        try:
+            out = _save_project(sid, payload.get("openvideo"), payload.get("project"))
         except (ValueError, OSError) as exc:
             return {"error": str(exc)}
         volume.commit()
