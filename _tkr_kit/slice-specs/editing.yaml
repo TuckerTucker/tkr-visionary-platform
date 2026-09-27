@@ -10,12 +10,14 @@ slice_specs:
       - "`@openvideo/core` and `@openvideo/engine-pixi` in web/package.json at exact
         versions (no range), their integrity hashes in package-lock.json."
       - "`web/src/edit/engine.ts` — the only module that imports either package.
-        Exports `loadEngine(): Promise<Engine>` (a dynamic import, so the
+        Exports `loadEngine(): Promise<Engine | ApiError>` (never rejects, like
+        api/client; a dynamic import, so the
         engine is its own chunk), `absoluteUrl(path)`, `OPENVIDEO_PIN` (the
         pinned core version string, read by slice 10) and the microsecond
         helpers `us(seconds)` / `sec(us)`."
-      - A Content-Security-Policy on the served page whose `connect-src` is the
-        page's own origin plus `blob:` and `data:`.
+      - A Content-Security-Policy `<meta>` in web/index.html whose `connect-src`
+        is the page's own origin plus `blob:` and `data:` — one file both app.py
+        and the preview serve, so both carry the same policy.
     behavior:
       - Nothing on first load imports the engine; the image-only path never
         downloads it. Vite emits it as a separate chunk.
@@ -226,7 +228,9 @@ slice_specs:
     behavior:
       - slot.render starts an ordinary /api/video job; the slot shows it
         rendering; the landed take becomes the slot's clip.
-      - A slot keeps every take it has had in the intent sidecar.
+      - A slot keeps every take it has had — each take in the intent's `takes`
+        carries its `slot`; the chosen take is derived from the Core clip so
+        it moves with undo.
       - The job/status/stop contract is unchanged — stop cancels the job.
     errors:
       - A refused job — the refusal on the slot, verbatim.
@@ -267,9 +271,13 @@ slice_specs:
     purpose: Picture and sound arrive together and stay linked until separated
       on purpose.
     interface:
-      - "Dragging a take's sound strip onto an A track detaches it — an Audio
-        clip with the take's src and trim on the A track, `audio: false` on
-        the Video clip, linked by `metadata.linkedTo`."
+      - "Dragging a take's sound strip onto an A track, or D on the focused
+        clip, runs `clip.detach` — one registered command: an Audio clip with
+        the take's src and timing on the A track, `audio: false` and `muted:
+        true` on the Video (the stage plays a Video through an element that
+        reads only `muted`), linked both ways by `metadata.linkedTo`."
+      - "A detached slot stays detached when its take changes: the sound is
+        swapped to the new take in the same command."
     behavior:
       - Until detached, trimming or moving the clip moves its sound.
       - Detach is one command; one undo re-links.
@@ -380,9 +388,15 @@ slice_specs:
     title: Inserts inherit the scene they cover
     purpose: A cutaway never rebuilds the cast and the look.
     interface:
-      - An empty slot dropped on V2+ reads the V1 slot under its start and
-        copies its cast, look and LoRAs into its own intent, each marked
-        `inherited`.
+      - "An empty insert (drawn along the drop strip, I at the playhead) is a
+        zero-opacity Text clip with `metadata {slotId, insert: true}` — the
+        only clip types the engine keeps without a src are Text, Caption,
+        Effect and Transition — on a picture track above V1."
+      - "What it inherited — the scene's cast, look and LoRAs, the covered V1
+        slot as `from`, and whether it takes V1's frame — lives at
+        `track.inserts[slotId]` in the IProject, so each drop is one undo
+        entry and survives the render swap. Cast and look are scene-wide by
+        design, so there is no per-slot snapshot to copy."
     behavior:
       - Dropping an inherited item is one gesture and touches only the insert.
       - The V1 frame at the insert's time can be taken as a reference.
@@ -390,7 +404,7 @@ slice_specs:
       - None new.
     tests:
       - check_edit.py drops a slot on V2 and reads its inherited cast.
-    data_lifecycle: Inherited items live in the insert's intent.
+    data_lifecycle: Inherited items live in project.json, on the insert's track.
     references:
       - web/src/scene
   - slice: 15
@@ -399,8 +413,13 @@ slice_specs:
     purpose: A re-render says what it has made out of date and redoes nothing on
       its own.
     interface:
-      - "`slots[id].conditionedOn` in the intent; `stale` derived, never
-        stored."
+      - "Each take records `conditionedOn` (the take a continuation or a frame
+        insert was made from) in the intent's `takes`; `stale` is derived by
+        `stale.ts`, never stored. `StaleMark.tsx` (not Stale.tsx — beside
+        stale.ts on a case-insensitive disk, ./Stale resolves to it) marks the
+        slot."
+      - Only an insert that took V1's frame is conditioned on V1; its cast and
+        look are the scene's, not the slot's.
     behavior:
       - Re-rendering a slot marks the slots continued from it and overlays that
         took a frame from it as stale.
@@ -419,7 +438,9 @@ slice_specs:
     purpose: A region means something on a still slot and says why it means
       nothing on a video one.
     interface:
-      - Regions are stored per still slot and move with it.
+      - "`store.regions` is the one still slot's set — there is only one still
+        slot today. When stills sit beside other slots, it becomes
+        `Record<slotId, Region[]>` keyed by the clip's slotId."
     behavior:
       - Over a video slot the region tool is disabled and says /api/video takes
         no regions.

@@ -368,7 +368,7 @@ slices:
     paths:
       - web/src/edit/stale.ts
       - web/src/edit/Export.tsx
-      - web/src/edit/Stale.tsx
+      - web/src/edit/StaleMark.tsx
       - tools/ui-checks/check_stale.py
     depends_on:
       - 5
