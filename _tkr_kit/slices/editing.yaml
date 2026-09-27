@@ -378,7 +378,10 @@ slices:
       - cut-away-without-rebuilding-the-scene
     title: Staleness along chains and overlays
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "607d04f: check_stale (18 pure + page) and all 21 UI checks pass on main"
   - number: 16
     feature: one-canvas
     delivers: Regions belong to the still slot under the playhead and move with it.
