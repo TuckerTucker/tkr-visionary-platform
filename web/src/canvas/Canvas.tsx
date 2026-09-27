@@ -6,6 +6,8 @@ import { IconClose, IconExpand, IconPhoto, IconPlay, IconPlus } from '../icons'
 import { Frame } from '../regions/Frame'
 import { RegionLayer } from '../regions/RegionLayer'
 import { attached, regionsLive, useStore } from '../store'
+import { fullScreenStage, Stage } from '../edit/Stage'
+import { useEdit } from '../edit/useEdit'
 import { layoutShots } from './layoutShots'
 import type { RunState } from './useGenerate'
 import type { VideoRun } from '../video/useVideo'
@@ -33,6 +35,15 @@ import type { VideoRun } from '../video/useVideo'
  * you are composing *into*, so the last render is no longer the subject. What is *drawn*
  * on that surface is `store.edit`'s business, not this file's — after a render the answer
  * is nothing at all.
+ *
+ * **One surface, two layers, and time is what picks between them.** A still is a
+ * scene with no duration: the frame layer — the film strip below, or a lone clip —
+ * draws it, and the engine is never asked for. Once the scene has time (a take on
+ * the video side) the stage mounts in the same slot and draws the cut instead. That
+ * is decided here and nowhere else, so there is one canvas rather than a second one
+ * that happens to sit beside it: mounting Pixi for stills was the alternative and it
+ * was refused, because the engine is 890 KB gzipped and "duration starts at zero"
+ * vetoes making somebody who wants one image wait for it.
  */
 export function Canvas({
   run,
@@ -71,6 +82,18 @@ export function Canvas({
     ? fileUrl(vidRun.jobId, vidRun.file)
     : null
 
+  const hasTime = !image && s.takes.length > 0
+  const surface: 'frame' | 'stage' = hasTime ? 'stage' : 'frame'
+  // Which landed job the stage has taken over from the plain clip. A take lands
+  // before the engine has read it — the first one before the engine has even
+  // arrived — so for that stretch the render is bridged by the file itself,
+  // playing, in the stage's own box. Without the bridge a finished render would
+  // arrive as a black box that turns into a picture some seconds later, which is
+  // "replaced when it lands" in name only.
+  const [staged, setStaged] = useState<string | null>(null)
+  const studioUp = useEdit((e) => e.studio !== null)
+  const onStage = surface === 'stage' && studioUp && (!vidRun.jobId || staged === vidRun.jobId)
+
   /** Which frame of the strip is the canvas. Local, because nothing outside this
    *  component has an opinion about it and it changes at click rate. */
   const [cur, setCur] = useState(0)
@@ -96,7 +119,7 @@ export function Canvas({
   // kinds has to take the layer with it — otherwise the rectangles sit over a clip they
   // mean nothing to.
   const running = image ? run.running : vidRun.running
-  const shown = image ? n > 0 : !!vidSrc
+  const shown = image ? n > 0 : !!vidSrc || hasTime
   const ready = !!s.state && !s.stateError
 
   // Whenever a render is up, not only when boxes exist. `regionsLive` used to gate
@@ -187,6 +210,9 @@ export function Canvas({
         <div id="canvas-acts">
           <button className="ico" id="canvas-full" title="Full screen — Space" type="button"
                   onClick={() => {
+                    // The stage goes full screen itself: the viewer holds one
+                    // file, and what is on the stage is the cut.
+                    if (surface === 'stage' && fullScreenStage()) return
                     if (vidSrc) onOpenVideo(vidSrc)
                     else if (run.jobId) onOpen(run.jobId, at)
                   }}>
@@ -206,8 +232,14 @@ export function Canvas({
               one sentence lives. */}
           {!image && (
             <button className="ico" id="canvas-chain" type="button"
-                    disabled={chaining}
+                    disabled={chaining || !vidRun.jobId}
                     title={chaining ? 'Linking…'
+                      // A scene reopened on load has takes and no run on screen,
+                      // and Continue carries a run's own latent — there is none
+                      // to carry. Greyed with the reason rather than hidden.
+                      : !vidRun.jobId
+                        ? 'Continue carries on from a take rendered since the page opened. '
+                          + 'Generating now still adds the next take to this scene, starting cold.'
                       : 'Write the next beat. The cast, the look and this last '
                         + 'frame carry over.'
                         + (s.takes.length > 1 ? ` Take ${String(s.takes.length)}.` : '')}
@@ -336,7 +368,9 @@ export function Canvas({
           clip, because the element *is* the handler — `check_drop.py` found this
           missing, and what was missing was not a class on a div, it was the gesture. */}
       {!image && (
-        <div id="vid-out" className={`can-drop${vidSrc ? '' : ' hide'}`} data-drop="First frame"
+        <div id="vid-out"
+             className={`can-drop${shown ? '' : ' hide'}${surface === 'stage' ? ' staged' : ''}`}
+             data-drop="First frame"
              onDragOver={(e) => {
                if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return
                e.preventDefault()
@@ -358,7 +392,21 @@ export function Canvas({
                }
                void onFirstFrame(f)
              }}>
-          {vidSrc && (
+          {/* The stage, once the scene has time. The dropped-file handler above stays
+              on the slot rather than moving onto the stage, so a first frame lands
+              the same way whichever layer is drawing. */}
+          {surface === 'stage' && (
+            <Stage landed={vidRun.jobId} onShowing={setStaged}>
+              {/* The bridge — see `staged`. Muted and playing for the reason the
+                  plain clip below is; `controls` because if the engine never
+                  arrives this is the render, for as long as the page is open. */}
+              {vidSrc && !onStage && (
+                <video className="stage-bridge" controls autoPlay muted loop playsInline
+                       src={vidSrc} />
+              )}
+            </Stage>
+          )}
+          {surface === 'frame' && vidSrc && (
             <>
               {/* `muted`, or `autoPlay` is a word rather than a behaviour: every
                   browser refuses unmuted autoplay without a gesture, so a 200s

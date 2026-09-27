@@ -6,7 +6,8 @@ import { Canvas } from './canvas/Canvas'
 import { useGenerate } from './canvas/useGenerate'
 import { Console } from './console/Console'
 import { useSaveState } from './edit/persist'
-import { Stage } from './edit/Stage'
+import { fullScreenStage, stageIsFullScreen } from './edit/Stage'
+import { toggle as toggleCut } from './edit/useEdit'
 import { Tracks } from './edit/Tracks'
 import { videoReady } from './console/resolve'
 import { ErrorNote } from './ui/ErrorNote'
@@ -218,6 +219,9 @@ export function App() {
   const canvasSrc = s.kind === 'video'
     ? (vid.run.jobId && vid.run.file ? fileUrl(vid.run.jobId, vid.run.file) : null)
     : (gen.run.jobId && gen.run.files[0] ? fileUrl(gen.run.jobId, gen.run.files[0]) : null)
+  /* A scene reopened on load has its cut on the stage and no run behind it, so
+     "something is on the canvas" is the takes as much as the last file. */
+  const hasTime = s.kind === 'video' && s.takes.length > 0
 
   const lightbox = useCallback((src: string, kind: 'image' | 'video') => {
     setShown({ rows: [{ job_id: '', kind, files: [], src }], i: 0 })
@@ -230,16 +234,29 @@ export function App() {
     const key = (e: KeyboardEvent) => {
       if (e.key !== ' ' && e.code !== 'Space') return
       if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return
+      // Full screen already, on the cut: Space is play and pause, as it is on
+      // the timeline. Asking for full screen again would do nothing, visibly.
+      if (stageIsFullScreen()) {
+        e.preventDefault()
+        toggleCut()
+        return
+      }
       const t = e.target as HTMLElement | null
       if (t?.matches?.('input,textarea,select') || t?.isContentEditable) return
       if (document.querySelector('.lb,.menu,.pal,.scrim')) return
+      // The stage full-screens itself, like the expand button on it; the
+      // viewer holds one file and the stage is the cut.
+      if (hasTime && fullScreenStage()) {
+        e.preventDefault()
+        return
+      }
       if (!canvasSrc) return
       e.preventDefault()
       lightbox(canvasSrc, s.kind)
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [canvasSrc, s.kind, lightbox])
+  }, [canvasSrc, hasTime, s.kind, lightbox])
 
   /* Typing with nothing focused lands in the prompt, not in the hotkeys. A click that
      misses the field by a few pixels leaves focus on the body, and the sentence typed
@@ -359,13 +376,13 @@ export function App() {
       if (t?.matches?.('input,textarea,select') || t?.isContentEditable) return
       if (t?.closest?.('#region-layer')) return
       if (document.querySelector('.lb,.menu,.pal,.scrim')) return
-      if (!canvasSrc) return
+      if (!canvasSrc && !hasTime) return
       e.preventDefault()
       clearCanvas()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [canvasSrc, clearCanvas])
+  }, [canvasSrc, hasTime, clearCanvas])
 
   /**
    * The hand-off. A still you just made becomes the thing the next clip animates, without a
@@ -667,14 +684,18 @@ export function App() {
 }
 
 /**
- * The cut, and what the scene's saving has to say.
+ * The timeline, and what the scene's saving has to say.
  *
  * Between the canvas and the console, on the video side only. **Duration starts
  * at zero**: a still session never mounts this, and the video side mounts the
- * stage and the timeline only once the scene has a take — until then there is
- * no time to show, and a timeline with nothing on it is a lesson in motion for
- * somebody who has not asked for one. The engine itself is loaded by
- * `useEdit`'s session on the same condition, so nothing here downloads it.
+ * timeline only once the scene has a take — until then there is no time to
+ * show, and a timeline with nothing on it is a lesson in motion for somebody
+ * who has not asked for one. The engine itself is loaded by `useEdit`'s session
+ * on the same condition, so nothing here downloads it.
+ *
+ * The picture is not here. The stage is the canvas's own time layer (see
+ * `Canvas`); a monitor beside the timeline was a second, 96px copy of what the
+ * canvas exists to show, paid for in the canvas's height.
  *
  * The save note sits here because this is where the scene is: a failed save or
  * a scene that could not be reopened is about the takes and the arrangement,
@@ -690,12 +711,7 @@ function EditSurface() {
   return (
     <section className="edit" id="edit">
       <ErrorNote err={saveError} />
-      {hasTime && (
-        <>
-          <Stage />
-          <Tracks tools={null} />
-        </>
-      )}
+      {hasTime && <Tracks tools={null} />}
     </section>
   )
 }
