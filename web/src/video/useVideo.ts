@@ -15,6 +15,7 @@ import {
 } from '../edit/slots'
 import { useEdit } from '../edit/useEdit'
 import { arm, continueAtBody, noteCut, outPointOf, snapNote, type Cut } from '../edit/continue'
+import { insertStore } from '../edit/inherit'
 import { frameAt } from './lastFrame'
 
 /**
@@ -440,7 +441,14 @@ export async function renderSlot(slotId: string): Promise<void> {
     return
   }
   setSlotRun(slotId, { running: true, runId: null, percent: 0, phase: 'Queued…', error: null })
-  const r = await video(slotBody(s, stripLoras(typed) ? null : line))
+  // An insert renders with what it inherited, not the scene's cast as it
+  // stands now — see `edit/inherit.ts`. Null for every other slot.
+  const ins = await insertStore(slotId, s, stripLoras(typed) ? null : line)
+  if (ins && failed(ins)) {
+    setSlotRun(slotId, { running: false, runId: null, phase: '', error: ins })
+    return
+  }
+  const r = await video(ins ? slotBody(ins.store, null) : slotBody(s, stripLoras(typed) ? null : line))
   if (failed(r)) {
     // Verbatim, on the slot: the route's refusal is the sentence that says
     // what to change, and a paraphrase of it is one fact short.

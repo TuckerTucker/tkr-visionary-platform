@@ -19,6 +19,17 @@ void loadLatestScene().finally(() => {
   startEditing()
 })
 
+// The engine starts a take with `video.play()` and never catches it, so a
+// pause that lands before playback begins — every take swap, undo and detach
+// rebuilds the clip — rejects with an AbortError nobody is listening for. It
+// is the browser saying the pause won, which is what was asked. Only that one
+// is absorbed: any other rejection still reaches the console and the checks.
+window.addEventListener('unhandledrejection', (e) => {
+  const r: unknown = e.reason
+  if (r instanceof DOMException && r.name === 'AbortError'
+      && r.message.includes('interrupted by a call to pause()')) e.preventDefault()
+})
+
 const root = document.getElementById('root')
 if (!root) throw new Error('#root is missing from index.html')
 

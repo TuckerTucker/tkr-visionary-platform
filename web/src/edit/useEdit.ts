@@ -480,8 +480,12 @@ async function open(): Promise<void> {
   let broken: Record<string, ApiError> = {}
   if (base) {
     project = base
-    // Every take clip is read once before the Core sees it — see `probe`.
-    const clips = Object.values(base.clips).filter((c) => c.type === 'Video' && c.metadata?.file)
+    // Every take clip is read once before the Core sees it — see `probe`. A
+    // detached soundtrack is a take clip too: it plays the same file, and the
+    // Studio stops loading at the first clip that throws, so a missing take
+    // must set its sound aside as well as its picture.
+    const clips = Object.values(base.clips).filter((c) =>
+      (c.type === 'Video' || c.type === 'Audio') && c.metadata?.file)
     const probes = await Promise.all(clips.map((c) =>
       probe({ jobId: String(c.metadata!.jobId), file: String(c.metadata!.file) })))
     clips.forEach((c, i) => { const p = probes[i]!; if (failed(p)) broken[c.id] = p })
