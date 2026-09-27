@@ -4252,6 +4252,120 @@ def _scene_file(sid: str, name: str) -> Path | None:
     return None
 
 
+# ── a file dropped on the timeline ──────────────────────────────────────────
+#
+# Your own footage, photographs and music, placed on a track of their own. They
+# land in the scene folder and nowhere else: a clip dropped on V2 is not
+# training material, and a store shared with the datasets is the one way it
+# could become some by accident.
+
+# Named because the refusal has to say what the ceiling is. A dropped file is
+# streamed to disk rather than held, so the cap is about the volume, not the
+# container's memory: past it is a whole film or a mistake, and it is refused
+# while streaming rather than after the disk has paid for it.
+SCENE_MEDIA_MAX_BYTES = 2 << 30
+# Room for `-{4 hex}` and the longest extension inside SCENE_FILE_RE's 80.
+SCENE_MEDIA_STEM_MAX = 60
+SCENE_MEDIA_ACCEPTS = ("video (MP4, WebM, MOV), images (PNG, JPEG, WebP) or "
+                       "audio (MP3, WAV, M4A, AAC, OGG)")
+# ISO BMFF brands that are a still image rather than a movie. They open with
+# `ftyp` exactly like an MP4, so without this an iPhone photo would be saved
+# as `.mp4` and fail to decode as a video with nothing saying it was a photo.
+_STILL_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx",
+                 b"mif1", b"msf1", b"avif", b"avis"}
+
+
+def _sniff_scene_media(head: bytes, filename: str = "") -> tuple[str, str]:
+    """
+    `(kind, extension)` for the start of a file the timeline can place, or
+    ValueError naming what arrived instead.
+
+    By the bytes, not the filename or the part's content type — both are the
+    client's say-so, and the extension saved is the one that decides the
+    Content-Type the file is served back with. A `.mp4` that is really a HEIC
+    photo, served as video/mp4, is a clip that silently paints nothing.
+    """
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"M4A ", b"M4B ", b"M4P "):
+            return "audio", ".m4a"
+        if brand in _STILL_BRANDS:
+            what = "a HEIC/AVIF photo"
+        elif brand == b"qt  ":
+            return "video", ".mov"
+        else:
+            return "video", ".mp4"
+    elif head.startswith(b"\x1a\x45\xdf\xa3"):
+        # WebM is Matroska with a doctype; the doctype sits in the EBML header
+        # within the first few dozen bytes.
+        if b"webm" in head[:64]:
+            return "video", ".webm"
+        what = "a Matroska (.mkv) file"
+    elif head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image", ".png"
+    elif head.startswith(b"\xff\xd8\xff"):
+        return "image", ".jpg"
+    elif head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image", ".webp"
+    elif head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return "audio", ".wav"
+    elif head.startswith(b"ID3"):
+        return "audio", ".mp3"
+    elif head.startswith(b"OggS"):
+        return "audio", ".ogg"
+    elif len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xF6) == 0xF0:
+        # ADTS: the 12-bit sync word, then layer 00 — which is what tells a raw
+        # AAC stream from an MP3 frame, whose layer bits are never 00.
+        return "audio", ".aac"
+    elif len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0:
+        return "audio", ".mp3"
+    elif len(head) >= 8 and head[4:8] in (b"moov", b"mdat", b"wide", b"free"):
+        # QuickTime from before `ftyp` was required: a phone or an old camera
+        # still writes these, and they are the same container.
+        return "video", ".mov"
+    elif not head:
+        what = "an empty file"
+    elif head.startswith(b"GIF8"):
+        what = "a GIF"
+    elif head.startswith(b"%PDF"):
+        what = "a PDF"
+    elif head.startswith(b"PK\x03\x04"):
+        what = "a zip archive"
+    elif head[:4] == b"RIFF":
+        what = f"a RIFF {head[8:12].decode('latin-1').strip()!r} file"
+    elif head.lstrip()[:1] in (b"{", b"<"):
+        what = "text"
+    else:
+        what = f"{len(head)}+ bytes starting {head[:8].hex(' ')}"
+    label = f"{Path(filename).name!r} is" if filename else "The file is"
+    raise ValueError(f"{label} {what} — the timeline takes {SCENE_MEDIA_ACCEPTS}.")
+
+
+def _scene_media_name(sid: str, filename: str, ext: str) -> str:
+    """
+    The name a dropped file is saved under: its own stem, made safe, with the
+    sniffed extension — and a short suffix when the scene already has that name.
+
+    The stem is kept because it is the only thing on the clip that says which
+    of your files it is. The suffix is checked against every folder
+    `_scene_file` looks in, not just `media/`: it looks in `refs/` first, so a
+    dropped `00-image.png` saved beside a reference of that name would be
+    served as the reference, and the clip would show somebody's face.
+    """
+    _check_scene_id(sid)
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "-", Path(filename or "").stem).strip("-")
+    stem = stem[:SCENE_MEDIA_STEM_MAX].rstrip("-") or "media"
+    d = SCENES / sid
+
+    def taken(n: str) -> bool:
+        return any((d / sub / n).exists() for sub in SCENE_FILE_DIRS)
+
+    name = f"{stem}{ext}"
+    while taken(name):
+        name = f"{stem}-{os.urandom(2).hex()}{ext}"
+    return _check_scene_file(name)
+
+
 def _touch_session(sid: str) -> None:
     """Record that a window is still open. The mtime is the entire payload."""
     if not NAME_RE.match(sid or ""):
@@ -5488,6 +5602,12 @@ MEDIA_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
                ".mp4": "video/mp4", ".mov": "video/quicktime",
                ".webm": "video/webm", ".mkv": "video/x-matroska",
                ".m4v": "video/x-m4v"}
+# What a scene folder serves: every result type, plus the sound a person drops
+# on an A track. Its own map rather than more entries in MEDIA_TYPES, because
+# MEDIA_TYPES is also `_keep_entry`'s allowlist — an `.mp3` there would make
+# every audio file under outputs/ a gallery card.
+SCENE_MEDIA_TYPES = {**MEDIA_TYPES, ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                     ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg"}
 OUTPUT_FILE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}\.(png|jpg|webp|mp4)$")
 
 
@@ -11938,7 +12058,73 @@ def web():
         if f is None:
             return JSONResponse({"error": f"No {name!r} in scene {sid!r}."},
                                 status_code=404)
-        return FileResponse(f, media_type=MEDIA_TYPES.get(f.suffix.lower()))
+        return FileResponse(f, media_type=SCENE_MEDIA_TYPES.get(f.suffix.lower()))
+
+    @api.post("/api/scenes/{sid}/media")
+    async def scene_media(sid: str, request: Request) -> JSONResponse:
+        """
+        A file dropped on the timeline: multipart `file` → `{ok, name, kind,
+        bytes}`, saved under `scenes/{sid}/media/` and served by
+        /api/scene-file.
+
+        Never a dataset, by construction: this writes under SCENES and nowhere
+        else. Async for `/api/upload`'s reason — it awaits the multipart stream.
+        A refusal is 200 `{error}` like every other POST here; only a crash is
+        a 500, and it says what crashed.
+        """
+        try:
+            return await _do_scene_media(sid, request)
+        except Exception as exc:
+            import traceback
+
+            traceback.print_exc()
+            return JSONResponse({"error": f"{type(exc).__name__}: {exc}"},
+                                status_code=500)
+
+    async def _do_scene_media(sid: str, request: Request) -> JSONResponse:
+        try:
+            _check_scene_id(sid)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)})
+        form = await request.form()
+        up = form.get("file")
+        if up is None or not hasattr(up, "read"):
+            return JSONResponse({"error": "No `file` in the drop — the page sent "
+                                          "the request without the file."})
+        filename = str(getattr(up, "filename", "") or "")
+        head = await up.read(64)
+        try:
+            kind, ext = _sniff_scene_media(head, filename)
+            name = _scene_media_name(sid, filename, ext)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)})
+        media = SCENES / sid / "media"
+        media.mkdir(parents=True, exist_ok=True)
+        # A dot-name while it streams: SCENE_FILE_RE refuses a leading dot, so
+        # a clip that asks for it mid-write gets a 404 rather than half a file.
+        # Salted, because two drops of one file in the same moment are handed
+        # the same free name and would otherwise write into one partial file.
+        part = media / f".{name}.{os.urandom(3).hex()}.part"
+        size = len(head)
+        try:
+            with open(part, "wb") as out:
+                out.write(head)
+                while chunk := await up.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > SCENE_MEDIA_MAX_BYTES:
+                        raise ValueError(
+                            f"{filename or 'The file'} passed "
+                            f"{SCENE_MEDIA_MAX_BYTES >> 30} GiB and was refused "
+                            "before it finished — trim or re-encode it first.")
+                    out.write(chunk)
+            part.replace(media / name)
+        except (ValueError, OSError) as exc:
+            part.unlink(missing_ok=True)
+            return JSONResponse({"error": str(exc) if isinstance(exc, ValueError)
+                                 else f"Could not write {media / name}: {exc}"})
+        await volume.commit.aio()
+        print(f"[scene-media] {sid}/media/{name} {kind} {size} bytes", flush=True)
+        return JSONResponse({"ok": True, "name": name, "kind": kind, "bytes": size})
 
     @api.get("/api/datasets")
     def list_datasets() -> dict[str, Any]:
