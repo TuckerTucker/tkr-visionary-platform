@@ -2,10 +2,10 @@ capability: editing
 slices:
   - number: 1
     feature: scene-assembly
-    delivers: "@openvideo/core and @openvideo/engine-pixi at exact versions with
-      the lockfile's integrity hashes, built into the image with the rest of
-      web/. Both are published from the scenify/scenify monorepo, where a commit
-      SHA would mean building the packages from source; a published npm version
+    delivers: "@openvideo/core and @openvideo/engine-pixi at exact versions with the
+      lockfile's integrity hashes, built into the image with the rest of web/.
+      Both are published from the scenify/scenify monorepo, where a commit SHA
+      would mean building the packages from source; a published npm version
       cannot be re-pointed, which is what a SHA buys elsewhere. When upstream
       force-pushes, the build does not change under us, and nothing at runtime
       needs Node."
@@ -23,10 +23,10 @@ slices:
     feature: scene-assembly
     delivers: scenes/{id}/ holding the intent sidecars, beside the takes they
       reference by job and file, read and written through /api/scenes/{id}.
-      Intent only — no trim, order or position, which are the IProject's
-      (slice 10). The route is behind the password by existing; the reader
-      keeps every field it does not model, because a sidecar is read years
-      after it is written.
+      Intent only — no trim, order or position, which are the IProject's (slice
+      10). The route is behind the password by existing; the reader keeps every
+      field it does not model, because a sidecar is read years after it is
+      written.
     paths:
       - app.py
       - web/src/api
@@ -40,8 +40,7 @@ slices:
     feature: scene-assembly
     delivers: The store's `takes` compiled into an IProject on V1 and played on the
       OpenVideo stage, saved through slice 10's store from the first clip.
-      Continue appends; nothing else has to be done for a take to be in the
-      cut.
+      Continue appends; nothing else has to be done for a take to be in the cut.
     paths:
       - web/src/edit
       - web/src/store.ts
@@ -91,8 +90,8 @@ slices:
     delivers: "Dropping below the last track makes one of the right kind at the drop
       time: footage and photographs on V, text on T, audio on A. There is no
       add-track button and no media browser; the files are yours. They land in
-      scenes/{id}/media through /api/scenes/{id}/media, never in a dataset —
-      a clip dropped on V2 is not training material."
+      scenes/{id}/media through /api/scenes/{id}/media, never in a dataset — a
+      clip dropped on V2 is not training material."
     paths:
       - app.py
       - web/src/api
@@ -179,10 +178,10 @@ slices:
     status: planned
   - number: 12
     feature: generative-commands
-    delivers: "Continue carries motion and audio from the out-point, not the
-      file's end — a take trimmed because its last second went wrong should not
-      be continued from that second. The saved latent (H3MC_SIDECAR) is cut on
-      the server so its context window ends at the out-point, snapped to the
+    delivers: "Continue carries motion and audio from the out-point, not the file's
+      end — a take trimmed because its last second went wrong should not be
+      continued from that second. The saved latent (H3MC_SIDECAR) is cut on the
+      server so its context window ends at the out-point, snapped to the
       latent's frame grid and to the 40 Hz audio grid, with the snap shown on
       the slot. Without a saved latent it degrades to the frame at the
       out-point, read with extractFrame, and says it did; with no frame either,
@@ -200,10 +199,10 @@ slices:
     status: planned
   - number: 13
     feature: generative-commands
-    delivers: One timeline on screen. A slot is one generation and holds the
-      shots rendered in it, so scene/Timeline.tsx's shot bars move inside the V1
-      slots and its break mark becomes the slot boundary — the `[Shot N]` cuts
-      H3 makes inside one take stay one take. A shot longer than H3's cap spans
+    delivers: One timeline on screen. A slot is one generation and holds the shots
+      rendered in it, so scene/Timeline.tsx's shot bars move inside the V1 slots
+      and its break mark becomes the slot boundary — the `[Shot N]` cuts H3
+      makes inside one take stay one take. A shot longer than H3's cap spans
       several takes chained by Continue that play as one clip, re-anchored from
       the cast's references at an interval named beside H3MC_CONTEXT_FRAMES,
       because the pack's README says quality compounds down a chain and audio
@@ -251,10 +250,9 @@ slices:
     status: planned
   - number: 16
     feature: one-canvas
-    delivers: Regions belong to the still slot under the playhead and move with
-      it. /api/video takes no regions, so over a video slot the region tool is
-      shown disabled with that reason rather than drawing boxes nothing will
-      read.
+    delivers: Regions belong to the still slot under the playhead and move with it.
+      /api/video takes no regions, so over a video slot the region tool is shown
+      disabled with that reason rather than drawing boxes nothing will read.
     paths:
       - web/src/regions
       - web/src/edit
@@ -278,4 +276,7 @@ slices:
     story_ids: []
     title: The rules that multi-track editing overrides
     layer: domain
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: b1055e3
