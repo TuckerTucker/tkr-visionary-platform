@@ -6,6 +6,7 @@ import { Canvas } from './canvas/Canvas'
 import { useGenerate } from './canvas/useGenerate'
 import { Console } from './console/Console'
 import { Export } from './edit/Export'
+import { Slot } from './edit/Slot'
 import { useSaveState } from './edit/persist'
 import { fullScreenStage, stageIsFullScreen } from './edit/Stage'
 import { toggle as toggleCut } from './edit/useEdit'
@@ -719,7 +720,8 @@ function EditSurface({ onExported }: { onExported: (it: GalleryItem) => void }) 
   return (
     <section className="edit" id="edit">
       <ErrorNote err={saveError} />
-      {hasTime && <Tracks tools={<Export onLanded={onExported} />} />}
+      {hasTime && <Tracks tools={<Export onLanded={onExported} />}
+                          clipOverlay={(c, t) => <Slot clip={c} track={t} />} />}
     </section>
   )
 }
