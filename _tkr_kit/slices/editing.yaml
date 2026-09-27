@@ -220,6 +220,8 @@ slices:
     paths:
       - web/src/edit/detach.ts
       - web/src/edit/Clip.tsx
+      - web/src/edit/history.ts
+      - tools/ui-checks/check_detach.py
     depends_on:
       - 6
     story_ids:
@@ -331,6 +333,10 @@ slices:
     paths:
       - web/src/edit/inherit.ts
       - web/src/edit/Inherited.tsx
+      - web/src/edit/DropZone.tsx
+      - web/src/edit/drop.ts
+      - web/src/edit/slots.ts
+      - tools/ui-checks/check_inherit.py
     depends_on:
       - 6
       - 7
