@@ -117,7 +117,7 @@ slices:
       - tools/smoke_outputs.py
       - web/src/api
       - web/src/gallery
-      - web/src/edit/export.ts
+      - web/src/edit/exportCut.ts
       - web/src/edit/Export.tsx
       - tools/ui-checks/check_export.py
     depends_on:

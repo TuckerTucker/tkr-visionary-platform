@@ -163,7 +163,7 @@ slice_specs:
     title: Export in the page, landing in the gallery
     purpose: The cut becomes an MP4 found where every render is.
     interface:
-      - "`web/src/edit/export.ts` — `exportCut(project, onProgress, signal)`
+      - "`web/src/edit/exportCut.ts` — `exportCut(project, onProgress, signal)` (not export.ts: beside Export.tsx on a case-insensitive disk, `./edit/Export` resolves to it)
         encoding with the engine's Compositor."
       - "POST /api/outputs (multipart: `file`, `meta` JSON) → `{ok, job_id,
         name}`. Writes `outputs/{exp…}/{HHMMSS}.mp4` and `visionary.json` with
