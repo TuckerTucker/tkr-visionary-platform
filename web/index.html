@@ -3,6 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!--
+      connect-src and nothing else. OpenVideo's exporter POSTs the page's
+      hostname to telemetry.combo.sh after every render it finishes; this page
+      sends nothing off-origin, and a report per export is one nobody agreed
+      to. blob: and data: because the engine's workers are inlined as blob: and
+      it reads media through object URLs. No default-src: every other fetch
+      this page makes is already same-origin, and a policy that also governs
+      scripts, styles and images is one that breaks something the next time a
+      control is added, for no telemetry refused.
+      A meta tag rather than a response header so app.py and
+      tools/preview_ui.py serve the same policy by serving the same file.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' blob: data:" />
     <title>Visionary</title>
   </head>
   <body>

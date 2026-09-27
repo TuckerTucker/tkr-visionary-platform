@@ -12,6 +12,8 @@
     "build:ds": "node build-ds.mjs"
   },
   "dependencies": {
+    "@openvideo/core": "1.4.0",
+    "@openvideo/engine-pixi": "1.4.0",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "motion": "^12.23.12",
