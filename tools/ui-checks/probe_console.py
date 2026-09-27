@@ -169,8 +169,12 @@ def run(pg, side):
     # pills one at a time was the obvious version and it hangs: a `.spill` that
     # has scrolled behind the rail's overflow never becomes clickable, and
     # Playwright waits its full timeout on each one — sixteen pills times two
-    # sides times three viewports. The page holds no state worth preserving
-    # between sides, so a reload is both faster and exact.
+    # sides times three viewports. A reload is faster and exact for everything
+    # but the scene: that is saved to the volume and comes back on load, so the
+    # long prompt typed above would be the next side's "resting" row. Emptying
+    # the field and outlasting persist.ts's debounce saves the scene blank first.
+    pg.fill(need(pg, "#prompt"), "")
+    pg.wait_for_timeout(1400)
     pg.reload(wait_until="networkidle")
     pg.wait_for_timeout(900)
     need(pg, "#prompt")

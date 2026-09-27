@@ -69,6 +69,8 @@ slices:
       - web/src/video/useVideo.ts
       - web/src/App.tsx
       - tools/ui-checks/check_edit.py
+      - tools/preview_ui.py
+      - web/src/main.tsx
     depends_on:
       - 1
       - 2
@@ -77,7 +79,11 @@ slices:
       - cut-several-takes-into-one-scene
     title: Takes become V1 clips on the Pixi stage
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "7dfbf35: check_edit.py 23/23; typecheck/build pass, entry chunk has no
+        engine; other ui-checks unchanged from baseline"
   - number: 4
     feature: scene-assembly
     delivers: In and out points and order, on the track. Cuts are hard by default,
