@@ -43,11 +43,20 @@
  * a new A track at the bottom, where every sound goes (`drop.ts`). Two sounds
  * overlapping on one lane would draw as one bar over another, and a track is
  * cheap. The keyboard's D asks for the first free A track, else a new one.
+ *
+ * **Detached stays detached across a new take.** Re-rendering the slot or
+ * stepping its takes swaps the linked Audio clip to the new take's file in the
+ * same command (`carrySound` in commands.ts). Without that the new take came
+ * in with its own sound on and the old Audio clip went on playing the old
+ * take: two soundtracks, one for a picture no longer in the cut. The link and
+ * the helpers that read it live in commands.ts, which cannot import this file
+ * (this file imports useEdit, and useEdit imports commands.ts).
  */
 import { create } from 'zustand'
 import type { AnyClip, CommandHandler, IProject, ITrack, Patch } from '@openvideo/core'
 
 import { failed, type ApiError } from '../api/client'
+import { freeOver, isAudioTrack } from './commands'
 import { nextTrackName } from './drop'
 import { slotOf } from './project'
 import { sourceUs } from './cuts'
@@ -72,13 +81,7 @@ type State = Pick<IProject, 'clips' | 'tracks'>
 const isObj = (x: unknown): x is Record<string, unknown> =>
   typeof x === 'object' && x !== null && !Array.isArray(x)
 
-const isAudioTrack = (t: ITrack): boolean => t.type.toLowerCase() === 'audio'
-
-/** The id a clip is linked to, or null. */
-export function linkedTo(clip: Pick<AnyClip, 'metadata'>): string | null {
-  const l: unknown = clip.metadata?.linkedTo
-  return typeof l === 'string' && l ? l : null
-}
+export { linkedTo } from './commands'
 
 /**
  * Whether `clip` is a take still carrying its own sound — the clips that get a
@@ -89,16 +92,6 @@ export function linkedTo(clip: Pick<AnyClip, 'metadata'>): string | null {
  */
 export function hasSound(clip: AnyClip): boolean {
   return clip.type === 'Video' && clip.audio !== false && slotOf(clip) !== null
-}
-
-/** Whether `track` has nothing playing anywhere in [from, to). */
-function freeOver(state: State, track: ITrack, from: number, to: number): boolean {
-  return track.clipIds.every((id) => {
-    const c = state.clips[id]
-    if (!c) return true
-    const d = c.timing.display
-    return d.to <= from || d.from >= to
-  })
 }
 
 /** The A track `target` resolves to for `video` — an existing one, or null

@@ -44,6 +44,23 @@
  *   server snaps the cut down onto the motion latent's grid, so without this
  *   up to 16 frames play twice across the join. Same command, so one undo puts
  *   the source's trim back and takes the continuation out (`cutBack`).
+ * - *A detached slot stays detached.* Once a slot's sound has been put on an
+ *   A track (detach.ts), a new take in that slot — rendered, or chosen with
+ *   ‹ › — arrives silent and linked, and the linked Audio clip is swapped to
+ *   the new take's file in the same patches, its timing the new Video's (trim
+ *   reset, as the picture's is; its own fades kept, a fade being the place's).
+ *   Before this the new take arrived with its own sound on and the old Audio
+ *   clip stayed on its A track playing the take that no longer showed: two
+ *   soundtracks, one of them for a picture nobody could see. One undo puts
+ *   back the old take *and* its sound. See `carrySound`.
+ * - *A new take's sound that no longer fits its A track moves; it is not
+ *   clamped.* When the new take is longer than the room its sound's track has
+ *   (another clip starts there before the new take ends), the sound goes onto
+ *   the first A track free for its whole stretch, else a new A track at the
+ *   bottom — the rule a detach itself lands by. Clamping would cut the new
+ *   take's sound short where its picture plays on, which is a trim nobody
+ *   made; a sound on another lane is still all there, and one drag puts it
+ *   back.
  * - *`take.choose` carries the clip, not only the index.* The handler cannot
  *   read the take list (it lives in the store, not the Core) or a file's length
  *   (that is an async read); the caller does both and hands over the clip the
@@ -107,6 +124,9 @@ type Placing = {
   keepGaps: boolean
 }
 
+const isObj = (x: unknown): x is Record<string, unknown> =>
+  typeof x === 'object' && x !== null && !Array.isArray(x)
+
 const lengthOf = (c: AnyClip): number => c.timing.display.to - c.timing.display.from
 
 const trackOf = (state: Pick<IProject, 'tracks'>, clipId: string): ITrack | null =>
@@ -118,6 +138,106 @@ const inSlot = (state: Pick<IProject, 'clips'>, slotId: string): AnyClip | null 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 const asProject = (s: State): IProject => ({ settings: s.settings, tracks: s.tracks, clips: s.clips })
+
+/** The id a clip is linked to — a detached sound's picture, a silenced
+ *  picture's sound (detach.ts) — or null. */
+export function linkedTo(clip: Pick<AnyClip, 'metadata'>): string | null {
+  const l: unknown = clip.metadata?.linkedTo
+  return typeof l === 'string' && l ? l : null
+}
+
+export const isAudioTrack = (t: ITrack): boolean => t.type.toLowerCase() === 'audio'
+
+/** Whether `track` has nothing playing anywhere in [from, to), not counting
+ *  clip `skip` — the one being placed, wherever it sits now. */
+export function freeOver(state: Pick<IProject, 'clips'>, track: ITrack, from: number, to: number,
+  skip?: string): boolean {
+  return track.clipIds.every((id) => {
+    const c = state.clips[id]
+    if (!c || id === skip) return true
+    const d = c.timing.display
+    return d.to <= from || d.from >= to
+  })
+}
+
+/**
+ * The Audio clip `video`'s sound was detached onto, or null — only when the
+ * link holds both ways. A link to a clip that is gone, or that points
+ * elsewhere, is a sound somebody deleted or a stale mark; nothing follows it.
+ */
+export function soundOf(state: Pick<IProject, 'clips'>, video: AnyClip): AnyClip | null {
+  const id = linkedTo(video)
+  const s = id ? state.clips[id] : undefined
+  return s && s.type === 'Audio' && video.audio === false && linkedTo(s) === video.id ? s : null
+}
+
+/** A new A track, its id and name made from the state alone so the handler
+ *  stays pure and a redo makes the same one. The name is the count drop.ts's
+ *  `nextTrackName` makes; it cannot be imported here, because drop.ts imports
+ *  useEdit and useEdit imports this file. */
+function newSoundTrack(state: Pick<IProject, 'tracks'>, soundId: string): ITrack {
+  let id = `trk_audio_${soundId}`
+  for (let n = 2; state.tracks.some((t) => t.id === id); n++) id = `trk_audio_${soundId}_${String(n)}`
+  const n = state.tracks.filter(isAudioTrack).length
+  return { id, name: `A${String(n + 1)}`, type: 'audio', clipIds: [], accepts: ['audio'] }
+}
+
+/**
+ * `state` — in which clip `videoId` has just become a new take — with that
+ * take kept detached: the Video silenced and linked to `sound`, and `sound`
+ * playing the new take's file over the new take's stretch. See "A detached
+ * slot stays detached" at the top of this file.
+ *
+ * Both silences are written, as a detach writes them: the export reads
+ * `audio`, the stage's video element reads `muted`. The sound's metadata is
+ * the new take's alone, as the Video's is (`stamped`) — an old `source`
+ * length describes the old file.
+ */
+function carrySound(state: State, videoId: string, sound: AnyClip): State {
+  const video = state.clips[videoId]
+  if (!video) return state
+  const silent = {
+    ...video,
+    audio: false,
+    muted: true,
+    metadata: { ...video.metadata, linkedTo: sound.id },
+  } as AnyClip
+  const meta = isObj(video.metadata) ? video.metadata : {}
+  // The picture's fades were the old place's; the sound keeps its own.
+  const timing = { ...video.timing }
+  delete timing.fadeIn
+  delete timing.fadeOut
+  const next = {
+    ...sound,
+    name: `${video.name} · sound`,
+    src: video.src,
+    timing: {
+      ...timing,
+      ...(sound.timing.fadeIn !== undefined && { fadeIn: sound.timing.fadeIn }),
+      ...(sound.timing.fadeOut !== undefined && { fadeOut: sound.timing.fadeOut }),
+    },
+    metadata: {
+      ...(typeof meta.jobId === 'string' && { jobId: meta.jobId }),
+      ...(typeof meta.file === 'string' && { file: meta.file }),
+      linkedTo: video.id,
+    },
+  } as AnyClip
+
+  const { from, to } = next.timing.display
+  const fits = (t: ITrack): boolean => isAudioTrack(t) && freeOver(state, t, from, to, sound.id)
+  const on = trackOf(state, sound.id)
+  let tracks = state.tracks
+  if (!on || !fits(on)) {
+    const other = state.tracks.find((t) => t.id !== on?.id && fits(t))
+    const rest = state.tracks.map((t) =>
+      (t.id === on?.id ? { ...t, clipIds: t.clipIds.filter((id) => id !== sound.id) } : t))
+    tracks = other
+      ? rest.map((t) => (t.id === other.id ? { ...t, clipIds: [...t.clipIds, sound.id] } : t))
+      // The bottom of the stack, where every sound goes (drop.ts).
+      : [...rest, { ...newSoundTrack(state, sound.id), clipIds: [sound.id] }]
+  }
+  return { ...state, tracks, clips: { ...state.clips, [videoId]: silent, [sound.id]: next } }
+}
 
 /** Whether `track` is V1 and V1 may be re-laid — see `Placing.keepGaps`. */
 const relays = (state: State, track: ITrack | null, p: Placing): boolean =>
@@ -161,24 +281,28 @@ function ripple(clips: Record<string, AnyClip>, track: ITrack | null, from: numb
 /**
  * The patches that turn `before` into `after`: whole clips and the whole track
  * list, each with `oldValue`, in the order the Studio's bridge needs them —
- * removals, the swapped clip's remove and add (see the top of this file), new
- * clips, moved clips, and the track list last.
+ * removals, the swapped clips' remove and add (see the top of this file) —
+ * the take, and its detached sound when it has one, whose `src` changes too —
+ * new clips, moved clips, and the track list last.
  */
-function patchesFor(before: State, after: State, swapped: string | null): Patch[] {
+function patchesFor(before: State, after: State, swapped: readonly string[] = []): Patch[] {
   const out: Patch[] = []
   for (const [id, c] of Object.entries(before.clips)) {
     if (!after.clips[id]) out.push({ op: 'remove', path: `/clips/${id}`, oldValue: c })
   }
-  if (swapped && before.clips[swapped] && after.clips[swapped]) {
-    out.push({ op: 'remove', path: `/clips/${swapped}`, oldValue: before.clips[swapped] })
-    out.push({ op: 'add', path: `/clips/${swapped}`, value: after.clips[swapped] })
+  for (const id of swapped) {
+    const was = before.clips[id]
+    const now = after.clips[id]
+    if (!was || !now) continue
+    out.push({ op: 'remove', path: `/clips/${id}`, oldValue: was })
+    out.push({ op: 'add', path: `/clips/${id}`, value: now })
   }
   for (const [id, c] of Object.entries(after.clips)) {
     if (!before.clips[id]) out.push({ op: 'add', path: `/clips/${id}`, value: c })
   }
   for (const [id, c] of Object.entries(after.clips)) {
     const was = before.clips[id]
-    if (was && id !== swapped && !same(was, c)) {
+    if (was && !swapped.includes(id) && !same(was, c)) {
       out.push({ op: 'update', path: `/clips/${id}`, value: c, oldValue: was })
     }
   }
@@ -193,7 +317,8 @@ function patchesFor(before: State, after: State, swapped: string | null): Patch[
  * the whole new take, the old take's fades — and the track after it laid out
  * again for the new length. On V1 that is `relayV1`, the layout every trim
  * ends in, so each crossfade follows its cut; elsewhere the clips after it move
- * by the difference.
+ * by the difference. A slot whose sound was detached stays detached
+ * (`carrySound`), in the same patches.
  */
 function swap(state: State, old: AnyClip, next: AnyClip, p: Placing): Patch[] {
   const fades = {
@@ -204,10 +329,12 @@ function swap(state: State, old: AnyClip, next: AnyClip, p: Placing): Patch[] {
   const clip = { ...base, id: old.id, timing: { ...base.timing, ...fades } } as AnyClip
   const track = trackOf(state, old.id)
   const put: State = { ...state, clips: { ...state.clips, [old.id]: clip } }
-  const after: State = relays(state, track, p)
+  const laid: State = relays(state, track, p)
     ? relayV1(asProject(put))
     : { ...put, clips: ripple(put.clips, track, old.timing.display.to, lengthOf(clip) - lengthOf(old), old.id) }
-  return patchesFor(state, after, old.id)
+  const sound = soundOf(state, old)
+  if (!sound) return patchesFor(state, laid, [old.id])
+  return patchesFor(state, carrySound(laid, old.id, sound), [old.id, sound.id])
 }
 
 /**
@@ -241,12 +368,12 @@ function insert(state: State, trackId: string | null, afterId: string | null, at
     const i = afterId ? order.findIndex((c) => c.id === afterId) : -1
     order.splice(i >= 0 ? i + 1 : order.length, 0, clip)
     const after = relayV1({ settings: state.settings, tracks, clips: { ...state.clips, [clip.id]: clip } }, order)
-    return patchesFor(was, after, null)
+    return patchesFor(was, after)
   }
   const start = at ?? (existing ? endOf(state, existing) : 0)
   const next = placed(clip, start)
   const clips = ripple({ ...state.clips, [next.id]: next }, existing, start + span, lengthOf(next) - span, next.id)
-  return patchesFor(was, { ...state, tracks, clips }, null)
+  return patchesFor(was, { ...state, tracks, clips })
 }
 
 function endOf(state: State, track: ITrack): number {
@@ -294,6 +421,9 @@ export const takeChoose: CommandHandler<TakeChoosePayload> = (state, cmd) => {
  *   on the strength of a continuation);
  * - V1 is holding a gap for a clip whose file would not load: a trim is refused
  *   then (`v1Lock`) for the reason the gap is kept, and this is a trim.
+ *
+ * A source whose sound was detached keeps it detached; the sound is cut back
+ * with the picture only while it still lies exactly under it (`cutSound`).
  */
 function cutBack(state: State, from: AnyClip, cut: { jobId: string; to: number }): AnyClip | null {
   if (from.metadata?.jobId !== cut.jobId) return null
@@ -302,6 +432,28 @@ function cutBack(state: State, from: AnyClip, cut: { jobId: string; to: number }
   const trimmed = plan.project.clips[from.id]
   const had = edgeOf(from, 'out')
   return trimmed && edgeOf(trimmed, 'out') < had ? trimmed : null
+}
+
+/**
+ * `sound` — `from`'s detached sound — cut back to the out-point `cut` gave the
+ * picture, or null to leave it.
+ *
+ * Only while it still plays exactly the stretch the picture did (same display
+ * and trim — untouched since the detach). Left long, its tail sounds the
+ * frames the continuation replays, which is the double the picture's cut is
+ * there to remove. Moved or trimmed on its own, it was placed by hand, and a
+ * detached sound is not moved because its picture moved (detach.ts).
+ */
+function cutSound(from: AnyClip, cut: AnyClip, sound: AnyClip): AnyClip | null {
+  const a = sound.timing
+  const v = from.timing
+  if (!same(a.display, v.display) || !same(a.trim, v.trim)) return null
+  const source: unknown = cut.metadata?.source
+  return {
+    ...sound,
+    timing: { ...a, display: { ...cut.timing.display }, ...(cut.timing.trim && { trim: { ...cut.timing.trim } }) },
+    metadata: { ...sound.metadata, ...(source !== undefined && { source }) },
+  } as AnyClip
 }
 
 /** See `SlotContinuePayload`. */
@@ -314,7 +466,11 @@ export const slotContinue: CommandHandler<SlotContinuePayload> = (state, cmd) =>
   if (!from || !track) return insert(state, null, null, null, 0, next, p)
   if (relays(state, track, p)) {
     const cutFrom = cut ? cutBack(state, from, cut) : null
-    const put = cutFrom ? { ...state, clips: { ...state.clips, [from.id]: cutFrom } } : state
+    const sound = cutFrom ? soundOf(state, from) : null
+    const cutAudio = cutFrom && sound ? cutSound(from, cutFrom, sound) : null
+    const put = cutFrom
+      ? { ...state, clips: { ...state.clips, [from.id]: cutFrom, ...(cutAudio && { [cutAudio.id]: cutAudio }) } }
+      : state
     return insert(put, track.id, from.id, null, 0, next, p, state)
   }
   return insert(state, track.id, null, from.timing.display.to, 0, next, p)

@@ -32,6 +32,12 @@ What it holds, and the failure each one is for:
 - **The export carries the detached sound once, not twice**: the MP4 has an
   audio stream, and its loudness matches the attached export's (a Video still
   playing its own sound under the detached one would be ~6 dB louder).
+- **A detached slot stays detached across a new take.** ↻ and ‹ › land the
+  new take silent and swap the linked Audio clip to its file — one
+  soundtrack, not the new take's attached sound over the old take's detached
+  one — and one undo puts back the old take and the old sound together. A
+  new take longer than its sound's A track has room for moves the sound to a
+  free A track, whole, rather than overlapping or clamping it.
 """
 import base64
 import json
@@ -167,13 +173,33 @@ def clips_of(proj, kind):
     return [c for c in (proj.get("clips") or {}).values() if c.get("type") == kind]
 
 
-def drag_strip(pg, clip_id, to):
-    """A real pointer drag from the clip's sound strip to the point `to`."""
+REACHABLE = """
+(id) => {
+  const s = document.querySelector(`.et-sound[data-sound-strip="${id}"]`);
+  if (!s) return null;
+  const r = s.getBoundingClientRect();
+  const y = r.top + r.height / 2;
+  for (let x = r.right - 2; x > r.left; x -= 1) {
+    if (document.elementFromPoint(x, y)?.closest('.et-sound') === s) return x;
+  }
+  return null;
+}
+"""
+
+
+def drag_strip(pg, clip_id, to, at=1 / 3):
+    """A real pointer drag from the clip's sound strip to the point `to`,
+    pressed `at` of the way along it — or, with `at=None`, at the rightmost
+    point a pointer can reach: a slot with more than one take draws its ‹ ›
+    over the strip's left end, and on a short clip over most of it."""
     strip = pg.locator(f'.et-sound[data-sound-strip="{clip_id}"]')
     box = strip.bounding_box()
     if not box:
         return False
-    x, y = box["x"] + box["width"] / 3, box["y"] + box["height"] / 2
+    y = box["y"] + box["height"] / 2
+    x = box["x"] + box["width"] * at if at is not None else pg.evaluate(REACHABLE, clip_id)
+    if x is None:
+        return False
     pg.mouse.move(x, y)
     pg.mouse.down()
     for i in range(1, 9):
@@ -245,6 +271,200 @@ def audio_facts(path):
                           "-af", "volumedetect", "-f", "null", "-"], capture_output=True, text=True)
     m = re.search(r"mean_volume:\s*(-?[\d.]+) dB", vol.stderr)
     return has, float(m.group(1)) if m else None
+
+
+def take_sounds(proj):
+    """Audio clips playing a take's file — every soundtrack the slots have,
+    and nothing a person dropped (those play a scene file)."""
+    return [c for c in clips_of(proj, "Audio") if "/api/file/" in (c.get("src") or "")]
+
+
+def job_of(proj, clip_id):
+    return (((proj.get("clips") or {}).get(clip_id) or {}).get("metadata") or {}).get("jobId")
+
+
+def track_of(proj, clip_id):
+    return next((t for t in proj.get("tracks") or [] if clip_id in (t.get("clipIds") or [])), {})
+
+
+def one_soundtrack(label, proj, vid, sound_id, job):
+    """The slot plays take `job`, silent, and its one soundtrack is `sound_id`
+    playing that take's file under it, linked both ways."""
+    v = (proj.get("clips") or {}).get(vid) or {}
+    sounds = take_sounds(proj)
+    a = sounds[0] if len(sounds) == 1 else {}
+    vt, at = v.get("timing") or {}, a.get("timing") or {}
+    check(f"{label}: the slot plays take {job}", (v.get("metadata") or {}).get("jobId") == job,
+          str((v.get("metadata") or {}).get("jobId")))
+    check(f"{label}: one soundtrack, not two", len(sounds) == 1 and a.get("id") == sound_id,
+          str([(c.get("id"), c.get("src")) for c in sounds]))
+    check(f"{label}: the Video is still silent — audio:false and muted",
+          v.get("audio") is False and v.get("muted") is True,
+          json.dumps({k: v.get(k) for k in ("audio", "muted")}))
+    check(f"{label}: the sound plays the take's own file",
+          bool(a) and a.get("src") == v.get("src") and job in (a.get("src") or "")
+          and (a.get("metadata") or {}).get("jobId") == job, f"{a.get('src')} vs {v.get('src')}")
+    check(f"{label}: its timing is the take's — display and trim",
+          at.get("display") == vt.get("display") and at.get("trim") == vt.get("trim"),
+          f"{at.get('display')} {at.get('trim')} vs {vt.get('display')} {vt.get('trim')}")
+    check(f"{label}: still linked both ways",
+          (a.get("metadata") or {}).get("linkedTo") == vid and (v.get("metadata") or {}).get("linkedTo") == sound_id,
+          f"{(a.get('metadata') or {}).get('linkedTo')} / {(v.get('metadata') or {}).get('linkedTo')}")
+    return v, a
+
+
+def sound_clips(pg):
+    """The ids of every clip on an A lane, as drawn."""
+    return {c["id"] for lane in pg.evaluate(LANES) if lane["audio"] for c in lane["clips"]}
+
+
+def new_sound(pg, sid, had):
+    """The one A-lane clip that was not there before, and project.json once it
+    holds it — read off the page, because the saver is debounced and a stale
+    project.json can still hold an earlier detach's sound."""
+    deadline = time.time() + 10
+    new = set()
+    while time.time() < deadline:
+        new = sound_clips(pg) - had
+        if new:
+            break
+        time.sleep(0.2)
+    if len(new) != 1:
+        return None, {}
+    sid_ = next(iter(new))
+    return sid_, saved_project(sid, lambda p: [c.get("id") for c in take_sounds(p)] == [sid_])
+
+
+def stays_detached(pg, sid, vid):
+    """A detached slot stays detached across a re-render and a take step.
+
+    The failure: the new take landed with its own sound attached, and the old
+    Audio clip stayed on its A track pointing at the slot — two soundtracks,
+    one for a take no longer in the cut. Now the new take lands silent and the
+    linked Audio clip is swapped to its file, in the same undo entry.
+    """
+    print("  -- a detached slot stays detached --")
+    clip_sel = f'#edit-tracks .et-clip[data-clip="{vid}"]'
+    slot = pg.get_attribute(clip_sel, "data-slot") or ""
+    job1 = pg.get_attribute(clip_sel, "data-job") or ""
+    lanes1 = lane_count(pg)
+
+    had = sound_clips(pg)
+    pg.focus(clip_sel)
+    pg.keyboard.press("d")
+    sound_id, proj = new_sound(pg, sid, had)
+    sounds = take_sounds(proj)
+    check("D detaches onto the free A1 — no new lane",
+          len(sounds) == 1 and lane_count(pg) == lanes1, f"{len(sounds)} {lane_count(pg)}/{lanes1}")
+    if not sound_id or len(sounds) != 1:
+        return
+    before_timing = json.dumps(sounds[0].get("timing"), sort_keys=True)
+
+    # ---- ↻ re-renders the slot ---------------------------------------------
+    write(pg, "")  # an empty prompt renders the slot's own sentence again
+    pg.click(f'#edit-tracks .et-clip[data-slot="{slot}"] [data-act="render"]')
+    wait_job(pg, slot, job1)
+    job2 = pg.get_attribute(clip_sel, "data-job") or ""
+    proj = saved_project(sid, lambda p: job_of(p, vid) == job2
+                         and all(job2 in (c.get("src") or "") for c in take_sounds(p)))
+    one_soundtrack("after ↻", proj, vid, sound_id, job2)
+    check("after ↻: the sound stays on its A track",
+          track_of(proj, sound_id).get("name") == "A1", str(track_of(proj, sound_id).get("name")))
+    check("after ↻: the history names the render", undo_title(pg).startswith("Undo render"), undo_title(pg))
+    pg.wait_for_timeout(500)
+    heard = audible_while_playing(pg)
+    check("after ↻: playing, the stage sounds the A track — the new take's picture silent",
+          [h["tag"] for h in heard if h["audible"]] == ["AUDIO"], str(heard))
+
+    # ---- ‹ back to the first take --------------------------------------------
+    pg.click(f'#edit-tracks .et-clip[data-slot="{slot}"] [data-act="prev"]')
+    wait_job(pg, slot, job2)
+    proj = saved_project(sid, lambda p: job_of(p, vid) == job1
+                         and all(job1 in (c.get("src") or "") for c in take_sounds(p)))
+    one_soundtrack("after ‹", proj, vid, sound_id, job1)
+
+    # ---- one undo per edit ---------------------------------------------------
+    pg.evaluate("() => window.__edit.undo()")  # the ‹ step
+    wait_job(pg, slot, job1)
+    pg.evaluate("() => window.__edit.undo()")  # the render
+    wait_job(pg, slot, job2)
+    proj = saved_project(sid, lambda p: job_of(p, vid) == job1
+                         and all(job1 in (c.get("src") or "") for c in take_sounds(p)))
+    _, a = one_soundtrack("one undo after ↻", proj, vid, sound_id, job1)
+    check("one undo after ↻: the old sound exactly as it was",
+          json.dumps(a.get("timing"), sort_keys=True) == before_timing,
+          f"{(a.get('timing') or {}).get('display')}")
+    check("and the next undo is the detach", undo_title(pg).startswith("Undo detach"), undo_title(pg))
+    pg.evaluate("() => window.__edit.undo()")  # the detach
+    proj = saved_project(sid, lambda p: not take_sounds(p))
+    v = (proj.get("clips") or {}).get(vid) or {}
+    check("undoing the detach too: the take's own sound, nothing on the A track",
+          not take_sounds(proj) and v.get("audio") is not False and not v.get("muted"),
+          json.dumps({k: v.get(k) for k in ("audio", "muted")}))
+
+    # ---- a longer take than its sound's track has room for ---------------------
+    # The slot's picture trimmed three frames short, its sound detached onto a new
+    # A track with music right after it, then the full-length take chosen: the
+    # sound would overlap the music, so it goes to the first A track free for
+    # the whole take (A1, whose room tone starts after 3 s) — never clamped.
+    handle = pg.locator(f"{clip_sel} .et-trim.out")
+    handle.focus()
+    for _ in range(3):
+        pg.keyboard.press("ArrowLeft")
+    pg.wait_for_timeout(500)
+    end_px = pg.evaluate(f"""() => {{ const c = document.querySelector('{clip_sel}');
+      return c.offsetLeft + c.offsetWidth }}""")
+    said = pg.evaluate(DROP, {"sel": "#edit-drop", "name": "music.wav", "type": "audio/wav",
+                              "b64": base64.b64encode(wav(0.8)).decode(), "x": end_px + 1})
+    check("music dropped after the trimmed take makes A2", said == "ok" and wait_lanes(pg, lanes1 + 1),
+          f"{said} {lane_count(pg)}")
+    had = sound_clips(pg)
+    a2 = pg.locator("#edit-tracks .et-lane.audio").nth(1).bounding_box()
+    said = drag_strip(pg, vid, (a2["x"] + 20, a2["y"] + a2["height"] / 2), at=None) if a2 else False
+    check("the ghost names A2", "onto A2" in (said or ""), repr(said))
+    sound_id, proj = new_sound(pg, sid, had)
+    sounds = take_sounds(proj)
+    if not sound_id or len(sounds) != 1:
+        check("the sound detached onto A2", False, str(sounds))
+        return
+    before_timing = json.dumps(sounds[0].get("timing"), sort_keys=True)
+    check("the sound is on A2, beside the music", track_of(proj, sound_id).get("name") == "A2",
+          str(track_of(proj, sound_id).get("name")))
+    lanes2 = lane_count(pg)
+
+    pg.click(f'#edit-tracks .et-clip[data-slot="{slot}"] [data-act="next"]')
+    wait_job(pg, slot, job1)
+    proj = saved_project(sid, lambda p: job_of(p, vid) == job2
+                         and all(job2 in (c.get("src") or "") for c in take_sounds(p)))
+    _, a = one_soundtrack("after › onto a longer take", proj, vid, sound_id, job2)
+    on = track_of(proj, sound_id)
+    clips = proj.get("clips") or {}
+    d = (a.get("timing") or {}).get("display") or {}
+    overlaps = [c for cid in on.get("clipIds") or [] if cid != sound_id
+                for c in [clips.get(cid) or {}]
+                if not ((c.get("timing") or {}).get("display", {}).get("to", 0) <= d.get("from", 0)
+                        or (c.get("timing") or {}).get("display", {}).get("from", 0) >= d.get("to", 0))]
+    check("the sound moved to the free A1 rather than overlap the music, whole",
+          on.get("name") == "A1" and not overlaps and lane_count(pg) == lanes2,
+          f"{on.get('name')} overlaps={len(overlaps)} lanes={lane_count(pg)}/{lanes2}")
+    pg.evaluate("() => window.__edit.undo()")
+    wait_job(pg, slot, job2)
+    proj = saved_project(sid, lambda p: job_of(p, vid) == job1
+                         and all(job1 in (c.get("src") or "") for c in take_sounds(p)))
+    _, a = one_soundtrack("one undo after the move", proj, vid, sound_id, job1)
+    check("one undo after the move: the sound back on A2, exactly as it was",
+          track_of(proj, sound_id).get("name") == "A2"
+          and json.dumps(a.get("timing"), sort_keys=True) == before_timing,
+          f"{track_of(proj, sound_id).get('name')} {(a.get('timing') or {}).get('display')}")
+
+
+def wait_job(pg, slot, not_job, timeout=40_000):
+    """Until the slot's clip plays a take other than `not_job`."""
+    pg.wait_for_function(
+        "([s, j]) => { const c = document.querySelector(`#edit-tracks .et-clip[data-slot=\"${s}\"]`);"
+        " return c && c.dataset.job && c.dataset.job !== j }",
+        arg=[slot, not_job], timeout=timeout)
+    pg.wait_for_timeout(300)
 
 
 with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmp:
@@ -417,6 +637,8 @@ with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmp:
     audio_lanes = [l for l in lanes if l["audio"]]
     check("one undo takes only the sound back off A1",
           len(audio_lanes) == 1 and len(audio_lanes[0]["clips"]) == 1, str(lanes)[:240])
+
+    stays_detached(pg, sid, vid)
 
     # A Video clip built again by the Studio (the detach's remove-and-add, as a
     # take swap's) gets a fresh Pixi VideoSource whose `autoPlay` calls
