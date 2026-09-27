@@ -340,6 +340,7 @@ slices:
       disabled with that reason rather than drawing boxes nothing will read.
     paths:
       - web/src/regions
+      - tools/ui-checks/check_region_slot.py
     depends_on:
       - 8
     story_ids:
