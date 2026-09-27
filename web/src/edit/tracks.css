@@ -1,0 +1,61 @@
+/* ── shaping the cut on the track ────────────────────────────────────────
+   Trim handles, a clip picked up, the control on each cut and the dissolve it
+   adds. Everything here is drawn on the thing it acts on — the clip's edges,
+   the cut itself — because an inspector beside the timeline is the panel the
+   page may not grow (web/CLAUDE.md, "What this page may not grow"). */
+
+/* A clip that can move says so under the pointer; one being moved rides above
+   its neighbours and does not animate, so it stays under the finger. */
+.et-clip[data-movable]{cursor:grab}
+.et-clip:focus-visible{outline:2px solid rgba(255,255,255,.5);outline-offset:-2px}
+.et-clip.lifted{z-index:3;cursor:grabbing;background:var(--sel);border-color:var(--line-2);
+  box-shadow:0 4px 14px rgba(0,0,0,.55)}
+.et-scroll.dragging{cursor:grabbing;user-select:none}
+
+/* The trim handles: the whole height of each end. The grip line is drawn, not
+   just a cursor change, because a touch screen has no cursor to change. */
+.et-trim{position:absolute;top:0;bottom:0;width:8px;z-index:1;cursor:ew-resize;
+  touch-action:none;outline:none}
+.et-trim.in{left:0}
+.et-trim.out{right:0}
+.et-trim::after{content:"";position:absolute;top:7px;bottom:7px;width:2px;
+  border-radius:1px;background:var(--line-2);transition:background .12s}
+.et-trim.in::after{left:2px}
+.et-trim.out::after{right:2px}
+.et-trim:hover::after,.et-trim:focus-visible::after{background:var(--fg)}
+.et-trim:focus-visible{background:rgba(255,255,255,.08)}
+/* Greyed, with the reason in its title — not hidden. */
+.et-trim[aria-disabled="true"]{cursor:not-allowed}
+.et-trim[aria-disabled="true"]::after{background:var(--wash-3)}
+
+/* The control on a cut: a diamond on V1's top edge, astride the join. Hard is
+   an outline, a crossfade is filled — the two states read at a glance without
+   a word on them. */
+.et-cut{position:absolute;top:-6px;z-index:2;width:12px;height:12px;margin:0;padding:0;
+  transform:translateX(-50%);border:0;background:none;cursor:pointer;touch-action:manipulation}
+.et-cut::after{content:"";position:absolute;left:2px;top:2px;width:7px;height:7px;
+  transform:rotate(45deg);border:1px solid var(--dim);border-radius:1px;background:var(--bg)}
+.et-cut:hover::after,.et-cut:focus-visible::after{border-color:var(--fg)}
+.et-cut.on::after{background:var(--fg);border-color:var(--fg)}
+.et-cut:focus-visible{outline:2px solid rgba(255,255,255,.5);outline-offset:1px;border-radius:2px}
+.et-cut:disabled{cursor:not-allowed;opacity:.35}
+
+/* A dissolve: the stretch it runs over, crossed the way every editor draws one.
+   Never a target — the cut's diamond is what toggles it. */
+.et-fade{position:absolute;top:0;bottom:0;z-index:1;pointer-events:none;
+  border-radius:var(--r-mark);
+  background:
+    linear-gradient(to top right,transparent calc(50% - .75px),rgba(255,255,255,.55) 50%,transparent calc(50% + .75px)),
+    linear-gradient(to bottom right,transparent calc(50% - .75px),rgba(255,255,255,.55) 50%,transparent calc(50% + .75px)),
+    rgba(255,255,255,.08)}
+
+/* A finger is wider than a cursor: the handles and the diamond get room to be
+   hit without the drawing getting bigger. Split on the pointer, not the width —
+   a tablet with a trackpad is neither. */
+@media (hover:none){
+  .et-trim{width:14px}
+  .et-trim.in::after{left:4px}
+  .et-trim.out::after{right:4px}
+  .et-cut{width:24px;height:24px;top:-12px}
+  .et-cut::after{left:8px;top:8px}
+}

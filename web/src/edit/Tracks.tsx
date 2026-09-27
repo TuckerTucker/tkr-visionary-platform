@@ -1,44 +1,64 @@
-import { useCallback, useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import type { AnyClip, ITrack } from '@openvideo/core'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import type { AnyClip, Core, IProject, ITrack } from '@openvideo/core'
+import type { Studio } from '@openvideo/engine-pixi'
 
 import { OPENVIDEO_PIN, sec, us } from './engine'
-import { Clip } from './Clip'
-import { clipsOn, displayOrder, projectEnd, takeOf } from './project'
-import { pause, retry, seek, toggle, useEdit } from './useEdit'
+import { Clip, type ClipEdit } from './Clip'
+import {
+  cutsOf, dropIndex, edgeOf, frameUs, planCrossfade, planMove, planTrim, refused,
+  sourceUs, transitionsOn, trimmable, v1Clips, v1Lock, type Cut, type Edge, type Plan, type Refusal,
+} from './cuts'
+import { clipsOn, displayOrder, projectEnd, takeOf, v1 } from './project'
+import { batch, pause, retry, seek, toggle, useEdit } from './useEdit'
 import { PX_PER_SEC } from '../scene/Timeline'
 import { useStore } from '../store'
 import { ErrorNote } from '../ui/ErrorNote'
 import { IconPlay } from '../icons'
 import './edit.css'
+import './tracks.css'
 
 /**
  * The timeline under the stage: every track, top to bottom, with its clips as
- * bars in time, a playhead, and play/pause.
+ * bars in time, a playhead, and play/pause — and the cut shaped on it: trims on
+ * a clip's edges, order by dragging, a crossfade on the cut itself.
  *
  * **Generic over tracks.** It draws `project.tracks` in `displayOrder` — the
  * picture tracks with V1 first, then sound — and every clip through `Clip`,
- * whatever it is. Nothing here knows V1 is special, so a second track arriving
- * is a lane appearing, not a change to this file.
+ * whatever it is. The one thing that knows V1 is the editing: trims, moves and
+ * cuts are V1's, because V1 is the track that stays gapless (see `cuts.ts`).
+ * A transition on any track is drawn as the stretch it dissolves over, never as
+ * a clip bar — it is a property of a cut, not a thing on the track.
  *
  * **The same scale as the scene's own timeline, and it scrolls.** `PX_PER_SEC`
  * is `scene/Timeline`'s, for that file's reason: fitting the cut to the width
  * moves every bar whenever the cut changes length, and makes a long scene
  * unreachable. A second is the same distance on both.
  *
- * **Seeking is a press on the lanes.** Anywhere on them, clips included, and a
- * drag scrubs. Nothing is selected by it, because nothing here acts on a
- * selection yet; a later control that wants the press on a clip stops it there.
+ * **A press seeks; a drag on a V1 clip moves it.** A press anywhere on the
+ * lanes puts the head there, clips included. Dragging a clip that can move
+ * picks it up — past 4px with a mouse or pen, or after a still hold with a
+ * finger, because on glass a drag that starts moving at once is the timeline
+ * scrolling. Everywhere else a drag scrubs, as before.
+ *
+ * **One gesture, one undo entry, and what you saw is what lands.** A drag draws
+ * `cuts.ts`'s plan for where the pointer is, and nothing reaches the Core until
+ * it is let go; then the plan is made again against the arrangement as it is
+ * *now* (a take may have landed meanwhile) and run as one `batch`. Escape, or a
+ * cancelled pointer, drops it. The playhead then goes to what the edit exposed —
+ * the first or last frame kept, or the start of a new dissolve — so the stage
+ * shows the change on its next frame, from the engine's cache, with nothing
+ * fetched again.
  *
  * **The playhead does not re-render the timeline.** Playback moves the Core's
  * `currentTime` every frame, so the head and the readout are written straight
  * to the DOM from a store subscription; React only redraws when the
- * arrangement itself changes.
+ * arrangement itself changes, or a drag moves what it would change.
  *
  * Extension points, each drawn on the thing it is about rather than in a panel:
  * - `tools` — controls for the whole cut (Export, Undo), at the end of the
  *   transport row. It costs nothing when empty.
- * - `clipOverlay(clip, track)` — laid over each clip bar (trim handles, a take
- *   stepper, a crossfade mark, a stale badge).
+ * - `clipOverlay(clip, track)` — laid over each clip bar (a take stepper, a
+ *   stale badge).
  * - `laneOverlay(track)` — laid over each lane (a drop target, the gap a drag
  *   would open).
  */
@@ -52,6 +72,16 @@ export type TracksProps = {
  *  edge and the head can sit past it. */
 const TAIL_SEC = 2
 
+/** How far a mouse or pen moves on a clip before the press is a pick-up rather
+ *  than a seek that wobbled. */
+const LIFT_PX = 4
+/** How long a finger holds still on a clip before it picks the clip up. Any
+ *  sooner and every swipe that starts on V1 — most of the timeline's height —
+ *  would move a clip instead of scrolling. */
+const HOLD_MS = 300
+/** How far a finger may drift during that hold and still be holding. */
+const HOLD_SLOP_PX = 8
+
 const clock = (micro: number): string => {
   const t = Math.max(0, sec(micro))
   const m = Math.floor(t / 60)
@@ -59,11 +89,73 @@ const clock = (micro: number): string => {
   return `${String(m)}:${s.toFixed(1).padStart(4, '0')}`
 }
 
+/** What a drag in progress draws instead of the arrangement. */
+type Draft = { project: IProject; lift?: { id: string; left: number } }
+
+/** Run a plan: one batch, then the head to what it exposed. A refusal or a
+ *  plan with nothing in it runs nothing. */
+function commit(p: Plan | Refusal): void {
+  if (refused(p) || !p.commands.length) return
+  pause()
+  if (batch(p.commands) && p.at !== undefined) seek(p.at)
+}
+
+/**
+ * Hold the Studio's copy of every crossfade to the length the Core holds.
+ *
+ * OpenVideo 1.4.0's bridge builds a Studio transition from the clip's top-level
+ * `duration`, and Core's `normalizeClip` deletes top-level `duration` from every
+ * clip it stores, imports or updates — so every Transition the bridge adds
+ * (a stage mounting, a reload, the undo of a removal) comes up at the Studio's
+ * two-second default while the Core, project.json and the Compositor's export
+ * all say `timing.duration`. The preview would dissolve for four times as long
+ * as the export does, and only after the page had been reopened. The bridge
+ * does copy `timing` on an *update*, which is why a freshly added crossfade is
+ * right until the stage remounts; this puts the Core's timing on the Studio's
+ * clip whenever the clips change, which is the update the bridge never gets.
+ *
+ * It writes the Studio's clip and redraws — never the Core, so it is no edit
+ * and no undo entry. The bridge adds clips one at a time and asynchronously, so
+ * a crossfade it has not reached yet is looked for again on the next frames.
+ */
+function keepFadesInStep(core: Core, studio: Studio): () => void {
+  let raf = 0
+  let tries = 0
+  const step = (): void => {
+    raf = 0
+    if (studio.destroyed) return
+    let waiting = false
+    let moved = false
+    for (const c of Object.values(core.store.getState().clips)) {
+      if (c.type !== 'Transition') continue
+      const s = studio.timeline.getClipById(c.id)
+      if (!s) { waiting = true; continue }
+      const d = c.timing.display
+      if (s.duration !== c.timing.duration || s.display.from !== d.from || s.display.to !== d.to) {
+        s.display = { from: d.from, to: d.to }
+        s.duration = c.timing.duration
+        moved = true
+      }
+    }
+    if (moved) void studio.updateFrame(studio.currentTime)
+    if (waiting && ++tries < 300) raf = requestAnimationFrame(step)
+  }
+  const kick = (): void => {
+    tries = 0
+    if (!raf) raf = requestAnimationFrame(step)
+  }
+  kick()
+  const unsub = core.store.subscribe((st, prev) => { if (st.clips !== prev.clips) kick() })
+  return () => { unsub(); cancelAnimationFrame(raf) }
+}
+
 export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
   const phase = useEdit((s) => s.phase)
   const error = useEdit((s) => s.error)
   const core = useEdit((s) => s.core)
+  const studio = useEdit((s) => s.studio)
   const project = useEdit((s) => s.project)
+  const parked = useEdit((s) => s.parked)
   const broken = useEdit((s) => s.broken)
   const notes = useEdit((s) => s.notes)
   const playing = useEdit((s) => s.playing)
@@ -73,10 +165,16 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
   const body = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLDivElement>(null)
   const readout = useRef<HTMLSpanElement>(null)
+  const [draft, setDraft] = useState<Draft | null>(null)
+  /** Ends the gesture in progress without committing it — Escape, an unmount,
+   *  the scene closing under it. */
+  const abort = useRef<(() => void) | null>(null)
 
+  const shown = draft?.project ?? project
   const end = project ? projectEnd(project) : 0
-  const seconds = sec(end)
+  const seconds = sec(Math.max(end, shown ? projectEnd(shown) : 0))
   const width = (seconds + TAIL_SEC) * PX_PER_SEC
+  const lock = phase === 'ready' ? v1Lock(project, parked) : 'The cut is still opening.'
 
   // The head and the clock, straight from the Core — see above.
   useEffect(() => {
@@ -99,11 +197,108 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
     })
   }, [core, end])
 
+  useEffect(() => (core && studio ? keepFadesInStep(core, studio) : undefined), [core, studio])
+
+  // A gesture never outlives the Core it was planned against.
+  useEffect(() => () => abort.current?.(), [core])
+
   const timeAt = useCallback((clientX: number): number => {
     const r = body.current?.getBoundingClientRect()
     return r ? us((clientX - r.left) / PX_PER_SEC) : 0
   }, [])
 
+  /**
+   * Wire one pointer gesture: `move` on every move, `done(true)` on release,
+   * `done(false)` on cancel or Escape. Escape is taken in the capture phase and
+   * stopped there, because the page's own Escape (leaving region editing) is not
+   * what somebody mid-drag on the timeline means.
+   */
+  const follow = useCallback((el: HTMLElement, pointerId: number,
+    move: (ev: globalThis.PointerEvent) => void, done: (ok: boolean) => void) => {
+    try { el.setPointerCapture(pointerId) } catch { /* a pointer already gone ends below */ }
+    const up = (): void => finish(true)
+    const cancel = (): void => finish(false)
+    const esc = (ev: globalThis.KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return
+      ev.preventDefault()
+      ev.stopPropagation()
+      finish(false)
+    }
+    function finish(ok: boolean): void {
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', esc, true)
+      if (abort.current === cancel) abort.current = null
+      done(ok)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', esc, true)
+    abort.current?.()
+    abort.current = cancel
+  }, [])
+
+  /* ---- trim ------------------------------------------------------------ */
+
+  const trimPress = useCallback((clip: AnyClip, edge: Edge, e: PointerEvent<HTMLElement>) => {
+    // The handle's press is its own: it never also seeks or picks the clip up.
+    e.stopPropagation()
+    if (e.button !== 0 || lock || !project) return
+    e.preventDefault()
+    pause()
+    const base = project
+    const x0 = e.clientX
+    const rate = clip.timing.playbackRate && clip.timing.playbackRate > 0 ? clip.timing.playbackRate : 1
+    const from = edgeOf(clip, edge)
+    let target = from
+    follow(e.currentTarget, e.pointerId, (ev) => {
+      target = from + us((ev.clientX - x0) / PX_PER_SEC) * rate
+      const p = planTrim(base, clip.id, edge, target)
+      if (!refused(p)) setDraft({ project: p.project })
+    }, (ok) => {
+      setDraft(null)
+      const now = useEdit.getState().project
+      if (ok && now && target !== from) commit(planTrim(now, clip.id, edge, target))
+    })
+  }, [follow, lock, project])
+
+  const trimKey = useCallback((clip: AnyClip, edge: Edge, e: KeyboardEvent<HTMLElement>) => {
+    if (!project || e.metaKey || e.ctrlKey || e.altKey) return
+    const f = frameUs(project)
+    const step = e.shiftKey ? Math.round(project.settings.fps || 24) * f : f
+    const at = edgeOf(clip, edge)
+    const to = e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? at - step
+      : e.key === 'ArrowRight' || e.key === 'ArrowUp' ? at + step
+        : e.key === 'Home' ? (edge === 'in' ? 0 : -Infinity)
+          : e.key === 'End' ? (edge === 'out' ? sourceUs(clip) : Infinity)
+            : null
+    if (to === null) return
+    e.preventDefault()
+    e.stopPropagation()
+    if (lock) return
+    // ±Infinity lands on the far limit: planTrim clamps it to the other edge.
+    commit(planTrim(project, clip.id, edge, Number.isFinite(to) ? to : to > 0 ? sourceUs(clip) : 0))
+  }, [lock, project])
+
+  /* ---- move ------------------------------------------------------------ */
+
+  const moveKey = useCallback((clip: AnyClip, e: KeyboardEvent<HTMLElement>) => {
+    if (e.target !== e.currentTarget || !project || !e.altKey) return
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    e.stopPropagation()
+    if (lock) return
+    const order = v1Clips(project)
+    const i = order.findIndex((c) => c.id === clip.id)
+    const to = e.key === 'ArrowLeft' ? i - 1 : i + 1
+    if (i < 0 || to < 0 || to >= order.length) return
+    commit(planMove(project, clip.id, to))
+  }, [lock, project])
+
+  /** A press on the lanes: seek there, then scrub — or, on a V1 clip that can
+   *  move, pick it up once the press turns into a drag. */
   const press = useCallback((e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     // A press on the horizontal scrollbar is a scroll, not a seek.
@@ -111,17 +306,71 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
     if (e.clientY - sc.getBoundingClientRect().top > sc.clientHeight) return
     pause()
     seek(timeAt(e.clientX))
-    sc.setPointerCapture(e.pointerId)
-    const move = (ev: globalThis.PointerEvent): void => seek(timeAt(ev.clientX))
-    const up = (): void => {
-      sc.removeEventListener('pointermove', move)
-      sc.removeEventListener('pointerup', up)
-      sc.removeEventListener('pointercancel', up)
+
+    const bar = (e.target as HTMLElement).closest<HTMLElement>('.et-clip[data-movable]')
+    const id = bar?.dataset.clip
+    const base = project
+    const clip = id && base ? base.clips[id] : undefined
+    const touch = e.pointerType === 'touch'
+    const x0 = e.clientX
+    const y0 = e.clientY
+    let mode: 'scrub' | 'wait' | 'lift' | 'off' = clip && !lock ? 'wait' : 'scrub'
+    let left = clip ? clip.timing.display.from : 0
+    let timer = 0
+    // Once a finger has picked a clip up, the page must not scroll under it.
+    // touch-action is fixed at the press, so this is the only way to take the
+    // pan back from the browser mid-gesture: a non-passive touchmove, cancelled.
+    const hold = (ev: TouchEvent): void => { if (mode === 'lift' && ev.cancelable) ev.preventDefault() }
+
+    const lift = (ev: { clientX: number }): void => {
+      if (!clip || !base) return
+      mode = 'lift'
+      window.clearTimeout(timer)
+      sc.addEventListener('touchmove', hold, { passive: false })
+      drag(ev)
     }
-    sc.addEventListener('pointermove', move)
-    sc.addEventListener('pointerup', up)
-    sc.addEventListener('pointercancel', up)
-  }, [timeAt])
+    const drag = (ev: { clientX: number }): void => {
+      if (!clip || !base) return
+      left = Math.max(0, clip.timing.display.from + us((ev.clientX - x0) / PX_PER_SEC))
+      const p = planMove(base, clip.id, dropIndex(base, clip.id, left))
+      setDraft({ project: refused(p) ? base : p.project, lift: { id: clip.id, left: sec(left) * PX_PER_SEC } })
+    }
+    if (mode === 'wait' && touch) {
+      timer = window.setTimeout(() => { if (mode === 'wait') lift({ clientX: x0 }) }, HOLD_MS)
+    }
+
+    follow(sc, e.pointerId, (ev) => {
+      const dx = ev.clientX - x0
+      if (mode === 'scrub') seek(timeAt(ev.clientX))
+      else if (mode === 'lift') drag(ev)
+      else if (mode === 'wait') {
+        if (touch) {
+          // A finger that moves before the hold is up is scrolling the
+          // timeline; the browser takes that pan and this press is over.
+          if (Math.hypot(dx, ev.clientY - y0) > HOLD_SLOP_PX) { mode = 'off'; window.clearTimeout(timer) }
+        } else if (Math.abs(dx) > LIFT_PX) {
+          lift(ev)
+        }
+      }
+    }, (ok) => {
+      window.clearTimeout(timer)
+      sc.removeEventListener('touchmove', hold)
+      const lifted = mode === 'lift'
+      mode = 'off'
+      if (!lifted) return
+      setDraft(null)
+      const now = useEdit.getState().project
+      if (ok && now && clip) commit(planMove(now, clip.id, dropIndex(now, clip.id, left)))
+    })
+  }, [follow, lock, project, timeAt])
+
+  /* ---- crossfade ------------------------------------------------------- */
+
+  const flip = useCallback((cut: Cut) => {
+    const now = useEdit.getState().project
+    if (!now || lock) return
+    commit(planCrossfade(now, cut.from.id, cut.to.id, !cut.fade))
+  }, [lock])
 
   // Space plays while the timeline has focus — the editor's convention, and
   // the one place on the page where it cannot mean full screen, because the
@@ -136,7 +385,24 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
     toggle()
   }, [])
 
-  const tracks = project ? displayOrder(project) : []
+  const tracks = shown ? displayOrder(shown) : []
+  const base = shown ? v1(shown) : null
+  const cuts = shown ? cutsOf(shown) : []
+
+  const editOf = (c: AnyClip): ClipEdit | undefined => {
+    if (phase !== 'ready' || c.type === 'Transition' || broken[c.id]) return undefined
+    const canTrim = trimmable(c)
+    return {
+      lock,
+      trim: canTrim,
+      source: canTrim ? sourceUs(c) : 0,
+      inPoint: canTrim ? edgeOf(c, 'in') : 0,
+      outPoint: canTrim ? edgeOf(c, 'out') : 0,
+      onTrimPress: (edge, e) => trimPress(c, edge, e),
+      onTrimKey: (edge, e) => trimKey(c, edge, e),
+      onKey: (e) => moveKey(c, e),
+    }
+  }
 
   return (
     <div className="edit-tracks" id="edit-tracks" onKeyDown={key}>
@@ -171,7 +437,7 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
           : <div key={i} className="et-note"><ErrorNote err={n} /></div>
       ))}
 
-      <div className="et-scroll" ref={scroller} onPointerDown={press}>
+      <div className={`et-scroll${draft ? ' dragging' : ''}`} ref={scroller} onPointerDown={press}>
         <div className="et-body" ref={body} style={{ width }}>
           <div className="et-rule">
             {Array.from({ length: Math.floor(seconds + TAIL_SEC) + 1 }, (_, n) => n)
@@ -182,18 +448,57 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
                 </span>
               ))}
           </div>
-          {tracks.map((t) => (
-            <div key={t.id} className={`et-lane ${t.type.toLowerCase() === 'audio' ? 'audio' : 'picture'}`}
-                 data-track={t.id}>
-              {clipsOn(project!, t).map((c) => (
-                <Clip key={c.id} clip={c} track={t} pxPerSec={PX_PER_SEC}
-                      take={takeOf(c, takes)} failure={broken[c.id]}>
-                  {clipOverlay?.(c, t)}
-                </Clip>
-              ))}
-              {laneOverlay?.(t)}
-            </div>
-          ))}
+          {tracks.map((t) => {
+            const isV1 = t.id === base?.id
+            return (
+              <div key={t.id} className={`et-lane ${t.type.toLowerCase() === 'audio' ? 'audio' : 'picture'}`}
+                   data-track={t.id}>
+                {clipsOn(shown!, t).filter((c) => c.type !== 'Transition').map((c) => (
+                  <Clip key={c.id} clip={c} track={t} pxPerSec={PX_PER_SEC}
+                        take={takeOf(c, takes)} failure={broken[c.id]}
+                        edit={isV1 ? editOf(c) : undefined}
+                        liftedLeft={draft?.lift?.id === c.id ? draft.lift.left : undefined}>
+                    {clipOverlay?.(c, t)}
+                  </Clip>
+                ))}
+                {/* A dissolve is drawn as the stretch it runs over, under the
+                    pointer's reach — the control for it is the cut's. */}
+                {transitionsOn(shown!, t).map((f) => (
+                  <span key={f.id} className="et-fade" data-fade={f.id} aria-hidden="true"
+                        style={{
+                          left: sec(f.timing.display.from) * PX_PER_SEC,
+                          width: sec(f.timing.display.to - f.timing.display.from) * PX_PER_SEC,
+                        }} />
+                ))}
+                {isV1 && !draft?.lift && cuts.map((c) => {
+                  const fade = c.fade ? sec(c.fade.timing.display.to - c.fade.timing.display.from) : 0
+                  return (
+                    <button key={`${c.from.id}>${c.to.id}`} type="button"
+                            className={`et-cut${c.fade ? ' on' : ''}`}
+                            data-from={c.from.id} data-to={c.to.id}
+                            style={{ left: sec(c.at) * PX_PER_SEC }}
+                            aria-pressed={!!c.fade}
+                            aria-label={c.fade ? `Crossfade, ${fade.toFixed(2)} seconds` : 'Hard cut'}
+                            disabled={!!lock || !!draft}
+                            title={lock ?? (c.fade
+                              ? `Crossfade, ${fade.toFixed(2)}s — press for a hard cut`
+                              : 'Hard cut — press for a crossfade')}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              // Space is the button's own press (it clicks on
+                              // key-up), so the timeline's Space-plays and the
+                              // page's Space binding must not hear it.
+                              if (e.key !== ' ') return
+                              e.stopPropagation()
+                              e.nativeEvent.stopPropagation()
+                            }}
+                            onClick={() => flip(c)} />
+                  )
+                })}
+                {laneOverlay?.(t)}
+              </div>
+            )
+          })}
           {phase === 'ready' && <div className="et-playhead" id="edit-head" ref={head} aria-hidden="true" />}
         </div>
       </div>
