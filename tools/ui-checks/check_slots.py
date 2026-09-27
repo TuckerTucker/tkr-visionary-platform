@@ -49,6 +49,11 @@ def http(path):
         return json.loads(r.read())
 
 
+FADES = """
+() => [...document.querySelectorAll('#edit-tracks .et-fade')].map((f) =>
+  ({ left: parseFloat(f.style.left), width: parseFloat(f.style.width) }))
+"""
+
 CLIPS = """
 () => [...document.querySelectorAll('#edit-tracks .et-lane[data-track="v1"] .et-clip')]
   .map((c) => ({ id: c.dataset.clip, job: c.dataset.job || '', slot: c.dataset.slot || '',
@@ -112,6 +117,14 @@ def stage(pg):
     return pg.locator("#edit-stage").screenshot()
 
 
+def seek_to(pg, x):
+    """A press on the timeline's ruler, `x` px in — the one strip where no clip
+    or control is under it (see check_cuts.py)."""
+    b = pg.locator("#edit-tracks .et-body").bounding_box()
+    pg.mouse.click(b["x"] + x, b["y"] + 3)
+    pg.wait_for_timeout(300)
+
+
 def by_slot(pg, slot):
     return next((c for c in clips(pg) if c["slot"] == slot), None)
 
@@ -169,6 +182,11 @@ with sync_playwright() as pw:
     # take while the Studio still draws the old one (an update patch does not
     # reload a clip's file), and only the picture says which. The preview draws
     # the job id on every frame, so two takes are two pictures.
+    #
+    # The head is put inside slot A first. The stage holds the head at the
+    # start of whatever landed last (slice 8), which here is slot B — so without
+    # this all three pictures are B's and the comparison says nothing about A.
+    seek_to(pg, a["left"] + a["width"] / 2)
     shot_2 = stage(pg)
     # Without this the comparisons below could pass on a stage that merely
     # repaints differently each time.
@@ -249,6 +267,66 @@ with sync_playwright() as pw:
           [c["slot"] for c in back] == [slot_a, bb["slot"]] and abs(back[1]["left"] - b_left) < 1.5,
           str([(c["slot"], c["left"]) for c in back]))
 
+    # ---- a re-render keeps each crossfade on its cut ---------------------
+    # A take of a new length moves the cut after it, and the dissolve on that
+    # cut has to move with it — rippling only the pictures once left it where
+    # the cut used to be. Trim A by a second, dissolve A into B, render A again:
+    # the new take plays whole, so the cut and its dissolve go back to 3s.
+    a_id = by_slot(pg, slot_a)["id"]
+    b_id = by_slot(pg, bb["slot"])["id"]
+    full = by_slot(pg, slot_a)["width"]
+    lane = pg.locator('#edit-tracks .et-lane[data-track="v1"]').bounding_box()
+    body = pg.locator("#edit-tracks .et-body").bounding_box()
+    y = lane["y"] + lane["height"] * 0.7
+    pg.mouse.move(body["x"] + full - 3, y)
+    pg.mouse.down()
+    for i in range(1, 13):
+        pg.mouse.move(body["x"] + full - 3 - 30 * i / 12, y)
+        pg.wait_for_timeout(16)
+    pg.mouse.up()
+    pg.wait_for_timeout(700)
+    trimmed = by_slot(pg, slot_a)["width"]
+    check("slot A trimmed by a second", abs(trimmed - (full - 30)) < 1.5, str(trimmed))
+    pg.click(f'.et-cut[data-from="{a_id}"][data-to="{b_id}"]')
+    pg.wait_for_timeout(600)
+    fades = pg.evaluate(FADES)
+    check("a dissolve on the A|B cut", len(fades) == 1 and abs(fades[0]["left"] + fades[0]["width"] / 2 - trimmed) < 1,
+          str(fades))
+    job_before = by_slot(pg, slot_a)["job"]
+    write(pg, "")
+    pg.click(f'{slot_el(slot_a)} [data-act="render"]')
+    wait_job(pg, slot_a, job_before)
+    pg.wait_for_timeout(500)
+    now_a, now_b = by_slot(pg, slot_a), by_slot(pg, bb["slot"])
+    fades = pg.evaluate(FADES)
+    check("the new take plays whole, and B starts where it ends",
+          abs(now_a["width"] - full) < 1.5 and abs(now_b["left"] - now_a["width"]) < 1.5,
+          f"A {now_a['width']} B@{now_b['left']}")
+    check("and the dissolve moved with the cut",
+          len(fades) == 1 and abs(fades[0]["left"] + fades[0]["width"] / 2 - now_a["width"]) < 1, str(fades))
+    sid = http("/api/scenes")["scenes"][0]["id"]
+    deadline = time.time() + 10
+    ts = []
+    while time.time() < deadline:
+        proj = http(f"/api/scenes/{sid}").get("project") or {}
+        ts = [c for c in (proj.get("clips") or {}).values() if c.get("type") == "Transition"]
+        d = (ts[0].get("timing") or {}).get("display") or {} if ts else {}
+        if ts and abs((d.get("from", 0) + d.get("to", 0)) / 2 - 3_000_000) < 50_000:
+            break
+        time.sleep(0.4)
+    d = (ts[0].get("timing") or {}).get("display") or {} if ts else {}
+    check("project.json has it centred on the new cut", len(ts) == 1
+          and abs((d.get("from", 0) + d.get("to", 0)) / 2 - 3_000_000) < 50_000, json.dumps(d))
+    job_a3 = now_a["job"]
+    pg.evaluate("() => window.__edit.undo()")
+    wait_job(pg, slot_a, job_a3)
+    now_a, fades = by_slot(pg, slot_a), pg.evaluate(FADES)
+    check("undo puts the trimmed take, the cut and the dissolve back",
+          now_a["job"] == job_before and abs(now_a["width"] - trimmed) < 1.5 and len(fades) == 1
+          and abs(fades[0]["left"] + fades[0]["width"] / 2 - trimmed) < 1, f"{now_a} {fades}")
+    pg.evaluate("() => window.__edit.redo()")
+    wait_job(pg, slot_a, job_before)
+
     # ---- stop -----------------------------------------------------------
     write(pg, "")
     pg.click(f'{slot_el(slot_a)} [data-act="render"]')
@@ -260,7 +338,7 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(1500)
     a6 = by_slot(pg, slot_a)
     check("stop cancels the render and the slot keeps its take",
-          a6 is not None and a6["job"] == job_a2 and a6["count"] == "2 / 2" and not a6["err"], str(a6))
+          a6 is not None and a6["job"] == job_a3 and a6["count"] == "3 / 3" and not a6["err"], str(a6))
 
     # ---- a refused job ---------------------------------------------------
     refusal = "The scene names @mara, who is not in the cast. Add her or take the handle out."
@@ -283,7 +361,7 @@ with sync_playwright() as pw:
         "(s) => document.querySelector(`#edit-tracks .et-clip[data-slot=\"${s}\"] .et-slot-nav`)",
         arg=slot_a, timeout=40_000)
     a7 = by_slot(pg, slot_a)
-    check("after a reload the slot still has both takes", a7 is not None and a7["count"] == "2 / 2",
+    check("after a reload the slot still has all three takes", a7 is not None and a7["count"] == "3 / 3",
           str(a7))
     check("no uncaught errors", not errors, "; ".join(errors[:3]))
     ctx.close()

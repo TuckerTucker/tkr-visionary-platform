@@ -80,7 +80,11 @@ export async function exportUnsupported(
  */
 export function partAt(project: IProject, micro: number): string {
   const track = v1(project)
-  const clips = track ? clipsOn(project, track) : []
+  // A crossfade is a Transition clip on V1 itself (cuts.ts). Counted as a
+  // clip, one dissolve made a two-take cut read "take 3 of 3", and the half
+  // second it covers was named as a take of its own rather than as the cut
+  // between two.
+  const clips = track ? clipsOn(project, track).filter((c) => c.type !== 'Transition') : []
   if (!clips.length) return 'the cut'
   const n = clips.length
   const i = clips.findIndex((c) => micro >= c.timing.display.from && micro < c.timing.display.to)

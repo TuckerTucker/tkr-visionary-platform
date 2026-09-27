@@ -562,6 +562,11 @@ async function readTake(s: Session, core: Core, take: SceneTake, slotId: string)
  *  to the arrangement — two clips sharing an id are one clip to the Core. */
 const fresh = (c: AnyClip): AnyClip => ({ ...c, id: crypto.randomUUID() })
 
+/** Whether V1 has a clip held out of the Core — a hole the slot commands must
+ *  not close by re-laying V1 (see `Placing.keepGaps` in commands.ts). The same
+ *  condition `v1Lock` refuses a trim on. */
+const holdsGap = (): boolean => parked.some((p) => p.trackId === V1_ID)
+
 /**
  * One take that has landed, into the arrangement where its run was aimed (see
  * `SlotTarget`) — each as one command, so each is one undo:
@@ -586,7 +591,7 @@ async function land(s: Session, core: Core, take: SlotTake): Promise<void> {
     clearSlotRun(slotId)
     if (failed(read)) { setSlotRun(slotId, { error: read }); return }
     if (clipOfSlot(core.store.getState(), slotId)) {
-      const payload: SlotRenderPayload = { slotId, clip: read }
+      const payload: SlotRenderPayload = { slotId, clip: read, keepGaps: holdsGap() }
       core.execute(withId({ type: SLOT_RENDER, payload }))
       return
     }
@@ -626,7 +631,9 @@ async function land(s: Session, core: Core, take: SlotTake): Promise<void> {
     return
   }
   if (target?.kind === 'continue') {
-    const payload: SlotContinuePayload = { fromSlotId: target.from, slotId, clip: fresh(read) }
+    const payload: SlotContinuePayload = {
+      fromSlotId: target.from, slotId, clip: fresh(read), keepGaps: holdsGap(),
+    }
     core.execute(withId({ type: SLOT_CONTINUE, payload }))
     return
   }
@@ -658,7 +665,7 @@ export async function chooseTake(slotId: string, index: number): Promise<boolean
   const read = await readTake(s, core, take, slotId)
   if (session !== s) return false
   if (failed(read)) { setSlotRun(slotId, { error: read }); return false }
-  const payload: TakeChoosePayload = { slotId, index, clip: read }
+  const payload: TakeChoosePayload = { slotId, index, clip: read, keepGaps: holdsGap() }
   core.execute(withId({ type: TAKE_CHOOSE, payload }))
   return true
 }

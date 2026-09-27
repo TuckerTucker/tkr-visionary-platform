@@ -1,8 +1,10 @@
 import type { CSSProperties, PointerEvent } from 'react'
 import type { AnyClip, ITrack } from '@openvideo/core'
 
+import { PX_PER_SEC } from '../scene/Timeline'
 import { useStore } from '../store'
 import { continueSlot, renderSlot, stopSlot } from '../video/useVideo'
+import { sec } from './engine'
 import { slotOf } from './project'
 import { clearSlotRun, slotView, useSlotRuns } from './slots'
 import { chooseTake, useEdit } from './useEdit'
@@ -37,18 +39,41 @@ export type SlotProps = { clip: AnyClip; track: ITrack }
 
 const stopPress = (e: PointerEvent<HTMLElement>): void => { e.stopPropagation() }
 
-/* One 14px row along the clip's bottom edge, and the height is the point: the
-   lane is 34px and a press on its middle is a seek (`Tracks`). A control
-   tall enough to reach the middle turns "put the head here" into "render this
-   slot" for whoever aimed at the clip's centre line, which is where a seek is
-   aimed. The top half stays the timeline's; the bottom row is the slot's. */
+/* Two 14px rows, one along each long edge of the clip, and the height is the
+   point: the lane is 34px and a press on its middle is a seek (`Tracks`). A
+   control tall enough to reach the middle turns "put the head here" into
+   "render this slot" for whoever aimed at the clip's centre line, which is
+   where a seek is aimed. The middle stays the timeline's.
+
+   Two rows rather than one because one did not fit: a 3-second take is 90px,
+   and ‹ n / N › with ↻ and → beside it is wider than that once the trim
+   handles have their ends. The bottom row says which take (or, while one is
+   rendering, how far along it is); the top row holds what to do next. */
 const ROW = 14
+
+/* Both rows keep off the trim handles (`--et-trim`, tracks.css): a control
+   under a handle is one the handle eats — a clip trimmed short had its ↻
+   covered by its own out point. The cut's diamond sits astride the join on the
+   top edge, inside the same inset. */
+const INSET = 'calc(var(--et-trim, 8px) + 2px)'
+
+/* What each control costs, in px, for deciding what a short clip can carry. */
+const COST = { stepper: 2 * ROW + 26, button: ROW + 2, gap: 2 }
 
 const btn: CSSProperties = {
   width: ROW + 2, height: ROW, padding: 0, border: 0, borderRadius: 'var(--r-inner)',
   background: 'rgba(0,0,0,.45)', color: 'var(--fg)', fontSize: 11, lineHeight: `${String(ROW)}px`,
   cursor: 'pointer', flex: 'none',
 }
+
+const row = (edge: 'top' | 'bottom'): CSSProperties => ({
+  position: 'absolute', [edge]: 1, right: INSET, height: ROW, display: 'flex', alignItems: 'center',
+  gap: COST.gap, maxWidth: `calc(100% - 2 * ${INSET})`,
+})
+
+/** The trim handle's width here, px — tracks.css widens it where there is no
+ *  hover, and the room left for the rows is what is between the two. */
+const handle = (): number => (window.matchMedia('(hover:none)').matches ? 14 : 8)
 
 export function Slot({ clip }: SlotProps) {
   const slotId = slotOf(clip)
@@ -61,6 +86,15 @@ export function Slot({ clip }: SlotProps) {
 
   const { takes: list, chosen } = slotView(takes, slotId, project)
   const n = list.length
+
+  // A clip trimmed very short cannot carry every control, and a row that
+  // overflows pushes its last control under the out handle. What goes first
+  // is what has another way in: Continue is also the canvas's, a re-render is
+  // also Generate's; which take the slot plays has no other control at all.
+  const room = sec(clip.timing.display.to - clip.timing.display.from) * PX_PER_SEC - 2 * (handle() + 2)
+  const showStepper = n > 1 && room >= COST.stepper
+  const showRender = room >= COST.button
+  const showContinue = room >= 2 * COST.button + COST.gap
   const running = !!run?.running
   const err = run?.error ?? null
   const errText = err === null ? '' : typeof err === 'string' ? err : err.error
@@ -76,19 +110,31 @@ export function Slot({ clip }: SlotProps) {
         }} />
       )}
 
-      <div className="et-slot" data-slot={slotId} onPointerDown={stopPress}
-           style={{
-             position: 'absolute', right: 2, bottom: 1, height: ROW, display: 'flex', alignItems: 'center',
-             gap: 2, maxWidth: 'calc(100% - 4px)',
-           }}>
-        {n > 1 && !running && (
+      {!running && (showRender || showContinue) && (
+        <div className="et-slot-acts" data-slot={slotId} onPointerDown={stopPress} style={row('top')}>
+          {showRender && <button type="button" data-act="render" style={btn}
+                  title={hasProse
+                    ? 'Render the prompt into this slot — the take it has stays one ‹ away'
+                    : 'Render this slot again from its sentence — the take it has stays one ‹ away'}
+                  aria-label="Render this slot"
+                  onClick={() => void renderSlot(slotId)}>↻</button>}
+          {showContinue && <button type="button" data-act="continue" style={btn}
+                  title="Continue from this take — write the next beat and Generate; it lands after this slot"
+                  aria-label="Continue from this take"
+                  disabled={chosen < 0 || heldOut}
+                  onClick={() => void continueSlot(slotId)}>→</button>}
+        </div>
+      )}
+
+      <div className="et-slot" data-slot={slotId} onPointerDown={stopPress} style={row('bottom')}>
+        {showStepper && !running && (
           <div className="film-nav et-slot-nav" style={{ margin: 0, opacity: 1, gap: 1 }}>
             <button type="button" className="ico" data-act="prev" style={btn}
                     title="The take before this one — one undo"
                     aria-label="Previous take"
                     disabled={chosen <= 0}
                     onClick={() => void chooseTake(slotId, chosen - 1)}>‹</button>
-            <span className="count" style={{ minWidth: 0, fontSize: 10, padding: '0 2px' }}>
+            <span className="count" style={{ minWidth: 0, fontSize: 10, padding: '0 1px' }}>
               {chosen >= 0 ? String(chosen + 1) : '–'} / {n}
             </span>
             <button type="button" className="ico" data-act="next" style={btn}
@@ -99,7 +145,7 @@ export function Slot({ clip }: SlotProps) {
           </div>
         )}
 
-        {running ? (
+        {running && (
           <>
             <span className="et-slot-phase" aria-live="polite"
                   style={{ fontSize: 10, color: 'var(--fg)', whiteSpace: 'nowrap', overflow: 'hidden',
@@ -113,20 +159,6 @@ export function Slot({ clip }: SlotProps) {
                     aria-label="Stop the render"
                     disabled={!run.runId}
                     onClick={() => void stopSlot(slotId)}>■</button>
-          </>
-        ) : (
-          <>
-            <button type="button" data-act="render" style={btn}
-                    title={hasProse
-                      ? 'Render the prompt into this slot — the take it has stays one ‹ away'
-                      : 'Render this slot again from its sentence — the take it has stays one ‹ away'}
-                    aria-label="Render this slot"
-                    onClick={() => void renderSlot(slotId)}>↻</button>
-            <button type="button" data-act="continue" style={btn}
-                    title="Continue from this take — write the next beat and Generate; it lands after this slot"
-                    aria-label="Continue from this take"
-                    disabled={chosen < 0 || heldOut}
-                    onClick={() => void continueSlot(slotId)}>→</button>
           </>
         )}
       </div>

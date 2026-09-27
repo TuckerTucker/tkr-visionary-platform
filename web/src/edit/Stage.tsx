@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import type { Core } from '@openvideo/core'
 import type { Studio } from '@openvideo/engine-pixi'
 
 import { failed, type ApiError } from '../api/client'
@@ -79,6 +80,61 @@ export function stageIsFullScreen(): boolean {
   return !!box && document.fullscreenElement === box
 }
 
+/**
+ * Hold the Studio's copy of every crossfade to the length the Core holds.
+ *
+ * OpenVideo 1.4.0's bridge builds a Studio transition from the clip's top-level
+ * `duration`, and Core's `normalizeClip` deletes top-level `duration` from every
+ * clip it stores, imports or updates — so every Transition the bridge adds
+ * (a stage mounting, a reload, the undo of a removal) comes up at the Studio's
+ * two-second default while the Core, project.json and the Compositor's export
+ * all say `timing.duration`. The preview would dissolve for four times as long
+ * as the export does, and only after the page had been reopened. The bridge
+ * does copy `timing` on an *update*, which is why a freshly added crossfade is
+ * right until the stage remounts; this puts the Core's timing on the Studio's
+ * clip whenever the clips change, which is the update the bridge never gets.
+ *
+ * It lives here, beside the Studio it corrects, and runs for exactly as long as
+ * that Studio does. It used to be the timeline's, which was right only while
+ * the stage was mounted beside it: once the stage moved into the canvas the two
+ * mount on different conditions, and a correction owned by one surface for an
+ * object owned by the other is a correction that can be absent.
+ *
+ * It writes the Studio's clip and redraws — never the Core, so it is no edit
+ * and no undo entry. The bridge adds clips one at a time and asynchronously, so
+ * a crossfade it has not reached yet is looked for again on the next frames.
+ */
+function keepFadesInStep(core: Core, studio: Studio): () => void {
+  let raf = 0
+  let tries = 0
+  const step = (): void => {
+    raf = 0
+    if (studio.destroyed) return
+    let waiting = false
+    let moved = false
+    for (const c of Object.values(core.store.getState().clips)) {
+      if (c.type !== 'Transition') continue
+      const s = studio.timeline.getClipById(c.id)
+      if (!s) { waiting = true; continue }
+      const d = c.timing.display
+      if (s.duration !== c.timing.duration || s.display.from !== d.from || s.display.to !== d.to) {
+        s.display = { from: d.from, to: d.to }
+        s.duration = c.timing.duration
+        moved = true
+      }
+    }
+    if (moved) void studio.updateFrame(studio.currentTime)
+    if (waiting && ++tries < 300) raf = requestAnimationFrame(step)
+  }
+  const kick = (): void => {
+    tries = 0
+    if (!raf) raf = requestAnimationFrame(step)
+  }
+  kick()
+  const unsub = core.store.subscribe((st, prev) => { if (st.clips !== prev.clips) kick() })
+  return () => { unsub(); cancelAnimationFrame(raf) }
+}
+
 export function Stage({
   landed,
   onShowing,
@@ -117,6 +173,7 @@ export function Stage({
     if (!el || !core || !engine) return
     let alive = true
     let studio: Studio | null = null
+    let stopFades = (): void => {}
     const canvas = document.createElement('canvas')
     el.appendChild(canvas)
     const { settings } = core.store.getState()
@@ -139,6 +196,7 @@ export function Stage({
       if (failed(r)) { if (alive) setErr(r); release(); return }
       if (!alive) { r.destroy(); release(); return }
       studio = r
+      stopFades = keepFadesInStep(core, r)
       useEdit.setState({ studio: r })
     })()
     const ro = new ResizeObserver(() => studio?.updateArtboardLayout())
@@ -149,6 +207,7 @@ export function Stage({
       // Stopped rather than left "playing" with nothing drawing it, so the
       // button reads Play when the surface comes back.
       core.pause()
+      stopFades()
       if (studio) {
         if (useEdit.getState().studio === studio) useEdit.setState({ studio: null })
         studio.destroy()

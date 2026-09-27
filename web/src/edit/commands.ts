@@ -35,10 +35,11 @@
  * - *The rest of the track moves by the difference in length.* A slot is a
  *   place in a sequence, and a longer take either overlaps the next one or a
  *   shorter one leaves a hole — both of which would be edits the person did
- *   not make. So every clip on the same track that starts at or after the old
- *   take's end moves by exactly the change. Other tracks are not moved: an
- *   overlay sits at a time, not after a clip, and guessing which it belongs to
- *   is a guess.
+ *   not make. On V1 that is the layout every trim ends in (`relayV1`), so a
+ *   crossfade moves with its cut — moving only the pictures once left each
+ *   dissolve where the cut used to be. Other tracks are not moved: an overlay
+ *   sits at a time, not after a clip, and guessing which it belongs to is a
+ *   guess.
  * - *`take.choose` carries the clip, not only the index.* The handler cannot
  *   read the take list (it lives in the store, not the Core) or a file's length
  *   (that is an async read); the caller does both and hands over the clip the
@@ -47,6 +48,7 @@
 import type { AnyClip, CommandHandler, IProject, ITrack, Patch } from '@openvideo/core'
 
 import type { Engine } from './engine'
+import { relayV1, v1Clips } from './cuts'
 import { slotOf, v1, v1Track } from './project'
 
 export const SLOT_RENDER = 'slot.render'
@@ -68,28 +70,56 @@ export type SlotRenderPayload = {
   trackId?: string
   at?: number
   span?: number
+  /** See `Placing.keepGaps`. */
+  keepGaps?: boolean
 }
 
 /** `take.choose` — the slot's clip plays take `index` of its list instead. */
-export type TakeChoosePayload = { slotId: string; index: number; clip: AnyClip }
+export type TakeChoosePayload = { slotId: string; index: number; clip: AnyClip; keepGaps?: boolean }
 
 /** `slot.continue` — a new slot, `slotId`, filled with `clip`, directly after
  *  `fromSlotId` on its track. With `fromSlotId` gone (removed, or undone while
  *  the take rendered) the new slot goes on the end of V1. */
-export type SlotContinuePayload = { fromSlotId: string; slotId: string; clip: AnyClip }
+export type SlotContinuePayload = { fromSlotId: string; slotId: string; clip: AnyClip; keepGaps?: boolean }
 
-type State = Pick<IProject, 'clips' | 'tracks'>
+type State = Pick<IProject, 'clips' | 'tracks' | 'settings'>
+
+type Placing = {
+  /**
+   * Set by the caller while a clip on V1 is held out of the Core because its
+   * file would not load (`useEdit`'s parked clips). V1 is otherwise re-laid
+   * gapless, as a trim leaves it — and that would close the hole the held clip
+   * is still written back into, putting two clips in one place.
+   */
+  keepGaps: boolean
+}
 
 const lengthOf = (c: AnyClip): number => c.timing.display.to - c.timing.display.from
 
-const trackOf = (state: State, clipId: string): ITrack | null =>
+const trackOf = (state: Pick<IProject, 'tracks'>, clipId: string): ITrack | null =>
   state.tracks.find((t) => t.clipIds.includes(clipId)) ?? null
 
-const inSlot = (state: State, slotId: string): AnyClip | null =>
+const inSlot = (state: Pick<IProject, 'clips'>, slotId: string): AnyClip | null =>
   Object.values(state.clips).find((c) => slotOf(c) === slotId) ?? null
 
-/** `clip` with its metadata naming `slotId` — whatever the reader put there —
- *  so the slot is found by the next command however the clip was prepared. */
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+const asProject = (s: State): IProject => ({ settings: s.settings, tracks: s.tracks, clips: s.clips })
+
+/** Whether `track` is V1 and V1 may be re-laid — see `Placing.keepGaps`. */
+const relays = (state: State, track: ITrack | null, p: Placing): boolean =>
+  !p.keepGaps && track !== null && track.id === v1(state)?.id
+
+/**
+ * `clip` with its metadata naming `slotId` — whatever the reader put there —
+ * so the slot is found by the next command however the clip was prepared.
+ *
+ * The metadata is the new take's alone. A trimmed clip carries its file's
+ * length in `metadata.source` (cuts.ts), keyed by the path it measured, and the
+ * old take's entry describes the old file: carried across, it would be one
+ * file's length claimed for another. A fresh take is untrimmed, so its own
+ * length is where its trim ends until a trim of it writes that down.
+ */
 function stamped(clip: AnyClip, slotId: string): AnyClip {
   return { ...clip, metadata: { ...clip.metadata, slotId } }
 }
@@ -100,71 +130,106 @@ function placed(clip: AnyClip, from: number): AnyClip {
   return { ...clip, timing: { ...clip.timing, display: { from, to: from + len } } }
 }
 
-/**
- * Whole-clip updates moving every clip on `track` that starts at or after
- * `from` by `delta` µs, leaving out `skip`. The Core state is read, never
- * written.
- */
-function ripple(state: State, track: ITrack | null, from: number, delta: number, skip: string): Patch[] {
-  if (!track || delta === 0) return []
-  const out: Patch[] = []
+/** `clips` with every clip on `track` that starts at or after `from` moved by
+ *  `delta` µs, leaving out `skip` — for a track that is not re-laid. */
+function ripple(clips: Record<string, AnyClip>, track: ITrack | null, from: number, delta: number,
+  skip: string): Record<string, AnyClip> {
+  if (!track || delta === 0) return clips
+  const out = { ...clips }
   for (const id of track.clipIds) {
-    if (id === skip) continue
-    const c = state.clips[id]
-    if (!c || c.timing.display.from < from) continue
-    const moved: AnyClip = {
-      ...c,
-      timing: {
-        ...c.timing,
-        display: { from: c.timing.display.from + delta, to: c.timing.display.to + delta },
-      },
-    } as AnyClip
-    out.push({ op: 'update', path: `/clips/${id}`, value: moved, oldValue: c })
+    const c = out[id]
+    if (id === skip || !c || c.timing.display.from < from) continue
+    const d = c.timing.display
+    out[id] = { ...c, timing: { ...c.timing, display: { from: d.from + delta, to: d.to + delta } } } as AnyClip
+  }
+  return out
+}
+
+/**
+ * The patches that turn `before` into `after`: whole clips and the whole track
+ * list, each with `oldValue`, in the order the Studio's bridge needs them —
+ * removals, the swapped clip's remove and add (see the top of this file), new
+ * clips, moved clips, and the track list last.
+ */
+function patchesFor(before: State, after: State, swapped: string | null): Patch[] {
+  const out: Patch[] = []
+  for (const [id, c] of Object.entries(before.clips)) {
+    if (!after.clips[id]) out.push({ op: 'remove', path: `/clips/${id}`, oldValue: c })
+  }
+  if (swapped && before.clips[swapped] && after.clips[swapped]) {
+    out.push({ op: 'remove', path: `/clips/${swapped}`, oldValue: before.clips[swapped] })
+    out.push({ op: 'add', path: `/clips/${swapped}`, value: after.clips[swapped] })
+  }
+  for (const [id, c] of Object.entries(after.clips)) {
+    if (!before.clips[id]) out.push({ op: 'add', path: `/clips/${id}`, value: c })
+  }
+  for (const [id, c] of Object.entries(after.clips)) {
+    const was = before.clips[id]
+    if (was && id !== swapped && !same(was, c)) {
+      out.push({ op: 'update', path: `/clips/${id}`, value: c, oldValue: was })
+    }
+  }
+  if (!same(before.tracks, after.tracks)) {
+    out.push({ op: 'update', path: '/tracks', value: after.tracks, oldValue: before.tracks })
   }
   return out
 }
 
 /**
  * The patches that put `next` in the place `old` holds: same id, same start,
- * the whole new take, the old take's fades, and the rest of its track moved
- * by the change in length.
+ * the whole new take, the old take's fades — and the track after it laid out
+ * again for the new length. On V1 that is `relayV1`, the layout every trim
+ * ends in, so each crossfade follows its cut; elsewhere the clips after it move
+ * by the difference.
  */
-function swap(state: State, old: AnyClip, next: AnyClip): Patch[] {
-  const from = old.timing.display.from
+function swap(state: State, old: AnyClip, next: AnyClip, p: Placing): Patch[] {
   const fades = {
     ...(old.timing.fadeIn !== undefined && { fadeIn: old.timing.fadeIn }),
     ...(old.timing.fadeOut !== undefined && { fadeOut: old.timing.fadeOut }),
   }
-  const base = placed(next, from)
+  const base = placed(next, old.timing.display.from)
   const clip = { ...base, id: old.id, timing: { ...base.timing, ...fades } } as AnyClip
-  return [
-    { op: 'remove', path: `/clips/${old.id}`, oldValue: old },
-    { op: 'add', path: `/clips/${old.id}`, value: clip },
-    ...ripple(state, trackOf(state, old.id), old.timing.display.to, lengthOf(clip) - lengthOf(old), old.id),
-  ]
+  const track = trackOf(state, old.id)
+  const put: State = { ...state, clips: { ...state.clips, [old.id]: clip } }
+  const after: State = relays(state, track, p)
+    ? relayV1(asProject(put))
+    : { ...put, clips: ripple(put.clips, track, old.timing.display.to, lengthOf(clip) - lengthOf(old), old.id) }
+  return patchesFor(state, after, old.id)
 }
 
 /**
- * The patches that put `clip` on `track` at `at` µs, as a new clip, moving
- * everything on the track that starts at or after `at + span` along by the
- * difference. `span` is the room the place already had: zero for a new slot,
- * the old length for a slot whose clip was held out of the Core.
+ * The patches that put `clip` on a track as a new clip.
+ *
+ * On V1 (with no gap to keep) it goes into V1's order directly after `afterId`
+ * — or last — and V1 is re-laid, which moves everything after it along and
+ * drops a crossfade whose two clips no longer meet: a continuation put between
+ * two dissolving clips leaves that dissolve with no cut to be on.
+ *
+ * Otherwise it goes at `at` µs (the end of the track when null), and whatever
+ * starts at or after `at + span` moves by the difference — `span` being the
+ * room the place already had: the old length for a slot whose clip was held
+ * out of the Core, zero for a new one.
  *
  * With no track at all, V1 is created in the same patches, so the edit and its
  * undo are still one entry.
  */
-function insert(state: State, trackId: string | null, at: number | null, span: number, clip: AnyClip): Patch[] {
+function insert(state: State, trackId: string | null, afterId: string | null, at: number | null,
+  span: number, clip: AnyClip, p: Placing): Patch[] {
   const existing = (trackId ? state.tracks.find((t) => t.id === trackId) : undefined) ?? v1(state)
+  const tracks = existing
+    ? state.tracks.map((t) => (t.id === existing.id ? { ...t, clipIds: [...t.clipIds, clip.id] } : t))
+    : [...state.tracks, { ...v1Track(), clipIds: [clip.id] }]
+  if (at === null && (!existing || relays(state, existing, p))) {
+    const order = v1Clips(asProject(state))
+    const i = afterId ? order.findIndex((c) => c.id === afterId) : -1
+    order.splice(i >= 0 ? i + 1 : order.length, 0, clip)
+    const after = relayV1({ settings: state.settings, tracks, clips: { ...state.clips, [clip.id]: clip } }, order)
+    return patchesFor(state, after, null)
+  }
   const start = at ?? (existing ? endOf(state, existing) : 0)
   const next = placed(clip, start)
-  const tracks = existing
-    ? state.tracks.map((t) => (t.id === existing.id ? { ...t, clipIds: [...t.clipIds, next.id] } : t))
-    : [...state.tracks, { ...v1Track(), clipIds: [next.id] }]
-  return [
-    ...ripple(state, existing, start + span, lengthOf(next) - span, next.id),
-    { op: 'add', path: `/clips/${next.id}`, value: next },
-    { op: 'update', path: '/tracks', value: tracks, oldValue: state.tracks },
-  ]
+  const clips = ripple({ ...state.clips, [next.id]: next }, existing, start + span, lengthOf(next) - span, next.id)
+  return patchesFor(state, { ...state, tracks, clips }, null)
 }
 
 function endOf(state: State, track: ITrack): number {
@@ -173,29 +238,32 @@ function endOf(state: State, track: ITrack): number {
 
 /** See `SlotRenderPayload`. */
 export const slotRender: CommandHandler<SlotRenderPayload> = (state, cmd) => {
-  const { slotId, clip, trackId, at, span } = cmd.payload
+  const { slotId, clip, trackId, at, span, keepGaps } = cmd.payload
+  const p = { keepGaps: !!keepGaps }
   const next = stamped(clip, slotId)
   const old = inSlot(state, slotId)
-  if (old) return swap(state, old, next)
-  return insert(state, trackId ?? null, at ?? null, span ?? 0, next)
+  if (old) return swap(state, old, next, p)
+  return insert(state, trackId ?? null, null, at ?? null, span ?? 0, next, p)
 }
 
 /** See `TakeChoosePayload`. A slot no clip fills is nothing to choose on. */
 export const takeChoose: CommandHandler<TakeChoosePayload> = (state, cmd) => {
-  const { slotId, clip } = cmd.payload
+  const { slotId, clip, keepGaps } = cmd.payload
   const old = inSlot(state, slotId)
   if (!old) return []
-  return swap(state, old, stamped(clip, slotId))
+  return swap(state, old, stamped(clip, slotId), { keepGaps: !!keepGaps })
 }
 
 /** See `SlotContinuePayload`. */
 export const slotContinue: CommandHandler<SlotContinuePayload> = (state, cmd) => {
-  const { fromSlotId, slotId, clip } = cmd.payload
+  const { fromSlotId, slotId, clip, keepGaps } = cmd.payload
+  const p = { keepGaps: !!keepGaps }
   const next = stamped(clip, slotId)
   const from = inSlot(state, fromSlotId)
   const track = from ? trackOf(state, from.id) : null
-  if (!from || !track) return insert(state, null, null, 0, next)
-  return insert(state, track.id, from.timing.display.to, 0, next)
+  if (!from || !track) return insert(state, null, null, null, 0, next, p)
+  if (relays(state, track, p)) return insert(state, track.id, from.id, null, 0, next, p)
+  return insert(state, track.id, null, from.timing.display.to, 0, next, p)
 }
 
 /**

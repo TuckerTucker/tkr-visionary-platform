@@ -28,7 +28,7 @@ What it holds, and the failure each one is for:
   own Transition clip, `transitionKey: "fade"`, centred on the cut.
 - **The stage draws the dissolve, and for as long as the Core says.** The frame
   at the cut differs from the hard cut's; a frame 0.4s before the cut does not
-  (the engine's own default would be two seconds — see `keepFadesInStep`).
+  (the engine's own default would be two seconds — see `keepFadesInStep` in Stage.tsx).
 - **A reload keeps the trims, the order and the crossfade** — and the stage,
   mounted fresh, still dissolves for the saved length rather than its default.
 """
@@ -338,9 +338,25 @@ with sync_playwright() as pw:
     check("and the crossfade", [c["on"] for c in pg.evaluate(CUTS)] == [True, False], str(pg.evaluate(CUTS)))
     re_at = tl.sig(cut_x)
     re_before = tl.sig(cut_x - 12)
-    check("the remounted stage dissolves at the cut", diff(re_at, hard_at) > 4, f"diff={diff(re_at, hard_at):.1f}")
+    # The hard-cut pictures are taken again here rather than reused from before
+    # the reload: the stage is the canvas, and the canvas is not the same size
+    # across a reload — `#vid-meta` under it carries the last render's summary
+    # in the session that rendered it and is empty in a fresh one, 18px of
+    # height the picture gets back (634x357 against 666x375 at this viewport).
+    # Two sizes of one frame, shrunk to 64x36, differ by more than a dissolve's
+    # edge does, so a comparison across the reload was measuring the layout.
+    # Turned off *after* the reloaded dissolve is measured, so what is under
+    # test is still the transition the bridge rebuilt on the remount.
+    first.click()
+    pg.wait_for_timeout(600)
+    re_hard_at = tl.sig(cut_x)
+    re_hard_before = tl.sig(cut_x - 12)
+    first.click()
+    pg.wait_for_timeout(600)
+    check("the remounted stage dissolves at the cut", diff(re_at, re_hard_at) > 4,
+          f"diff={diff(re_at, re_hard_at):.1f}")
     check("for the saved length, not the engine's default",
-          diff(re_before, hard_before) < 3, f"diff={diff(re_before, hard_before):.1f}")
+          diff(re_before, re_hard_before) < 3, f"diff={diff(re_before, re_hard_before):.1f}")
 
     check("no uncaught errors", not errors, "; ".join(errors[:3]))
     ctx.close()

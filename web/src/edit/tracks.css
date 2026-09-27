@@ -14,7 +14,11 @@
 
 /* The trim handles: the whole height of each end. The grip line is drawn, not
    just a cursor change, because a touch screen has no cursor to change. */
-.et-trim{position:absolute;top:0;bottom:0;width:8px;z-index:1;cursor:ew-resize;
+/* `--et-trim` is the handle's width, named so what else sits on the clip's ends
+   (the slot's row, Slot.tsx) can keep off it: a control under a handle is a
+   control the handle eats, and a trim is what a press there always meant. */
+.et-clip{--et-trim:8px}
+.et-trim{position:absolute;top:0;bottom:0;width:var(--et-trim);z-index:1;cursor:ew-resize;
   touch-action:none;outline:none}
 .et-trim.in{left:0}
 .et-trim.out{right:0}
@@ -53,7 +57,7 @@
    hit without the drawing getting bigger. Split on the pointer, not the width —
    a tablet with a trackpad is neither. */
 @media (hover:none){
-  .et-trim{width:14px}
+  .et-clip{--et-trim:14px}
   .et-trim.in::after{left:4px}
   .et-trim.out::after{right:4px}
   .et-cut{width:24px;height:24px;top:-12px}

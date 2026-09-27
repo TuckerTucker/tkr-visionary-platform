@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import type { AnyClip, Core, IProject, ITrack } from '@openvideo/core'
-import type { Studio } from '@openvideo/engine-pixi'
+import type { AnyClip, IProject, ITrack } from '@openvideo/core'
 
 import { OPENVIDEO_PIN, sec, us } from './engine'
 import { Clip, type ClipEdit } from './Clip'
@@ -100,60 +99,10 @@ function commit(p: Plan | Refusal): void {
   if (batch(p.commands) && p.at !== undefined) seek(p.at)
 }
 
-/**
- * Hold the Studio's copy of every crossfade to the length the Core holds.
- *
- * OpenVideo 1.4.0's bridge builds a Studio transition from the clip's top-level
- * `duration`, and Core's `normalizeClip` deletes top-level `duration` from every
- * clip it stores, imports or updates — so every Transition the bridge adds
- * (a stage mounting, a reload, the undo of a removal) comes up at the Studio's
- * two-second default while the Core, project.json and the Compositor's export
- * all say `timing.duration`. The preview would dissolve for four times as long
- * as the export does, and only after the page had been reopened. The bridge
- * does copy `timing` on an *update*, which is why a freshly added crossfade is
- * right until the stage remounts; this puts the Core's timing on the Studio's
- * clip whenever the clips change, which is the update the bridge never gets.
- *
- * It writes the Studio's clip and redraws — never the Core, so it is no edit
- * and no undo entry. The bridge adds clips one at a time and asynchronously, so
- * a crossfade it has not reached yet is looked for again on the next frames.
- */
-function keepFadesInStep(core: Core, studio: Studio): () => void {
-  let raf = 0
-  let tries = 0
-  const step = (): void => {
-    raf = 0
-    if (studio.destroyed) return
-    let waiting = false
-    let moved = false
-    for (const c of Object.values(core.store.getState().clips)) {
-      if (c.type !== 'Transition') continue
-      const s = studio.timeline.getClipById(c.id)
-      if (!s) { waiting = true; continue }
-      const d = c.timing.display
-      if (s.duration !== c.timing.duration || s.display.from !== d.from || s.display.to !== d.to) {
-        s.display = { from: d.from, to: d.to }
-        s.duration = c.timing.duration
-        moved = true
-      }
-    }
-    if (moved) void studio.updateFrame(studio.currentTime)
-    if (waiting && ++tries < 300) raf = requestAnimationFrame(step)
-  }
-  const kick = (): void => {
-    tries = 0
-    if (!raf) raf = requestAnimationFrame(step)
-  }
-  kick()
-  const unsub = core.store.subscribe((st, prev) => { if (st.clips !== prev.clips) kick() })
-  return () => { unsub(); cancelAnimationFrame(raf) }
-}
-
 export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
   const phase = useEdit((s) => s.phase)
   const error = useEdit((s) => s.error)
   const core = useEdit((s) => s.core)
-  const studio = useEdit((s) => s.studio)
   const project = useEdit((s) => s.project)
   const parked = useEdit((s) => s.parked)
   const broken = useEdit((s) => s.broken)
@@ -196,8 +145,6 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
       if (s.currentTime !== prev.currentTime || s.isPlaying !== prev.isPlaying) paint(s.currentTime, s.isPlaying)
     })
   }, [core, end])
-
-  useEffect(() => (core && studio ? keepFadesInStep(core, studio) : undefined), [core, studio])
 
   // A gesture never outlives the Core it was planned against.
   useEffect(() => () => abort.current?.(), [core])

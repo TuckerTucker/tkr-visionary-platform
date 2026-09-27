@@ -34,7 +34,7 @@
  *   timing on an update, never on an add — or the preview dissolves for two
  *   seconds while the saved clip and the export say half a second. (A stage
  *   that remounts, or an undo that re-adds one, meets the same default with no
- *   update behind it; `Tracks` holds the Studio to the Core for those.)
+ *   update behind it; `Stage` holds the Studio to the Core for those.)
  * - Neither side overlaps the clips: the outgoing picture holds its last frame
  *   through the second half and the incoming one holds its first frame through
  *   the first. So the dissolve is kept short and never longer than either clip.
@@ -223,6 +223,21 @@ function arrange(project: IProject, order: readonly AnyClip[]): IProject {
     clips,
     tracks: project.tracks.map((t) => (t.id === track.id ? { ...t, clipIds } : t)),
   }
+}
+
+/**
+ * `project` with V1 laid out as a trim would leave it — gapless from where it
+ * starts, in `order` (time order when omitted), each crossfade re-centred on
+ * its cut and one whose clips no longer meet gone.
+ *
+ * For commands outside this file that change what V1 holds: a take swapped
+ * into a slot is a clip of a new length, and a continuation is a clip between
+ * two others. Rippling only the clips moved the pictures and left each
+ * crossfade on the cut where it used to be — a dissolve between the wrong two
+ * frames, or over the middle of a take.
+ */
+export function relayV1(project: IProject, order?: readonly AnyClip[]): IProject {
+  return arrange(project, order ?? v1Clips(project))
 }
 
 /* ---- from one arrangement to the next, as commands ---------------------- */
