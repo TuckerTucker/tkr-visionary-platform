@@ -47,8 +47,8 @@ import {
 } from './project'
 import { landedCut } from './continue'
 import {
-  registerCommands, SLOT_CONTINUE, SLOT_RENDER, TAKE_CHOOSE,
-  type SlotContinuePayload, type SlotRenderPayload, type TakeChoosePayload,
+  linkedTo, registerCommands, SLOT_CONTINUE, SLOT_RENDER, TAKE_CHOOSE,
+  type HeldSound, type SlotContinuePayload, type SlotRenderPayload, type TakeChoosePayload,
 } from './commands'
 import {
   adoptTakes, clearSlotRun, clipOfSlot, setSlotRun, slotView, takeLanding, useSlotRuns,
@@ -567,6 +567,29 @@ async function readTake(s: Session, core: Core, take: SceneTake, slotId: string)
  *  to the arrangement — two clips sharing an id are one clip to the Core. */
 const fresh = (c: AnyClip): AnyClip => ({ ...c, id: crypto.randomUUID() })
 
+/**
+ * The detached sound of `picture`, a clip held out of the Core, as
+ * `slot.render` carries it onto the take replacing it — or null when the
+ * picture's sound was never detached. A sound that was parked beside its
+ * picture (the same missing file) is let go of here, as the picture is: the
+ * command puts it back in the Core, playing the new take's file.
+ */
+function heldSound(core: Core, picture: AnyClip): HeldSound | null {
+  const id = linkedTo(picture)
+  if (!id || picture.audio !== false) return null
+  const inCore = core.store.getState().clips[id]
+  if (inCore) return { clip: inCore, picture: picture.id }
+  const p = parked.find((x) => x.clip.id === id)
+  if (!p) return null
+  parked = parked.filter((x) => x !== p)
+  useEdit.setState((st) => {
+    const rest = { ...st.broken }
+    delete rest[id]
+    return { broken: rest }
+  })
+  return { clip: p.clip, trackId: p.trackId, picture: picture.id }
+}
+
 /** Whether V1 has a clip held out of the Core — a hole the slot commands must
  *  not close by re-laying V1 (see `Placing.keepGaps` in commands.ts). The same
  *  condition `v1Lock` refuses a trim on. */
@@ -618,8 +641,10 @@ async function land(s: Session, core: Core, take: SlotTake): Promise<void> {
         return { broken: rest }
       })
       const d = held.clip.timing.display
+      const sound = heldSound(core, held.clip)
       const payload: SlotRenderPayload = {
         slotId, clip: fresh(read), trackId: held.trackId, at: d.from, span: d.to - d.from,
+        ...(sound && { sound }),
       }
       core.execute(withId({ type: SLOT_RENDER, payload }))
       return

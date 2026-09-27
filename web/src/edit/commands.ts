@@ -54,7 +54,10 @@
  *   Before this the new take arrived with its own sound on and the old Audio
  *   clip stayed on its A track playing the take that no longer showed: two
  *   soundtracks, one of them for a picture nobody could see. One undo puts
- *   back the old take *and* its sound. See `carrySound`.
+ *   back the old take *and* its sound. See `carrySound`. That holds for a
+ *   slot whose old file would not load too: its picture (and so its sound)
+ *   was held out of the Core, and the new take is inserted where it sat with
+ *   the sound brought back and carried (`carryHeldSound`).
  * - *A new take's sound that no longer fits its A track moves; it is not
  *   clamped.* When the new take is longer than the room its sound's track has
  *   (another clip starts there before the new take ends), the sound goes onto
@@ -99,7 +102,21 @@ export type SlotRenderPayload = {
    *  rendered into its own slot (the stale offer): take `jobId`, `to` µs into
    *  it. The clip playing that take is cut back to it — see `cutBack`. */
   cut?: { jobId: string; to: number }
+  /**
+   * The detached sound of the take this slot held out of the Core — only
+   * with `trackId`/`at`, when the slot's old file would not load. Its picture
+   * was parked, so `swap` never saw it and `carrySound` never ran: the new
+   * take arrived with its own sound on while the old sound stayed linked to a
+   * picture no longer in the cut. `trackId` is where it sat when it was parked
+   * too (its file is the same missing one); absent when it is in the Core.
+   * `picture` is the held-out picture's clip id, which the sound must still
+   * be linked to.
+   */
+  sound?: HeldSound
 }
+
+/** See `SlotRenderPayload.sound`. */
+export type HeldSound = { clip: AnyClip; trackId?: string; picture: string }
 
 /** `take.choose` — the slot's clip plays take `index` of its list instead. */
 export type TakeChoosePayload = { slotId: string; index: number; clip: AnyClip; keepGaps?: boolean }
@@ -365,6 +382,12 @@ function swap(state: State, old: AnyClip, next: AnyClip, p: Placing, was: State 
  */
 function insert(state: State, trackId: string | null, afterId: string | null, at: number | null,
   span: number, clip: AnyClip, p: Placing, was: State = state): Patch[] {
+  return patchesFor(was, inserted(state, trackId, afterId, at, span, clip, p))
+}
+
+/** `insert`'s arrangement, before it is turned into patches. */
+function inserted(state: State, trackId: string | null, afterId: string | null, at: number | null,
+  span: number, clip: AnyClip, p: Placing): State {
   const existing = (trackId ? state.tracks.find((t) => t.id === trackId) : undefined) ?? v1(state)
   const tracks = existing
     ? state.tracks.map((t) => (t.id === existing.id ? { ...t, clipIds: [...t.clipIds, clip.id] } : t))
@@ -373,13 +396,35 @@ function insert(state: State, trackId: string | null, afterId: string | null, at
     const order = v1Clips(asProject(state))
     const i = afterId ? order.findIndex((c) => c.id === afterId) : -1
     order.splice(i >= 0 ? i + 1 : order.length, 0, clip)
-    const after = relayV1({ settings: state.settings, tracks, clips: { ...state.clips, [clip.id]: clip } }, order)
-    return patchesFor(was, after)
+    return relayV1({ settings: state.settings, tracks, clips: { ...state.clips, [clip.id]: clip } }, order)
   }
   const start = at ?? (existing ? endOf(state, existing) : 0)
   const next = placed(clip, start)
   const clips = ripple({ ...state.clips, [next.id]: next }, existing, start + span, lengthOf(next) - span, next.id)
-  return patchesFor(was, { ...state, tracks, clips })
+  return { ...state, tracks, clips }
+}
+
+/**
+ * `state` with `sound` — the detached sound of a slot's held-out take — put
+ * back where it sat and carried onto `videoId`, the take that replaced it
+ * (`carrySound`). Nothing changes unless the sound is an Audio clip still
+ * linked to the held-out picture: a link to anything else is not this slot's.
+ */
+function carryHeldSound(state: State, videoId: string, sound: HeldSound): State {
+  const clip = state.clips[sound.clip.id] ?? sound.clip
+  if (clip.type !== 'Audio' || linkedTo(clip) !== sound.picture) return state
+  let put = state
+  if (!state.clips[clip.id]) {
+    const home = sound.trackId ? state.tracks.find((t) => t.id === sound.trackId) : undefined
+    put = {
+      ...state,
+      clips: { ...state.clips, [clip.id]: clip },
+      tracks: home
+        ? state.tracks.map((t) => (t.id === home.id ? { ...t, clipIds: [...t.clipIds, clip.id] } : t))
+        : state.tracks,
+    }
+  }
+  return carrySound(put, videoId, clip)
 }
 
 function endOf(state: State, track: ITrack): number {
@@ -388,7 +433,7 @@ function endOf(state: State, track: ITrack): number {
 
 /** See `SlotRenderPayload`. */
 export const slotRender: CommandHandler<SlotRenderPayload> = (state, cmd) => {
-  const { slotId, clip, trackId, at, span, keepGaps, cut } = cmd.payload
+  const { slotId, clip, trackId, at, span, keepGaps, cut, sound } = cmd.payload
   const p = { keepGaps: !!keepGaps }
   const next = stamped(clip, slotId)
   const old = inSlot(state, slotId)
@@ -400,7 +445,8 @@ export const slotRender: CommandHandler<SlotRenderPayload> = (state, cmd) => {
     const put = src && cut && relays(state, trackOf(state, src.id), p) ? withCutBack(state, src, cut) : state
     return swap(put, old, next, p, state)
   }
-  return insert(state, trackId ?? null, null, at ?? null, span ?? 0, next, p)
+  const after = inserted(state, trackId ?? null, null, at ?? null, span ?? 0, next, p)
+  return patchesFor(state, sound ? carryHeldSound(after, next.id, sound) : after)
 }
 
 /** See `TakeChoosePayload`. A slot no clip fills is nothing to choose on. */

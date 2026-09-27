@@ -38,9 +38,17 @@ What it holds, and the failure each one is for:
   one — and one undo puts back the old take and the old sound together. A
   new take longer than its sound's A track has room for moves the sound to a
   free A track, whole, rather than overlapping or clamping it.
+- **So does a slot whose old file would not load** (pure, `slot.render`
+  bundled from `web/src/edit/commands.ts` and run under node): its picture
+  and its sound were held out of the Core, and the new take is inserted where
+  the picture sat — silent, linked, with the sound back on its A track playing
+  the new file. Before, the insert path skipped `carrySound`, and the new take
+  arrived with its own sound on beside a sound linked to nothing in the cut.
+  One undo takes both out again; a sound linked to another picture is left.
 """
 import base64
 import json
+import os
 import re
 import shutil
 import struct
@@ -471,6 +479,119 @@ def wait_job(pg, slot, not_job, timeout=40_000):
         arg=[slot, not_job], timeout=timeout)
     pg.wait_for_timeout(300)
 
+
+# ---------------------------------------------------------------------------
+# A held-out slot's sound, pure
+# ---------------------------------------------------------------------------
+
+WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "web")
+
+HELD = r"""
+import { slotRender } from '%(commands)s'
+
+const S = 1_000_000
+const settings = { width: 640, height: 360, fps: 24, duration: 0 }
+const video = (id, slot, job, from, len) => ({
+  id, type: 'Video', name: id, src: `http://x/api/file/${job}/clip.mp4`,
+  metadata: { slotId: slot, jobId: job, file: 'clip.mp4' },
+  timing: { display: { from: from * S, to: (from + len) * S }, trim: { from: 0, to: len * S }, duration: len * S },
+  transform: {},
+})
+// The Core after `park`: slot b's picture and its detached sound held out, their
+// tracks still there without them.
+const a = video('ca', 'a', 'j1', 0, 3)
+const c = video('cc', 'c', 'j3', 6, 3)
+const state = {
+  settings,
+  tracks: [
+    { id: 'v1', name: 'V1', type: 'video', clipIds: ['ca', 'cc'] },
+    { id: 'a1', name: 'A1', type: 'audio', clipIds: [], accepts: ['audio'] },
+  ],
+  clips: { ca: a, cc: c },
+}
+const held = { ...video('cb', 'b', 'j2', 3, 3), audio: false, muted: true,
+                metadata: { slotId: 'b', jobId: 'j2', file: 'clip.mp4', linkedTo: 'sb' } }
+const sound = { ...held, id: 'sb', type: 'Audio', name: 'cb · sound', metadata: { jobId: 'j2', file: 'clip.mp4', linkedTo: 'cb' } }
+delete sound.audio
+delete sound.muted
+const take = video('nb', 'b', 'j9', 0, 4)
+const apply = (st, patches) => {
+  const out = { ...st, clips: { ...st.clips } }
+  for (const p of patches) {
+    if (p.path === '/tracks') { out.tracks = p.value; continue }
+    const id = p.path.split('/')[2]
+    if (p.op === 'remove') delete out.clips[id]
+    else out.clips[id] = p.value
+  }
+  return out
+}
+const undo = (st, patches) => apply(st, [...patches].reverse().map((p) =>
+  p.op === 'add' ? { op: 'remove', path: p.path } : p.op === 'remove' ? { op: 'add', path: p.path, value: p.oldValue }
+    : { ...p, value: p.oldValue }))
+const payload = { slotId: 'b', clip: take, trackId: 'v1', at: 3 * S, span: 3 * S }
+const run = (extra) => {
+  const patches = slotRender(state, { type: 'slot.render', payload: { ...payload, ...extra } })
+  return { after: apply(state, patches), patches }
+}
+const out = {}
+const bare = run({}).after
+out.bare_audio = bare.clips.nb?.audio ?? null
+const { after, patches } = run({ sound: { clip: sound, trackId: 'a1', picture: 'cb' } })
+const v = after.clips.nb
+const s = after.clips.sb
+out.video = { audio: v.audio, muted: v.muted, linkedTo: v.metadata.linkedTo, from: v.timing.display.from }
+out.sound = s && { src: s.src, linkedTo: s.metadata.linkedTo, jobId: s.metadata.jobId,
+                   display: s.timing.display, track: after.tracks.find((t) => t.clipIds.includes('sb'))?.id }
+out.video_display = v.timing.display
+out.c_from = after.clips.cc.timing.display.from
+const back = undo(after, patches)
+out.undo_ids = Object.keys(back.clips).sort()
+out.undo_a1 = back.tracks.find((t) => t.id === 'a1').clipIds
+const other = run({ sound: { clip: { ...sound, metadata: { ...sound.metadata, linkedTo: 'elsewhere' } }, trackId: 'a1', picture: 'cb' } }).after
+out.other = { audio: other.clips.nb.audio ?? null, sound: !!other.clips.sb }
+console.log(JSON.stringify(out))
+"""
+
+
+def held_sound():
+    print("\n=== a held-out slot's sound, pure ===")
+    esbuild = os.path.join(WEB, "node_modules", ".bin", "esbuild")
+    if not os.path.exists(esbuild):
+        check("esbuild is in web/node_modules (npm --prefix web ci)", False, esbuild)
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        entry = os.path.join(tmp, "held_test.ts")
+        bundle = os.path.join(tmp, "held_test.mjs")
+        with open(entry, "w") as f:
+            f.write(HELD % {"commands": os.path.join(WEB, "src", "edit", "commands.ts")})
+        built = subprocess.run([esbuild, entry, "--bundle", "--platform=node", "--format=esm",
+                                "--log-level=error", f"--outfile={bundle}"],
+                               capture_output=True, text=True, cwd=WEB)
+        if built.returncode:
+            check("commands.ts bundles for node", False, built.stderr[-400:])
+            return
+        ran = subprocess.run(["node", bundle], capture_output=True, text=True)
+        if ran.returncode:
+            check("slot.render runs under node", False, ran.stderr[-400:])
+            return
+    r = json.loads(ran.stdout)
+    check("without its sound the new take arrives with its own sound on (what this fixes)",
+          r["bare_audio"] is not False, str(r["bare_audio"]))
+    check("with it, the new take is silent and linked to the sound",
+          r["video"] == {"audio": False, "muted": True, "linkedTo": "sb", "from": 3_000_000}, str(r["video"]))
+    sd = r["sound"] or {}
+    check("the sound is back on A1, playing the new take's file, linked to it",
+          sd.get("track") == "a1" and sd.get("src", "").endswith("/j9/clip.mp4")
+          and sd.get("linkedTo") == "nb" and sd.get("jobId") == "j9", str(sd))
+    check("over the new take's stretch", sd.get("display") == r["video_display"], f"{sd.get('display')} {r['video_display']}")
+    check("the clip after it moves by the difference", r["c_from"] == 7_000_000, str(r["c_from"]))
+    check("one undo takes the take and the sound out again",
+          r["undo_ids"] == ["ca", "cc"] and r["undo_a1"] == [], f"{r['undo_ids']} {r['undo_a1']}")
+    check("a sound linked to another picture is not carried",
+          r["other"] == {"audio": None, "sound": False}, str(r["other"]))
+
+
+held_sound()
 
 with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmp:
     b = pw.chromium.launch(channel="chrome")
