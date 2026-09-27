@@ -533,3 +533,63 @@ capabilities:
       - All four README smoke tests pass against a fresh account.
       - Every claim in the coverage ledger is either measured or explicitly
         named as unmeasured.
+  - name: editing
+    layer: domain
+    status: planned
+    depends_on:
+      - platform
+      - inference
+      - prompting
+      - gallery
+      - web
+    provides_to:
+      - web
+      - gallery
+    paths:
+      - web/src/edit
+    description: "Takes become a scene you can cut. OpenVideo (@openvideo/core with
+      the Pixi renderer) arranges, previews and exports; Visionary generates
+      what goes on the tracks. The two meet at the slot: a place on a track that
+      is empty (intent), rendering (a job), or filled (a take). Today `takes` is
+      recorded on the store and nothing ever assembles it — this capability is
+      what does."
+    scope_in:
+      - "Multi-track: V1 is the scene, V2+ carry inserts, overlays and your own
+        media, text tracks carry titles and captions, A tracks carry detached
+        soundtracks and your own audio. Tracks are made by a drop, never by an
+        add-track button."
+      - Intent is Visionary's and stays in sidecars (prose, pills, cast, LoRAs,
+        every take a slot has had); arrangement is OpenVideo's IProject stored
+        verbatim at a pinned commit. Mirroring a full NLE schema in our own
+        format would be a second way to do the first thing.
+      - Generation as OpenVideo custom commands (slot.render, take.choose,
+        slot.continue) over the existing job/status/stop contract, so a trim and
+        a render are on one undo stack.
+      - Export in the page with WebCodecs, uploaded back to the volume as an
+        output so it lands in the gallery like any render. No GPU, no server
+        renderer, and Node stays build-time only.
+      - "A still is a zero-duration scene: the timeline appears when time is
+        added and a second track when something is dropped below the first."
+    scope_out:
+      - Headless Node rendering on Modal. It needs a runtime Chromium image;
+        export survives only while the tab is open, and that was accepted.
+      - Stock media libraries (Pexels or any other). Browsing somebody else's
+        material is the marketplace veto.
+      - The reference editor's Next.js/shadcn shell, R2/S3 storage and Deepgram.
+        The engine is adopted, the product around it is not.
+      - Audio-only generation. H3 produces picture and sound together; a music
+        bed or a voice-over is your own file.
+      - Export in Firefox. OpenVideo supports preview only there; the control is
+        shown disabled with the reason rather than hidden.
+    acceptance_criteria:
+      - Two takes from one scene play back as one cut and export as one MP4 that
+        appears in the gallery.
+      - Every scene edit — trim, reorder, choose a take, render a slot — is
+        undoable from one history, and no scene action asks for confirmation.
+      - Re-rendering a slot marks every slot conditioned on it, along its track
+        and in overlays above it, as stale.
+      - The takes, the intent sidecars and every export are plain files on the
+        volume; losing the OpenVideo dependency loses the arrangement, never the
+        work.
+      - Firefox previews a scene and shows export disabled with the reason on
+        the control.

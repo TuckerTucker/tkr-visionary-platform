@@ -1,0 +1,248 @@
+capability: editing
+slices:
+  - number: 1
+    feature: scene-assembly
+    delivers: "@openvideo/core and the Pixi renderer at a commit SHA, built into the
+      image with the rest of web/. When upstream force-pushes, the build does
+      not change under us, and nothing at runtime needs Node."
+    paths:
+      - web/package.json
+      - web/package-lock.json
+      - web/vite.config.ts
+    depends_on: []
+    story_ids: []
+    title: OpenVideo pinned into the image build
+    layer: integration
+    status: planned
+  - number: 2
+    feature: scene-assembly
+    delivers: scenes/{id}/ holding the scene record and the intent sidecars, beside
+      the takes it references by job and file. A new route is behind the
+      password by existing; the reader keeps every field it does not model,
+      because a sidecar is read years after it is written.
+    paths:
+      - app.py
+      - web/src/api
+    depends_on: []
+    story_ids: []
+    title: A scene folder on the volume, and the route that reads and writes it
+    layer: data
+    status: planned
+  - number: 3
+    feature: scene-assembly
+    delivers: The store's `takes` compiled into an IProject on V1 and played on the
+      OpenVideo stage. Continue appends; nothing else has to be done for a take
+      to be in the cut.
+    paths:
+      - web/src/edit
+      - web/src/store.ts
+    depends_on:
+      - 1
+      - 2
+    story_ids: []
+    title: Takes become V1 clips on the Pixi stage
+    layer: ui
+    status: planned
+  - number: 4
+    feature: scene-assembly
+    delivers: In and out points and order, on the track. Each H3 take carries its
+      own soundtrack, so every cut is a level jump unless something smooths it —
+      a short crossfade is the default and each cut can change it.
+    paths:
+      - web/src/edit
+    depends_on:
+      - 3
+    story_ids: []
+    title: Trim, reorder, and a crossfade at every cut
+    layer: ui
+    status: planned
+  - number: 5
+    feature: scene-assembly
+    delivers: WebCodecs encodes the cut in the browser and the MP4 is uploaded as an
+      output, so it is found where every render is. Progress says which clip it
+      is encoding. In Firefox the control is disabled with the reason on it, not
+      hidden and not failing after the press.
+    paths:
+      - web/src/edit
+      - web/src/gallery
+    depends_on:
+      - 3
+    story_ids: []
+    title: Export in the page, landing in the gallery
+    layer: ui
+    status: planned
+  - number: 6
+    feature: tracks
+    delivers: "Dropping below the last track makes one of the right kind at the drop
+      time: footage and photographs on V, text on T, audio on A. There is no
+      add-track button and no media browser; the files are yours."
+    paths:
+      - web/src/edit
+      - web/src/media
+    depends_on:
+      - 4
+    story_ids: []
+    title: Tracks made by a drop — your media, text, audio
+    layer: ui
+    status: planned
+  - number: 7
+    feature: generative-commands
+    delivers: Each one an ordinary Visionary job over /api/video, /api/status and
+      /api/stop, registered through OpenVideo's custom-commands API so
+      generation is an edit. A slot keeps every take it has had and steps them
+      with ‹ 1 / 4 ›.
+    paths:
+      - web/src/edit
+      - web/src/video
+    depends_on:
+      - 3
+    story_ids: []
+    title: slot.render, take.choose and slot.continue as custom commands
+    layer: api
+    status: planned
+  - number: 8
+    feature: one-canvas
+    delivers: "A still is a zero-duration scene: one slot and no time axis until
+      time is added. The canvas rules already in web/CLAUDE.md hold on the new
+      stage — replaced when the next lands, a click addresses what is under it,
+      the console budget."
+    paths:
+      - web/src/canvas
+      - web/src/edit
+    depends_on:
+      - 3
+    story_ids: []
+    title: The Pixi stage is the canvas for stills too
+    layer: ui
+    status: planned
+  - number: 9
+    feature: tracks
+    delivers: Picture and sound arrive together from H3 and stay linked; dragging
+      the soundtrack onto an A track detaches it, and one undo re-links it.
+    paths:
+      - web/src/edit
+    depends_on:
+      - 6
+    story_ids: []
+    title: A take's soundtrack travels with it until detached
+    layer: ui
+    status: planned
+  - number: 10
+    feature: tracks
+    delivers: OpenVideo's project JSON written verbatim into the scene folder,
+      tagged with the pinned OpenVideo commit it was written at, and linked to
+      the intent sidecars by slot id. Reloading at the same pin loses no field.
+    paths:
+      - app.py
+      - web/src/edit
+    depends_on:
+      - 2
+      - 6
+    story_ids: []
+    title: The arrangement stored as a pinned IProject
+    layer: data
+    status: planned
+  - number: 11
+    feature: generative-commands
+    delivers: Trim, reorder, choose a take and render all undo from one history.
+      Undoing a render returns the previous take and leaves the bytes on the
+      volume. The dialogs that stay are the ones that destroy bytes, and they
+      state the blast radius.
+    paths:
+      - web/src/edit
+      - web/src/gallery
+      - web/src/datasets
+    depends_on:
+      - 7
+    story_ids: []
+    title: One undo stack, and scene actions without confirm()
+    layer: ui
+    status: planned
+  - number: 12
+    feature: generative-commands
+    delivers: "The next slot opens on the frame at the cut, read with extractFrame,
+      rather than the file's last frame — a take trimmed because its last second
+      went wrong should not be continued from that second. Still best-effort: no
+      frame, and the next take opens cold."
+    paths:
+      - web/src/video
+      - web/src/edit
+    depends_on:
+      - 4
+      - 7
+    story_ids: []
+    title: Continue from the out-point
+    layer: ui
+    status: planned
+  - number: 13
+    feature: generative-commands
+    delivers: scene/Timeline.tsx stops keeping its own model; one timeline on
+      screen. A shot longer than H3's cap becomes several takes chained by
+      Continue that play as one clip.
+    paths:
+      - web/src/scene
+      - web/src/edit
+    depends_on:
+      - 7
+    story_ids: []
+    title: The shot bars are the V1 slots
+    layer: ui
+    status: planned
+  - number: 14
+    feature: cross-track-context
+    delivers: A slot on V2 over V1 opens with the covered slot's cast, look and
+      LoRAs, and can take V1's frame at that time as a reference. Each inherited
+      item is marked inherited and dropping one is one gesture.
+    paths:
+      - web/src/edit
+      - web/src/scene
+    depends_on:
+      - 6
+      - 7
+    story_ids: []
+    title: Inserts inherit the scene they cover
+    layer: ui
+    status: planned
+  - number: 15
+    feature: cross-track-context
+    delivers: Re-rendering a slot marks the slots chained after it on its track, and
+      the overlays that took a frame from it, as stale. Export names stale slots
+      before encoding; a stale slot offers to re-render from the new cut and
+      never does it on its own.
+    paths:
+      - web/src/edit
+    depends_on:
+      - 12
+      - 14
+    story_ids: []
+    title: Staleness along chains and overlays
+    layer: ui
+    status: planned
+  - number: 16
+    feature: one-canvas
+    delivers: Regions belong to the slot under the playhead and move with it, which
+      is what a region means on video.
+    paths:
+      - web/src/regions
+      - web/src/edit
+    depends_on:
+      - 8
+    story_ids: []
+    title: Regions over the frame at the playhead
+    layer: ui
+    status: planned
+  - number: 17
+    feature: scene-assembly
+    delivers: web/CLAUDE.md's 'past a scene you are in an NLE and out of scope'
+      replaced by the editing scope, keeping the frame/shot/scene argument for
+      why generation stops at a take; docs/roadmap.md gains the editing phase. A
+      rule that no longer holds and is still in context vetoes the work it
+      describes.
+    paths:
+      - web/CLAUDE.md
+      - docs/roadmap.md
+    depends_on: []
+    story_ids: []
+    title: The rules that multi-track editing overrides
+    layer: domain
+    status: planned

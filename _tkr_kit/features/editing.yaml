@@ -1,0 +1,150 @@
+capability: editing
+features:
+  - name: scene-assembly
+    status: planned
+    user_story: As someone who has rendered several takes of one scene, I want them
+      to play and export as one cut, so that a scene longer than 14.4 seconds is
+      a thing I have rather than a folder of clips.
+    description: The first stage, and usable alone. The takes already recorded on
+      the store become clips on V1 of an OpenVideo project, compiled from a
+      scene record kept on the volume. Playback, trim, reorder, a crossfade at
+      every cut by default because each H3 take carries its own soundtrack, and
+      export in the page. Generation does not change.
+    acceptance_criteria:
+      - Continue twice, and the three takes are on V1 in order without any
+        further gesture.
+      - A trim or a reorder is reflected in playback on the next frame, with
+        nothing re-fetched.
+      - Each cut has a short audio crossfade unless you change it; no cut jumps
+        in level.
+      - Export encodes in the page and the MP4 appears in the gallery as an
+        output.
+      - In Firefox the scene previews and export is disabled with the reason on
+        the control.
+      - Closing and reopening the page restores the scene, its trims and its
+        order.
+    consumes_api:
+      - /api/upload
+      - /api/file/{job_id}/{name}
+      - /api/gallery
+    wiring_assignment:
+      territory:
+        - web/package.json
+        - web/src/edit
+        - web/src/store.ts
+        - web/src/api
+        - web/src/gallery
+  - name: tracks
+    status: planned
+    user_story: As a director, I want a cutaway, a title and my own music over the
+      scene, so that the scene is finished here rather than in another editor.
+    description: Multi-track, on OpenVideo's arrangement as-is. A track is made by
+      dropping something below the last one — your own footage, your own
+      photographs, text, audio — never by an add-track button. An H3 take's
+      soundtrack travels with its clip until you drag it onto an A track. The
+      arrangement is stored as a pinned IProject beside the intent sidecars, and
+      the reader keeps every field it does not model.
+    acceptance_criteria:
+      - Dropping a file below V1 makes V2 and places it at the drop time;
+        dropping audio makes an A track.
+      - A take's soundtrack moves with its clip until it is detached, and
+        detaching it is one drag and one undo.
+      - Text clips (titles, lower thirds) are placed and styled on the canvas at
+        the playhead, not in an inspector.
+      - An arrangement saved at one pinned OpenVideo version reloads with every
+        field intact, including ones the page does not read.
+      - No surface offers browsing or searching media that is not yours.
+    consumes_api:
+      - /api/upload
+    wiring_assignment:
+      territory:
+        - web/src/edit
+        - web/src/media
+        - app.py
+  - name: generative-commands
+    status: planned
+    user_story: As someone editing a scene, I want rendering a shot to be an edit
+      like any other, so that undo reaches it and nothing asks me whether I am
+      sure.
+    description: slot.render, take.choose and slot.continue registered as OpenVideo
+      custom commands, each one a normal Visionary job over /api/video,
+      /api/status and /api/stop. A slot's takes step with the same ‹ 1 / 4 › the
+      canvas already uses for a batch. The shot bars in scene/Timeline.tsx
+      become V1 slots and stop keeping their own model, and a shot longer than
+      one generation becomes several takes chained by Continue. Continue starts
+      from the frame at the out-point, not the file's last frame.
+    acceptance_criteria:
+      - Undo after a render returns the slot to its previous take; the bytes of
+        the undone take stay on the volume.
+      - A trim followed by a render undoes in that order from one history.
+      - Scene actions no longer call confirm(); the ones that destroy bytes on
+        the volume keep a dialog that states the blast radius.
+      - "There is one timeline on screen: the shot bars are the V1 slots."
+      - A 30-second shot renders as three chained takes that play as one clip on
+        V1.
+      - Continue from a trimmed take opens on the frame at the trim point.
+    consumes_api:
+      - /api/video
+      - /api/status/{job_id}
+      - /api/stop/{job_id}
+      - /api/compile
+    wiring_assignment:
+      territory:
+        - web/src/edit
+        - web/src/scene
+        - web/src/video
+        - web/src/canvas
+        - web/src/gallery
+        - web/src/datasets
+  - name: cross-track-context
+    status: planned
+    user_story: As a director cutting away mid-scene, I want the insert to know
+      which scene it is in, so that I never rebuild the cast and the look for a
+      three-second cutaway.
+    description: "The part neither system has on its own. A slot dropped on V2 over
+      V1 inherits the cast, look and LoRAs of the V1 slot it covers and can take
+      V1's frame at that time as a reference — marked inherited, and cheap to
+      drop. Re-rendering a slot marks what was conditioned on it as stale: the
+      slots chained after it on its track, and the overlays that took a frame
+      from it."
+    acceptance_criteria:
+      - An empty slot on V2 at 0:12 opens with the cast of the V1 slot under
+        0:12, each inherited item marked as inherited.
+      - Dropping an inherited item is one gesture and does not affect the V1
+        slot.
+      - Re-rendering V1 slot 2 marks V1 slot 3 and any V2 overlay conditioned on
+        slot 2 as stale, and export names the stale slots before it encodes.
+      - A stale slot offers to re-render from the new cut; it is never
+        re-rendered on its own.
+    consumes_api:
+      - /api/video
+      - /api/characters
+    wiring_assignment:
+      territory:
+        - web/src/edit
+        - web/src/scene
+        - web/src/video
+  - name: one-canvas
+    status: planned
+    user_story: As someone making one image, I want to finish and leave without
+      learning that motion exists, and as someone making a film I want the same
+      surface to hold it.
+    description: "The Pixi stage becomes the canvas for both domains. A still is a
+      zero-duration scene: one slot and no time axis until time is added.
+      Regions draw over the frame at the playhead and belong to the slot under
+      it, which answers what a region means on video by making it per-slot."
+    acceptance_criteria:
+      - A first-run image session shows no timeline and no track.
+      - The canvas behaviours already specified in web/CLAUDE.md — a render
+        replaced when the next lands, a click addressing what is under it, the
+        30% console budget — hold on the Pixi stage.
+      - Regions drawn at the playhead apply to the slot under it and move with
+        that slot.
+      - Stepping a batch still costs a compositor frame and re-fetches nothing.
+    consumes_api:
+      - /api/generate
+    wiring_assignment:
+      territory:
+        - web/src/edit
+        - web/src/canvas
+        - web/src/regions
