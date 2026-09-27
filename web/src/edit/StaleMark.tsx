@@ -3,7 +3,7 @@ import type { AnyClip, IProject, ITrack } from '@openvideo/core'
 
 import { PX_PER_SEC } from '../scene/Timeline'
 import { useStore } from '../store'
-import { continueSlot, renderSlot } from '../video/useVideo'
+import { renderSlot } from '../video/useVideo'
 import { useContinueCut, type Cut } from './continue'
 import { sec } from './engine'
 import { slotOf } from './project'
@@ -44,11 +44,13 @@ import { useEdit } from './useEdit'
  * - *An insert that opened on V1's frame* renders again (`renderSlot`, the
  *   slot's own ↻) — the frame is read out of V1 when the render starts, so it
  *   is the new take's frame.
- * - *A continuation* is armed again from the source slot's new take
- *   (`continueSlot`, the source's own →) with this take's sentence put back in
- *   the prompt, so Generate makes the same beat from the new cut. It lands
- *   after the source slot, as every continuation does; the stale take stays
- *   where it is, one undo from gone.
+ * - *A continuation* renders again **into its own slot**, continued from the
+ *   source slot's new take, with its own sentence and length — the same beat
+ *   from the new cut (`renderSlot` with a continuation). It lands through the
+ *   slot's `slot.render` swap, so the stale take is one ‹ away and one undo
+ *   puts it back. It used to arm Continue and let Generate land a *second*
+ *   slot after the source, leaving the stale one where it was — a remedy that
+ *   left the problem in the cut and doubled the beat.
  * - *A slot stale only because the slot it was made from is* sends the press
  *   up the chain to the slot that changed directly: remaking slot 4 from slot
  *   3's out-of-date take would only make a second out-of-date take.
@@ -102,11 +104,12 @@ export async function rerenderStale(slotId: string): Promise<void> {
     await renderSlot(root)
     return
   }
-  const take = chosenTake(useStore.getState().takes, root, useEdit.getState().project)
-  await continueSlot(why.because)
-  // After the arm, which clears the prose on purpose — a continuation is a new
-  // beat. This one is not: it is the stale take's beat, made again.
-  if (take?.line.trim()) useStore.getState().setProse(take.line)
+  const { takes } = useStore.getState()
+  const project = useEdit.getState().project
+  const take = chosenTake(takes, root, project)
+  const source = chosenTake(takes, why.because, project)
+  if (!take || !source) return
+  await renderSlot(root, { continueFrom: source.jobId, take })
 }
 
 /** The sentence under the press: what it will do, per kind. */
@@ -118,8 +121,8 @@ function offerNote(project: IProject | null, slotId: string, stale: ReadonlyMap<
   const first = root === slotId ? '' : `Re-render ${slotLabel(project, root)} first. `
   return why.how === 'frame'
     ? `${first}Press to render ${root === slotId ? 'this insert' : 'it'} again on ${src}'s frame as it is now.`
-    : `${first}Press to continue from ${src}'s new take with ${root === slotId ? "this take's" : 'its'} sentence — `
-      + `Generate renders it right after ${src}.`
+    : `${first}Press to render ${root === slotId ? 'this take' : 'it'} again in its place, continued from `
+      + `${src}'s new take with the same sentence — the stale take stays one ‹ away.`
 }
 
 /* ---- the mark ----------------------------------------------------------- */

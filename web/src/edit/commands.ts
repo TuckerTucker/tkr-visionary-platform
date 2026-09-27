@@ -43,7 +43,9 @@
  * - *A continuation moves its source's out-point to where it opens.* The
  *   server snaps the cut down onto the motion latent's grid, so without this
  *   up to 16 frames play twice across the join. Same command, so one undo puts
- *   the source's trim back and takes the continuation out (`cutBack`).
+ *   the source's trim back and takes the continuation out (`cutBack`). A
+ *   continuation made again in its own slot (the stale offer, `slot.render`
+ *   with a `cut`) meets its source the same way.
  * - *A detached slot stays detached.* Once a slot's sound has been put on an
  *   A track (detach.ts), a new take in that slot — rendered, or chosen with
  *   ‹ › — arrives silent and linked, and the linked Audio clip is swapped to
@@ -93,6 +95,10 @@ export type SlotRenderPayload = {
   span?: number
   /** See `Placing.keepGaps`. */
   keepGaps?: boolean
+  /** Where the take opens in the take it continues, when it is a continuation
+   *  rendered into its own slot (the stale offer): take `jobId`, `to` µs into
+   *  it. The clip playing that take is cut back to it — see `cutBack`. */
+  cut?: { jobId: string; to: number }
 }
 
 /** `take.choose` — the slot's clip plays take `index` of its list instead. */
@@ -320,7 +326,7 @@ function patchesFor(before: State, after: State, swapped: readonly string[] = []
  * by the difference. A slot whose sound was detached stays detached
  * (`carrySound`), in the same patches.
  */
-function swap(state: State, old: AnyClip, next: AnyClip, p: Placing): Patch[] {
+function swap(state: State, old: AnyClip, next: AnyClip, p: Placing, was: State = state): Patch[] {
   const fades = {
     ...(old.timing.fadeIn !== undefined && { fadeIn: old.timing.fadeIn }),
     ...(old.timing.fadeOut !== undefined && { fadeOut: old.timing.fadeOut }),
@@ -333,8 +339,8 @@ function swap(state: State, old: AnyClip, next: AnyClip, p: Placing): Patch[] {
     ? relayV1(asProject(put))
     : { ...put, clips: ripple(put.clips, track, old.timing.display.to, lengthOf(clip) - lengthOf(old), old.id) }
   const sound = soundOf(state, old)
-  if (!sound) return patchesFor(state, laid, [old.id])
-  return patchesFor(state, carrySound(laid, old.id, sound), [old.id, sound.id])
+  if (!sound) return patchesFor(was, laid, [old.id])
+  return patchesFor(was, carrySound(laid, old.id, sound), [old.id, sound.id])
 }
 
 /**
@@ -382,11 +388,18 @@ function endOf(state: State, track: ITrack): number {
 
 /** See `SlotRenderPayload`. */
 export const slotRender: CommandHandler<SlotRenderPayload> = (state, cmd) => {
-  const { slotId, clip, trackId, at, span, keepGaps } = cmd.payload
+  const { slotId, clip, trackId, at, span, keepGaps, cut } = cmd.payload
   const p = { keepGaps: !!keepGaps }
   const next = stamped(clip, slotId)
   const old = inSlot(state, slotId)
-  if (old) return swap(state, old, next, p)
+  if (old) {
+    // A continuation made again in its own slot meets its source where the
+    // snap put it, exactly as a new one does — same edit, one undo.
+    const src = cut ? Object.values(state.clips).find((c) =>
+      c.id !== old.id && c.type === 'Video' && c.metadata?.jobId === cut.jobId) : undefined
+    const put = src && cut && relays(state, trackOf(state, src.id), p) ? withCutBack(state, src, cut) : state
+    return swap(put, old, next, p, state)
+  }
   return insert(state, trackId ?? null, null, at ?? null, span ?? 0, next, p)
 }
 
@@ -456,6 +469,17 @@ function cutSound(from: AnyClip, cut: AnyClip, sound: AnyClip): AnyClip | null {
   } as AnyClip
 }
 
+/** `state` with `from` cut back to where its continuation opens (`cutBack`),
+ *  and its detached sound with it while that still lies under it — or
+ *  `state` itself when there is nothing to move. */
+function withCutBack(state: State, from: AnyClip, cut: { jobId: string; to: number }): State {
+  const cutFrom = cutBack(state, from, cut)
+  if (!cutFrom) return state
+  const sound = soundOf(state, from)
+  const cutAudio = sound ? cutSound(from, cutFrom, sound) : null
+  return { ...state, clips: { ...state.clips, [from.id]: cutFrom, ...(cutAudio && { [cutAudio.id]: cutAudio }) } }
+}
+
 /** See `SlotContinuePayload`. */
 export const slotContinue: CommandHandler<SlotContinuePayload> = (state, cmd) => {
   const { fromSlotId, slotId, clip, keepGaps, cut } = cmd.payload
@@ -465,13 +489,7 @@ export const slotContinue: CommandHandler<SlotContinuePayload> = (state, cmd) =>
   const track = from ? trackOf(state, from.id) : null
   if (!from || !track) return insert(state, null, null, null, 0, next, p)
   if (relays(state, track, p)) {
-    const cutFrom = cut ? cutBack(state, from, cut) : null
-    const sound = cutFrom ? soundOf(state, from) : null
-    const cutAudio = cutFrom && sound ? cutSound(from, cutFrom, sound) : null
-    const put = cutFrom
-      ? { ...state, clips: { ...state.clips, [from.id]: cutFrom, ...(cutAudio && { [cutAudio.id]: cutAudio }) } }
-      : state
-    return insert(put, track.id, from.id, null, 0, next, p, state)
+    return insert(cut ? withCutBack(state, from, cut) : state, track.id, from.id, null, 0, next, p, state)
   }
   return insert(state, track.id, null, from.timing.display.to, 0, next, p)
 }

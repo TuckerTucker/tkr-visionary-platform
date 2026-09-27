@@ -35,6 +35,10 @@ is on the PATH). What it holds, and the failure each one is for:
   *Re-render first* goes to the first stale slot's offer and renders nothing.
 - **The offer on the insert renders it again, once, and its mark clears** —
   it was made from slot 2's new take.
+- **The offer on a continuation renders it again in its own slot**, once,
+  continued from slot 2's new take with its own sentence: V1 still holds three
+  slots, slot 3's clip plays the new take, and its mark clears. It used to arm
+  Continue and let Generate land a second slot beside the stale one.
 """
 import json
 import os
@@ -438,6 +442,33 @@ def page():
         marks = stale(pg)
         check("after a reload slot 3 is still stale, read from the takes' records",
               marks.get(s3, {}).get("because") == s2 and ins["slot"] not in marks, str(marks))
+
+        # ---- the continuation's offer, in place ------------------------------
+        bodies: list[dict] = []
+        pg.on("request", lambda q: bodies.append(q.post_data_json or {})
+              if q.url.endswith("/api/video") and q.method == "POST" else None)
+        old3 = by_slot(pg, s3)["job"]
+        new2 = by_slot(pg, s2)["job"]
+        line3 = pg.evaluate("(s) => document.querySelector(`#edit-tracks .et-clip[data-slot=\"${s}\"] .et-line`)"
+                            "?.textContent || ''", s3)
+        pg.click(f'#edit-tracks .et-clip[data-slot="{s3}"] .et-stale-offer')
+        check("slot 3's offer renders it again in its own slot", wait_job(pg, s3, old3))
+        pg.wait_for_timeout(1500)
+        check("with one request", len(bodies) == 1, str(len(bodies)))
+        body = bodies[0] if bodies else {}
+        check("continued from slot 2's new take, with slot 3's own sentence",
+              body.get("continue_from") == new2 and body.get("prompt") == line3,
+              json.dumps({k: body.get(k) for k in ("continue_from", "prompt")}) + f" want {new2} {line3!r}")
+        takes = v1(pg)
+        check("V1 still holds three slots, in the same order",
+              [c["slot"] for c in takes] == [s1, s2, s3], str([c["slot"] for c in takes]))
+        check("and nothing is out of date any more", stale(pg, 800) == {}, str(stale(pg)))
+        pg.evaluate("() => window.__edit.undo()")
+        marks = stale(pg, 800)
+        check("one undo puts the stale take back, mark and all",
+              by_slot(pg, s3)["job"] == old3 and s3 in marks, f"{by_slot(pg, s3)['job']} {sorted(marks)}")
+        pg.evaluate("() => window.__edit.redo()")
+        check("redo clears it again", stale(pg, 800) == {}, str(stale(pg)))
 
         check("no uncaught errors", not errors, "; ".join(errors[:3]))
         ctx.close()

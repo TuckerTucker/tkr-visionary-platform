@@ -596,7 +596,13 @@ async function land(s: Session, core: Core, take: SlotTake): Promise<void> {
     clearSlotRun(slotId)
     if (failed(read)) { setSlotRun(slotId, { error: read }); return }
     if (clipOfSlot(core.store.getState(), slotId)) {
-      const payload: SlotRenderPayload = { slotId, clip: read, keepGaps: holdsGap() }
+      // A continuation rendered into its own slot (the stale offer) moves its
+      // source's out-point to the snap, as `slot.continue` does.
+      const cut = landedCut(take.jobId)
+      const payload: SlotRenderPayload = {
+        slotId, clip: read, keepGaps: holdsGap(),
+        ...(cut && { cut: { jobId: cut.from, to: Math.round(us(cut.continuedAt)) } }),
+      }
       core.execute(withId({ type: SLOT_RENDER, payload }))
       return
     }
