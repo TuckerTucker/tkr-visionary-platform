@@ -1,8 +1,9 @@
 """
 Ask whether every pinned wheel in app.py still exists, before a deploy does.
 
-    python3 tools/smoke_pins.py                 # every image
-    python3 tools/smoke_pins.py trainer_image   # one of them
+    python3 tools/smoke_pins.py                 # the web pins, then every image
+    python3 tools/smoke_pins.py trainer_image   # one image
+    python3 tools/smoke_pins.py web             # the web pins only; no Modal
 
 `modal deploy app.py` answers this question too, in about twenty minutes, by
 downloading tens of gigabytes and compiling CUDA kernels — and then reporting
@@ -43,15 +44,36 @@ now carries a pypi.org fallback because it was the one that broke;
 `caption_image` and `comfy_image` name a PyTorch index with no fallback at all,
 so they are exposed to exactly the same deletion. They resolve today. That is
 the difference between a checker and a fix, and this file is only the checker.
+
+**The web pins are checked here too, and locally.** `@openvideo/core` and
+`@openvideo/engine-pixi` are built into the image with the rest of `web/`.
+They are published from a monorepo, so the SHA the root rule asks for would
+mean building them from source; an exact npm version is the equivalent, because
+a published version cannot be re-pointed — but only if the manifest says `1.4.0`
+and not `^1.4.0`, and only if the lockfile carries the integrity hash that makes
+a re-uploaded tarball fail `npm ci` rather than install. Both are properties of
+two files in the repo, so this needs no Sandbox and no Modal: `web` runs it
+alone, and every other invocation runs it first because it costs nothing.
+
+It also holds `OPENVIDEO_PIN` in `web/src/edit/engine.ts` equal to the pinned
+core. The page writes that string into every arrangement it saves as the version
+the IProject was written at; a bump that forgot it would mislabel every save
+after it, silently, which is the failure a reader years later cannot undo.
 """
 import ast
+import json
+import re
 import sys
 from pathlib import Path
 
-import modal
-
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app.py"
+WEB = ROOT / "web"
+
+# The web packages pinned exactly, and the one whose version the page records.
+WEB_PINS = ("@openvideo/core", "@openvideo/engine-pixi")
+WEB_PIN_RECORDED = "@openvideo/core"
+EXACT = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def _const(node):
@@ -97,7 +119,66 @@ def images():
     return out
 
 
+def web_pins():
+    """Every problem with the web pins, as sentences. Empty means pinned.
+
+    Each line names the file, the package and what was found, because the fix
+    differs by which of the three is wrong: a range is edited in package.json, a
+    missing hash is a lockfile regenerated with `npm install`, and a drifted
+    OPENVIDEO_PIN is one line in engine.ts."""
+    bad = []
+    manifest = json.loads((WEB / "package.json").read_text())
+    lock = json.loads((WEB / "package-lock.json").read_text())
+    deps = {**manifest.get("devDependencies", {}), **manifest.get("dependencies", {})}
+    pinned = {}
+    for name in WEB_PINS:
+        want = deps.get(name)
+        if want is None:
+            bad.append(f"web/package.json: {name} is not a dependency")
+            continue
+        if not EXACT.match(want):
+            bad.append(f"web/package.json: {name} is {want!r}, not an exact "
+                       f"version — a range lets the next `npm install` move it")
+            continue
+        pinned[name] = want
+        entry = lock.get("packages", {}).get(f"node_modules/{name}")
+        if entry is None:
+            bad.append(f"web/package-lock.json: no entry for {name}")
+            continue
+        if entry.get("version") != want:
+            bad.append(f"web/package-lock.json: {name} is locked at "
+                       f"{entry.get('version')!r} but package.json pins {want!r}")
+        if not str(entry.get("integrity", "")).startswith("sha512-"):
+            bad.append(f"web/package-lock.json: {name} has no sha512 integrity "
+                       f"hash, so a re-uploaded tarball would install")
+
+    engine = WEB / "src" / "edit" / "engine.ts"
+    m = re.search(r"export const OPENVIDEO_PIN = '([^']*)'", engine.read_text()) \
+        if engine.is_file() else None
+    recorded = pinned.get(WEB_PIN_RECORDED)
+    if m is None:
+        bad.append(f"{engine.relative_to(ROOT)}: no `export const OPENVIDEO_PIN = '…'`")
+    elif recorded and m.group(1) != recorded:
+        bad.append(f"{engine.relative_to(ROOT)}: OPENVIDEO_PIN is {m.group(1)!r} "
+                   f"but {WEB_PIN_RECORDED} is pinned at {recorded!r}")
+    return bad
+
+
+def check_web():
+    print("\n=== web ===")
+    bad = web_pins()
+    if bad:
+        for line in bad:
+            print(f"  FAIL {line}")
+    else:
+        for name in WEB_PINS:
+            print(f"  ok   {name} exact, with integrity")
+        print("  ok   OPENVIDEO_PIN matches")
+    return bad
+
+
 def base_image(spec):
+    import modal
     if spec["kind"] == "registry":
         return modal.Image.from_registry(spec["ref"], add_python=spec["python"])
     return modal.Image.debian_slim(python_version=spec["python"])
@@ -125,6 +206,7 @@ def command(groups):
 
 
 def check(name, spec, app):
+    import modal
     print(f"\n=== {name} ===")
     for g in spec["groups"]:
         where = g["index_url"] or "pypi.org"
@@ -155,6 +237,17 @@ def check(name, spec, app):
 
 def main():
     want = sys.argv[1:]
+    web_bad = check_web() if not want or "web" in want else []
+    want = [w for w in want if w != "web"]
+    if sys.argv[1:] and not want:
+        if web_bad:
+            sys.exit("\nweb pins are not exact — see FAIL lines above")
+        print("\nweb pins are exact")
+        return
+
+    # Imported here so `web` runs on a laptop without Modal installed.
+    import modal
+
     found = images()
     if want:
         missing = [w for w in want if w not in found]
@@ -172,12 +265,16 @@ def main():
                 failed[name] = bad
 
     print()
+    if web_bad:
+        print("web pins are not exact — see FAIL lines above", file=sys.stderr)
     if failed:
         for name, groups in failed.items():
             print(f"{name}: group(s) {groups} no longer resolve", file=sys.stderr)
         print("\nA pin that vanished is almost never yours to fix by changing the "
               "version — check whether the index still serves it, and give pip "
               "somewhere else to look before bumping anything.", file=sys.stderr)
+        sys.exit(1)
+    if web_bad:
         sys.exit(1)
     print(f"every declared pin still resolves ({len(found)} image(s))")
 
