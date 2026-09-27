@@ -6,6 +6,8 @@ import {
   exportMeta, exportUnsupported, missingNote, resetExport, runExport, stopExport, upload,
   useExport,
 } from './exportCut'
+import { staleOrder, staleSummary } from './stale'
+import { useStale } from './StaleMark'
 import { useEdit } from './useEdit'
 
 /**
@@ -26,6 +28,19 @@ import { useEdit } from './useEdit'
  * Save to disk link and a retry that re-sends the same bytes; nothing is
  * encoded twice and nothing is lost to a dropped connection.
  *
+ * **Out-of-date slots are named before anything encodes** (stale.ts). The
+ * first press, with a slot made from a take the cut no longer plays, encodes
+ * nothing: the control says which ("2 slots are out of date: slot 3, insert at
+ * 0:12") and becomes *Export anyway*, and the next press is the export. Not a
+ * `confirm()` — the page asks nothing in a dialog (web/CLAUDE.md, *Nothing
+ * asks for confirmation*) — and not a refusal either: a stale join is a
+ * judgement about a picture, and only the person watching it can make it.
+ * *Re-render first* goes to the first one's own offer on the timeline rather
+ * than rendering from here, because which of them is worth three minutes of
+ * GPU is also theirs to say. The warning is for the set it named; a slot going
+ * stale after it asks again, and undoing the re-render that caused it clears
+ * it with nothing to dismiss.
+ *
  * `onLanded` is the gallery's record path — the same callback a render calls —
  * so the cut is in the grid the moment the server has it.
  */
@@ -36,6 +51,11 @@ export function Export({ onLanded }: { onLanded?: (it: GalleryItem) => void }) {
   const project = useEdit((s) => s.project)
   const parked = useEdit((s) => s.parked)
   const run = useExport()
+  const stale = useStale()
+  const staleKey = [...stale.keys()].sort().join(' ')
+  // The stale set the control has named, so the next press proceeds — for
+  // that set only. Cleared by every export that starts.
+  const [named, setNamed] = useState<string | null>(null)
 
   const width = project?.settings.width ?? 0
   const height = project?.settings.height ?? 0
@@ -66,6 +86,7 @@ export function Export({ onLanded }: { onLanded?: (it: GalleryItem) => void }) {
 
   const start = (): void => {
     if (!core) return
+    setNamed(null)
     const st = useStore.getState()
     const proj = core.project.export()
     void runExport(proj, exportMeta(proj, st.takes, st.sceneId), onLanded)
@@ -140,13 +161,48 @@ export function Export({ onLanded }: { onLanded?: (it: GalleryItem) => void }) {
   }
 
   const off = phase !== 'ready' || !hasTime || why !== null
+  const warned = !off && staleKey !== '' && named === staleKey
+  const press = (): void => {
+    if (staleKey !== '' && named !== staleKey) { setNamed(staleKey); return }
+    start()
+  }
+
+  if (warned) {
+    const summary = staleSummary(project, stale)
+    return (
+      <span id="edit-export" style={row}>
+        <span id="export-stale" role="status" style={warnNote} title={`${summary}.`}>
+          {summary}
+        </span>
+        <button type="button" id="export-go" style={btn} onClick={press}
+                title="Export the cut as it is — the out-of-date slots go in as they are">
+          Export anyway
+        </button>
+        <button type="button" id="export-rerender" style={btn}
+                title="Go to the first out-of-date slot — its own button re-renders it from the new cut"
+                onClick={() => {
+                  setNamed(null)
+                  const first = staleOrder(project, stale)[0]
+                  const el = first
+                    ? document.querySelector<HTMLElement>(`.et-stale-offer[data-slot="${first}"]`)
+                      ?? document.querySelector<HTMLElement>(`.et-clip[data-slot="${first}"]`)
+                    : null
+                  el?.scrollIntoView({ block: 'nearest', inline: 'center' })
+                  el?.focus()
+                }}>
+          Re-render first
+        </button>
+      </span>
+    )
+  }
+
   const title = why ?? (missing ? `Export the cut to the gallery. ${missing}` : 'Export the cut to the gallery as an MP4')
   return (
     <span id="edit-export" style={row}>
       {why && <span id="export-why" className="muted" style={note}>{why}</span>}
       <button type="button" id="export-go" style={{ ...btn, ...(off ? dim : null) }}
               disabled={off} title={title} aria-describedby={why ? 'export-why' : undefined}
-              onClick={start}>
+              onClick={press}>
         {why === undefined && phase === 'ready' ? 'Export…' : 'Export'}
       </button>
     </span>
@@ -177,4 +233,6 @@ const note: CSSProperties = {
 }
 // Wrapping, not truncated: this is the one state where the sentence is the
 // point, and an ellipsis would cut off the half that says what to do.
+// Wrapping for the same reason as `err`: the names are the point.
+const warnNote: CSSProperties = { fontSize: 11.5, color: 'var(--warn)', maxWidth: 420, lineHeight: 1.3 }
 const err: CSSProperties = { fontSize: 11.5, color: '#fca5a5', maxWidth: 420, lineHeight: 1.3 }
