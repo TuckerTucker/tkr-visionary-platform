@@ -126,7 +126,11 @@ slices:
       - cut-several-takes-into-one-scene
     title: Export in the page, landing in the gallery
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "15e38e3: check_export, check_stage, check_edit pass on merged main;
+        smoke_outputs passes"
   - number: 6
     feature: tracks
     delivers: "Dropping below the last track makes one of the right kind at the drop
@@ -188,7 +192,11 @@ slices:
       - make-one-image-without-meeting-a-timeline
     title: The Pixi stage is the canvas for stills too
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "15e38e3: check_export, check_stage, check_edit pass on merged main;
+        smoke_outputs passes"
   - number: 9
     feature: tracks
     delivers: Picture and sound arrive together from H3 and stay linked; dragging
