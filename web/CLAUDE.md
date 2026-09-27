@@ -1176,8 +1176,13 @@ line is the format.
 
 H3 tops out at `H3_MAX_FRAMES` — 345 frames at 24fps, about 14.4 seconds — so
 anything with more than one beat in it is several runs. Film granularity is
-*frame · shot · scene · sequence · act · film*; this platform is for the first
-three, and past a scene you are in an NLE and out of scope.
+*frame · shot · scene · sequence · act · film*. Generation stops at a take —
+the model gives frames and shots, and nothing here asks it for more. Past a take
+is editing, and editing is in scope: OpenVideo arranges, previews and exports
+the cut in the page, multi-track, and Visionary fills the slots on its tracks.
+The `editing` capability in `_tkr_kit/` holds the plan and `docs/roadmap.md`
+Phase 7 holds why; the line this replaced — past a scene you are in an NLE — is
+retired because a rule still in context vetoes the work it describes.
 
 **The model gives you frames and shots. The scene is ours, and it is not a
 capability.** `[Shot N]` with cut times already lives inside one generation. What
@@ -1187,9 +1192,12 @@ their voices, the look and the LoRAs never belonged to a take in the first place
 plus whoever is new. Chaining is context the person should never have to rebuild,
 not something the model has to learn.
 
-`Continue` on the canvas is the whole gesture. It reads the last frame out of the
-clip that just landed, hands it to `first_frame`, and clears the prose. Three
-things about that are worth stating:
+`Continue` on the canvas is the whole gesture. It carries the finished take's
+sampler latent into the next run as pinned context — picture *and* sound, so
+motion and audio continue across the join rather than restarting from a still
+(`H3MC_*` in app.py). It also reads the last frame out of the clip, as the
+fallback when a latent has gone missing, and clears the prose. Three things
+about the frame are worth stating:
 
 - **The last frame is read in the page, not on a GPU.** The bytes are already
   served to a `<video>` on the canvas, so a route that decoded a frame

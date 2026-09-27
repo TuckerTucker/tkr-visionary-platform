@@ -22,6 +22,8 @@ because a veto that is not in context when someone adds a panel is not a veto.
 5. Video LoRA training — **not started, and the trainer is not musubi.** H3
    trains under AI Toolkit; see below.
 6. **The Dynamic Canvas** — next, and sketched rather than specified below
+7. **Editing** — takes become a scene you can cut, on OpenVideo. Planned as the
+   `editing` capability; see below
 
 The end state is one application where a generated still flows into a clip
 without a round trip through the filesystem — the "Animate" and "As reference"
@@ -116,6 +118,48 @@ The consequence: the interaction is mostly reachable and the physics is not, so
 this phase should chase the first tier and leave the third alone until the model
 exists. Attempting it, failing, and concluding the whole direction is fantasy is
 the specific mistake this paragraph exists to prevent.
+
+### Phase 7 — Editing
+
+`takes` has been recorded on the store since Continue existed, and nothing ever
+assembled it. A scene longer than 14.4 seconds was a folder of clips. This phase
+is the missing half, and it moves a line this file and `web/CLAUDE.md` used to
+draw at the scene: past a scene you were in an NLE and out of scope. Multi-track
+is now in — inserts, titles, your own footage and your own audio over the takes.
+
+**The engine is adopted, the editor is not written.** OpenVideo
+(`@openvideo/core` with `@openvideo/engine-pixi`) arranges, previews and exports
+in the page with WebCodecs; Visionary generates what goes on the tracks. The two
+meet at the slot — a place on a track that is empty (intent), rendering (a job)
+or filled (a take). A slot is one generation and holds the shots rendered in it,
+so the `[Shot N]` cuts H3 makes inside one take stay one take.
+
+**Where the edit is stored is the decision that settles the most.** One track of
+slots is small enough to own and compile from, the way a prompt is compiled from
+prose. Multi-track is not: positions, overlaps, transforms, keyframes, text and
+levels mirrored in our own format would be a second NLE schema. So intent stays
+ours in sidecars, and the arrangement is OpenVideo's IProject stored verbatim at
+a pinned version — the only record of arrangement from the first clip on V1.
+Takes, intent and every export stay plain files, so losing the dependency loses
+the arrangement and never the work.
+
+**Generation is an edit.** Render, choose a take and Continue are OpenVideo
+custom commands over the existing job/status/stop contract, so a trim and a
+render sit on one undo stack and nothing asks whether you are sure.
+
+What it does not take on, each for a reason already written here:
+
+- *Headless rendering on Modal.* It needs a runtime Chromium image; export lives
+  while the tab is open, and that was accepted.
+- *Stock media.* Browsing somebody else's footage is the marketplace veto.
+- *Export in Firefox.* OpenVideo previews there and cannot export; the control is
+  shown disabled with the reason on it.
+- *Regions on video.* `/api/video` takes none, so the tool is disabled over a
+  video slot rather than drawing boxes nothing reads.
+
+The veto list below binds it unchanged: duration still starts at zero — a still
+is a zero-duration scene, and the timeline appears when time is added — and
+tracks are made by a drop, never by a button.
 
 ### Where this is going, and what that vetoes
 
