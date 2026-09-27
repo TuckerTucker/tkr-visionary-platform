@@ -8,7 +8,28 @@ import {
   ACCEPT_ATTR, clockAt, dropFile, insertTitle, invitation, kindOf, nextTrackName, refusal,
   setTitleText, timeAtPx, useDrop, type DropKind,
 } from './drop'
+import { Inherited } from './Inherited'
+import { INSERT_MIN_SECONDS, INSERT_SECONDS, isEmptyInsert, insertOf, makeInsert } from './inherit'
+import { slotOf } from './project'
 import { useEdit } from './useEdit'
+
+/** How far a mouse or pen moves along the strip before a press is drawing an
+ *  insert rather than a press that wobbled on its way to the file picker. The
+ *  timeline's own lift distance (`Tracks`), for the same reason. */
+const DRAW_PX = 4
+/** How long a finger holds still on the strip before it is drawing. Any sooner
+ *  and every swipe that crosses the strip — it is the timeline's last row, the
+ *  one a thumb scrolling the cut lands on — would make an insert. */
+const DRAW_HOLD_MS = 300
+const DRAW_SLOP_PX = 8
+
+/** An insert at the playhead, `INSERT_SECONDS` long — I, and the strip's ▭. */
+function insertAtHead(): void {
+  const at = useEdit.getState().core?.store.getState().currentTime ?? 0
+  void makeInsert(at, at + INSERT_SECONDS * 1_000_000).then((r) => {
+    useDrop.setState({ error: failed(r) ? r : null })
+  })
+}
 
 /**
  * The strip under the last track, where a track is made by putting something
@@ -35,6 +56,12 @@ import { useEdit } from './useEdit'
  * at the playhead on a new T track, open for typing in place (`TitleEdit`). The
  * `T` at the strip's end is the same act for a hand with no keyboard.
  *
+ * **An insert is drawn, not added.** Drag along the strip and the stretch you
+ * cover becomes an empty slot on a new picture track over V1, opening with the
+ * cast, look and LoRAs of the scene it covers (`inherit.ts`). I on the timeline,
+ * or the ▭ beside the T, makes a three-second one at the playhead. A plain press
+ * still opens the file picker — the drag is what says "a time, not a file".
+ *
  * Mounted inside the timeline's scrolling body, after the lanes, so its left
  * edge is the timeline's zero.
  */
@@ -49,13 +76,22 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
   const pickAt = useRef(0)
   const [over, setOver] = useState<{ x: number; at: number; kind: DropKind | null; ok: 'yes' | 'maybe' | 'no' } | null>(null)
 
-  // T for a title, while the timeline has focus — bound on the timeline's own
-  // element, so it cannot mean anything anywhere else on the page.
+  /** An insert being drawn along the strip: where the press started and where
+   *  the pointer is, px from time zero. */
+  const [drawing, setDrawing] = useState<{ x0: number; x: number } | null>(null)
+  /** Set when a press ended as a drawn insert, so the click the browser sends
+   *  after it does not also open the file picker. */
+  const drew = useRef(false)
+
+  // T for a title and I for an insert, while the timeline has focus — bound on
+  // the timeline's own element, so they cannot mean anything anywhere else on
+  // the page.
   useEffect(() => {
     const host = zone.current?.closest<HTMLElement>('.edit-tracks')
     if (!host || phase !== 'ready') return
     const key = (e: globalThis.KeyboardEvent): void => {
-      if (e.key !== 't' && e.key !== 'T') return
+      const k = e.key.toLowerCase()
+      if (k !== 't' && k !== 'i') return
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return
       const t = e.target as HTMLElement
       if (t.closest('input,textarea,select,[contenteditable="true"]')) return
@@ -64,7 +100,8 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
       // focused into the prompt, and a T that made a title is not also the
       // first letter of a sentence.
       e.stopPropagation()
-      void insertTitle()
+      if (k === 't') void insertTitle()
+      else insertAtHead()
     }
     host.addEventListener('keydown', key)
     return () => host.removeEventListener('keydown', key)
@@ -117,6 +154,79 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
     picker.current?.click()
   }
 
+  /**
+   * A press on the strip: a click opens the picker (below); a drag along it
+   * draws an empty insert over the stretch it covers — past `DRAW_PX` with a
+   * mouse or pen, or after a still hold with a finger. The strip is where a
+   * track is made by putting something on it, and an insert is a track made by
+   * saying *when* rather than *what*: the empty space below the lanes, made a
+   * target for time as well as for files, and still no add-track button.
+   */
+  const press = (e: PointerEvent<HTMLDivElement>): void => {
+    // The strip's press is its own: it must not also start the timeline's
+    // seek-and-scrub, which captures the pointer and would swallow the click.
+    e.stopPropagation()
+    drew.current = false
+    if (e.button !== 0 || busy) return
+    const el = e.currentTarget
+    const id = e.pointerId
+    const x0 = xOf(e.clientX)
+    const cx0 = e.clientX
+    const cy0 = e.clientY
+    const touch = e.pointerType === 'touch'
+    let mode: 'wait' | 'draw' | 'off' = 'wait'
+    let x = x0
+    let timer = 0
+    const start = (): void => {
+      mode = 'draw'
+      window.clearTimeout(timer)
+      try { el.setPointerCapture(id) } catch { /* a pointer already gone ends below */ }
+      setDrawing({ x0, x })
+    }
+    if (touch) timer = window.setTimeout(() => { if (mode === 'wait') start() }, DRAW_HOLD_MS)
+    const move = (ev: globalThis.PointerEvent): void => {
+      if (ev.pointerId !== id) return
+      x = xOf(ev.clientX)
+      if (mode === 'draw') { setDrawing({ x0, x }); return }
+      if (mode !== 'wait') return
+      if (touch) {
+        // A finger that moves before the hold is up is scrolling the cut.
+        if (Math.hypot(ev.clientX - cx0, ev.clientY - cy0) > DRAW_SLOP_PX) { mode = 'off'; window.clearTimeout(timer) }
+      } else if (Math.abs(ev.clientX - cx0) > DRAW_PX) {
+        start()
+      }
+    }
+    const finish = (ok: boolean): void => {
+      window.clearTimeout(timer)
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      el.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('keydown', esc, true)
+      const was = mode
+      mode = 'off'
+      setDrawing(null)
+      if (was !== 'draw') return
+      drew.current = true
+      if (!ok) return
+      const a = timeAtPx(Math.min(x0, x), pxPerSec)
+      const b = timeAtPx(Math.max(x0, x), pxPerSec)
+      void makeInsert(a, b).then((r) => useDrop.setState({ error: failed(r) ? r : null }))
+    }
+    const up = (ev: globalThis.PointerEvent): void => { if (ev.pointerId === id) finish(true) }
+    const cancel = (ev: globalThis.PointerEvent): void => { if (ev.pointerId === id) finish(false) }
+    // Escape mid-draw drops the drawing, as it drops a drag on the lanes.
+    const esc = (ev: globalThis.KeyboardEvent): void => {
+      if (ev.key !== 'Escape' || mode !== 'draw') return
+      ev.preventDefault()
+      ev.stopPropagation()
+      finish(false)
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+    el.addEventListener('pointercancel', cancel)
+    window.addEventListener('keydown', esc, true)
+  }
+
   const key = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (e.target !== e.currentTarget) return
     if (e.key !== 'Enter' && e.key !== ' ') return
@@ -128,12 +238,18 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
     open(useEdit.getState().core?.store.getState().currentTime ?? 0)
   }
 
-  const label = over
-    ? over.ok === 'no'
-      ? 'Not something the timeline can place'
-      : `${over.kind ? `New ${nextTrackName(project, over.kind)}` : 'A new track'} at ${clockAt(over.at)}`
-    : busy ?? 'Drop your own footage, a photograph or music'
-  const hot = !!over && over.ok !== 'no'
+  const span = drawing
+    ? { left: Math.min(drawing.x0, drawing.x), width: Math.max(Math.abs(drawing.x - drawing.x0), INSERT_MIN_SECONDS * pxPerSec) }
+    : null
+  const label = span
+    ? `Empty insert on ${nextTrackName(project, 'video')} · ${clockAt(timeAtPx(span.left, pxPerSec))}–`
+      + `${clockAt(timeAtPx(span.left + span.width, pxPerSec))} — with the cast and look of V1 there`
+    : over
+      ? over.ok === 'no'
+        ? 'Not something the timeline can place'
+        : `${over.kind ? `New ${nextTrackName(project, over.kind)}` : 'A new track'} at ${clockAt(over.at)}`
+      : busy ?? 'Drop your own footage, a photograph or music — or drag along here for an empty insert'
+  const hot = (!!over && over.ok !== 'no') || !!span
 
   return (
     <div className="et-drop-wrap" style={S.wrap}>
@@ -144,13 +260,11 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
            title="Drop a file here, or press to pick one — it lands on a new track at that time"
            data-over={over ? over.ok : undefined}
            style={{ ...S.zone, ...(hot ? S.hot : null), ...(over?.ok === 'no' ? S.no : null) }}
-           onPointerDown={(e: PointerEvent<HTMLDivElement>) => {
-             // The strip's press is its own: it must not also start the
-             // timeline's seek-and-scrub, which captures the pointer and would
-             // swallow the click.
-             e.stopPropagation()
+           onPointerDown={press}
+           onClick={(e) => {
+             if (drew.current) { drew.current = false; return }
+             open(timeAtPx(xOf(e.clientX), pxPerSec))
            }}
-           onClick={(e) => open(timeAtPx(xOf(e.clientX), pxPerSec))}
            onKeyDown={key}
            onDragEnter={dragOver}
            onDragOver={dragOver}
@@ -159,13 +273,25 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
            }}
            onDrop={drop}>
         {over && <span aria-hidden="true" style={{ ...S.mark, left: over.x }} />}
+        {span && <span aria-hidden="true" id="edit-drawing" style={{ ...S.span, left: span.left, width: span.width }} />}
         <span className="et-drop-say" aria-live="polite"
-              style={{ ...S.say, left: over ? over.x + 6 : 8 }}>{label}</span>
+              style={{ ...S.say, left: span ? span.left + span.width + 6 : over ? over.x + 6 : 8 }}>{label}</span>
         <button type="button" id="edit-title" className="ico" style={S.title}
                 title="A title at the playhead — or press T on the timeline"
                 aria-label="Add a title at the playhead"
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); void insertTitle() }}>T</button>
+        <button type="button" id="edit-insert" className="ico" style={{ ...S.title, ...S.insert }}
+                title={`An empty insert over V1 at the playhead, ${String(INSERT_SECONDS)}s, with the cast and look `
+                  + 'of V1 there — or press I on the timeline, or drag along this strip'}
+                aria-label="Add an empty insert over V1 at the playhead"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); insertAtHead() }}>
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="currentColor">
+            <rect x="5" y="3" width="6" height="4" rx="1" />
+            <rect x="1" y="9" width="14" height="4" rx="1" opacity=".45" />
+          </svg>
+        </button>
         <input ref={picker} type="file" accept={ACCEPT_ATTR} multiple className="hide"
                onClick={(e) => e.stopPropagation()}
                onChange={(e) => {
@@ -201,7 +327,14 @@ export function DropZone({ pxPerSec = PX_PER_SEC }: { pxPerSec?: number }) {
  */
 export function TitleEdit({ clip, pxPerSec = PX_PER_SEC }: { clip: AnyClip; pxPerSec?: number }) {
   const editing = useDrop((s) => s.editing === clip.id)
-  if (clip.type !== 'Text') return null
+  const project = useEdit((s) => s.project)
+  // An insert is made on this strip too, and what it carries is drawn on it
+  // here — before the empty-insert test below, because an insert that has been
+  // rendered is a Video clip and still has its inherited context. The empty one
+  // is a Text clip only so it survives a reload (see `inherit.ts`); it has no
+  // words anybody should type over, so it never opens as a title.
+  if (insertOf(project, slotOf(clip))) return <Inherited clip={clip} />
+  if (clip.type !== 'Text' || isEmptyInsert(clip)) return null
   const text = typeof clip.text === 'string' ? clip.text : ''
   if (editing) return <TitleInput id={clip.id} text={text} />
   return (
@@ -287,6 +420,11 @@ const S: Record<string, CSSProperties> = {
   hot: { borderStyle: 'solid', borderColor: 'var(--line-2)', background: 'var(--wash-3)' },
   no: { cursor: 'no-drop', opacity: 0.6 },
   mark: { position: 'absolute', top: 0, bottom: 0, width: 1, background: 'var(--fg)', pointerEvents: 'none' },
+  span: {
+    position: 'absolute', top: 2, bottom: 2, borderRadius: 'var(--r-inner)', pointerEvents: 'none',
+    border: '1px dashed var(--line-2)', background: 'var(--wash-3)',
+  },
+  insert: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center' },
   say: {
     position: 'absolute', top: 0, bottom: 0, display: 'flex', alignItems: 'center',
     fontSize: 11, color: 'var(--dim)', whiteSpace: 'nowrap', pointerEvents: 'none',
