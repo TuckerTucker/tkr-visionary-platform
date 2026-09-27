@@ -57,21 +57,27 @@ export async function save(member: CastMember): Promise<string | null> {
  * The member is created synchronously by the caller — the picker needs a handle
  * to insert at the caret *now* — and this hydrates it: each file fetched off
  * its route, walked through `intake` so it lands in the pool exactly as a
- * dropped file would, then attached with its note and its sheet mark. Failures
- * are per-file and quiet: a character three of whose four files arrived is a
- * character, not an error, and the card shows exactly what made it.
+ * dropped file would, then attached with its note and its sheet mark.
+ *
+ * A file that does not come back is recorded on the member, not skipped. It
+ * used to be skipped, on the theory that three of four files is still a
+ * character — and it is, just not the one that was saved: the remaining set
+ * compiles to a valid document and renders somebody plausible. `missing` is
+ * what the validator refuses by name and the card lists.
  */
 export async function hydrate(memberId: string, saved: SavedCharacter): Promise<void> {
   const st = useStore.getState()
   if (saved.note) st.patchCast(memberId, { note: saved.note })
   if (saved.retention) st.patchCast(memberId, { retention: saved.retention })
+  const missing: { file: string; kind: string }[] = []
   for (const ref of saved.refs) {
+    const lost = () => { missing.push({ file: ref.file, kind: ref.kind }) }
     try {
       const res = await fetch(characterFileUrl(saved.handle, ref.file))
-      if (!res.ok) continue
+      if (!res.ok) { lost(); continue }
       const blob = await res.blob()
       const got = await intake(new File([blob], ref.file, { type: blob.type }))
-      if (!got) continue
+      if (!got) { lost(); continue }
       const now = useStore.getState()
       now.addFile(got)
       now.attachSlot(memberId, got.id, got.kind)
@@ -82,7 +88,8 @@ export async function hydrate(memberId: string, saved: SavedCharacter): Promise<
         })
       }
     } catch {
-      // A file that would not fetch is a gap on the card, visible there.
+      lost()
     }
   }
+  if (missing.length) useStore.getState().patchCast(memberId, { missing })
 }

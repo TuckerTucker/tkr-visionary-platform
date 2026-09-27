@@ -6852,6 +6852,36 @@ MAX_H3_REF_VIDEOS = 3
 MAX_H3_REF_AUDIOS = 3
 MAX_H3_REF_TOTAL = 12
 
+
+def _ref_over_budget(n_imgs: int, n_vids: int, n_auds: int) -> str | None:
+    """
+    The sentence refusing a reference set over ref2va's limits, or None.
+
+    Refused rather than trimmed. Both routes used to slice each list to its cap
+    — ten pictures quietly became nine — and which one fell off the end is the
+    choice that decides who is in the shot: a scene's cast points at pictures
+    by index, so the dropped one could be somebody's only face. The page's
+    budget stops this before a request is sent; a stale tab or a script does
+    not have that budget, and this is what it meets instead.
+
+    One function for `/api/compile` and `/api/video`, because a preview that
+    clamps while the run refuses is a preview that disagrees with what runs.
+    """
+    for got, cap, what in ((n_imgs, MAX_H3_REFS, "images"),
+                           (n_vids, MAX_H3_REF_VIDEOS, "videos"),
+                           (n_auds, MAX_H3_REF_AUDIOS, "audio clips")):
+        if got > cap:
+            return (f"{got} reference {what}; the model takes at most {cap}. "
+                    f"Remove {got - cap} — nothing is dropped for you.")
+    # Audio counts toward the same twelve. It was left out of this sum when
+    # the audio channel landed, so 9 images + 3 videos + 3 audio passed a
+    # check whose message says the limit is 12 — and the refusal would then
+    # come from the node, mid-run, on a warm H100.
+    if n_imgs + n_vids + n_auds > MAX_H3_REF_TOTAL:
+        return (f"{MAX_H3_REF_TOTAL} references in total is the model's limit "
+                f"({n_imgs} images + {n_vids} videos + {n_auds} audio).")
+    return None
+
 # Reference tokens ride through every sampling step, so their size is a per-step
 # cost, not a one-off encode. "match" scales each reference to the generation's
 # pixel area; "max" uses the 2048px short edge the reference pipeline was built
@@ -8222,6 +8252,21 @@ def _validate_scene(raw: Any, *, n_refs: int, n_vids: int, n_auds: int = 0,
         if marker not in H3_RETENTION:
             raise ValueError(f"No such retention marker: {marker!r}. "
                              f"One of: {', '.join(H3_RETENTION)}")
+
+        # A saved character recalled with files that did not come back. The
+        # rest of the set still compiles to a valid document, and that is the
+        # trouble: an identity rendered from three of its four references is a
+        # different identity, plausible and wrong. So the gap is refused by
+        # name until somebody re-attaches the file or drops it on purpose.
+        gone = [g for g in (entry.get("missing") or []) if isinstance(g, dict)]
+        if gone:
+            what = ", ".join(f"{g.get('kind') or 'image'} {g.get('file')!s}"
+                             for g in gone)
+            raise ValueError(
+                f"@{handle} was recalled without {what} — "
+                f"{'it is' if len(gone) == 1 else 'they are'} no longer in "
+                f"characters/{handle}/. Attach {'it' if len(gone) == 1 else 'them'} "
+                f"again, or press Continue with what is here on @{handle}'s card.")
 
         refs: list[dict[str, Any]] = []
         for ref in list(entry.get("refs") or []):
@@ -12153,15 +12198,17 @@ def web():
         typed = str(payload.get("prompt") or "").strip()
         try:
             shot = _validate_shot(payload.get("shot"))
-            n_refs = max(0, min(MAX_H3_REFS, int(payload.get("references") or 0)))
-            n_vids = max(0, min(MAX_H3_REF_VIDEOS, int(payload.get("ref_videos") or 0)))
-            n_auds = max(0, min(MAX_H3_REF_AUDIOS, int(payload.get("ref_audios") or 0)))
+            n_refs = max(0, int(payload.get("references") or 0))
+            n_vids = max(0, int(payload.get("ref_videos") or 0))
+            n_auds = max(0, int(payload.get("ref_audios") or 0))
             roles = _validate_ref_roles(payload.get("ref_roles"), n_refs)
         except (TypeError, ValueError) as exc:
             return {"error": str(exc)}
-
         if str(payload.get("kind") or "video") == "image":
             return {"prompt": _compile_image_prompt(typed, shot)}
+        over = _ref_over_budget(n_refs, n_vids, n_auds)
+        if over:
+            return {"error": over}
         d = VIDEO_MODELS["h3"]["defaults"]
         try:
             seconds = float(payload.get("seconds") or d["seconds"])
@@ -12380,19 +12427,14 @@ def web():
                                  "or clear the Motion tile, but not both ways "
                                  "at once."}
 
-        refs = [r for r in (payload.get("references") or []) if r][:MAX_H3_REFS]
-        vids = [v for v in (payload.get("ref_videos") or []) if v][:MAX_H3_REF_VIDEOS]
-        auds = [a for a in (payload.get("ref_audios") or []) if a][:MAX_H3_REF_AUDIOS]
+        refs = [r for r in (payload.get("references") or []) if r]
+        vids = [v for v in (payload.get("ref_videos") or []) if v]
+        auds = [a for a in (payload.get("ref_audios") or []) if a]
         if (refs or vids or auds) and not supports["references"]:
             return {"error": f"{spec['label']} does not take references."}
-        # Audio counts toward the same twelve. It was left out of this sum when
-        # the audio channel landed, so 9 images + 3 videos + 3 audio passed a
-        # check whose message says the limit is 12 — and the refusal would then
-        # come from the node, mid-run, on a warm H100.
-        if len(refs) + len(vids) + len(auds) > MAX_H3_REF_TOTAL:
-            return {"error": f"{MAX_H3_REF_TOTAL} references in total is the "
-                             f"model's limit ({len(refs)} images + "
-                             f"{len(vids)} videos + {len(auds)} audio)."}
+        over = _ref_over_budget(len(refs), len(vids), len(auds))
+        if over:
+            return {"error": over}
 
         # The pill rail, checked before anything is rented. A pill the backend
         # does not know is a stale tab, and the answer to it is a form error

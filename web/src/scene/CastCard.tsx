@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { useSettled } from '../ui/gesture'
 import { useStore } from '../store'
+import { ErrorNote } from '../ui/ErrorNote'
 import { save } from './arsenal'
 import { Material } from './Material'
 import { RETENTION, RETENTION_LABEL, handleOf, type CastMember } from './model'
@@ -138,6 +139,22 @@ export function CastCard({ member }: { member: CastMember }) {
 
       <label>References</label>
       <Material member={member} />
+
+      {/* **A recall that came back short says so here, where the files are.**
+          The validator refuses the scene until this is answered, and this is
+          the answer: attach the file again, or decide the set you have is the
+          person — one press either way, because after re-attaching there is
+          nothing left to say but "this is them". */}
+      {member.missing?.length ? <>
+        <ErrorNote err={`Not in characters/${member.name}/ any more: `
+          + `${member.missing.map((m) => m.file).join(', ')}. Attach `
+          + `${member.missing.length === 1 ? 'it' : 'them'} again, or continue `
+          + `with what is here — @${member.name} will render from these alone.`} />
+        <button type="button" className="tkeep"
+                onClick={() => { s.patchCast(member.id, { missing: [] }) }}>
+          Continue with what is here
+        </button>
+      </> : null}
 
       {/* **Save is the Arsenal's whole write surface, and it is deliberate.**
           "It never remembers unless told" — this button is the telling. The

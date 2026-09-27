@@ -151,6 +151,11 @@ export type CastMember = {
    *  looser default is a likeness quietly allowed to drift. */
   retention: string
   refs: CastRef[]
+  /** Files a recalled character did not come back with. Carried to the
+   *  validator, which refuses the scene by name until they are attached again
+   *  or accepted as gone — four references rendered from three is a different
+   *  person, and nothing downstream would say so. */
+  missing?: { file: string; kind: string }[]
 }
 
 // ── the timeline ────────────────────────────────────────────────────────────
@@ -437,6 +442,7 @@ export function readScene(
     name: c.name,
     note: c.note,
     retention: c.retention,
+    ...(c.missing?.length ? { missing: c.missing } : {}),
     refs: c.refs.flatMap((r) => {
       const f = pool[r.fileId]
       if (!f) return []

@@ -864,6 +864,36 @@ check("an empty row is refused rather than compiled to a shot about nothing",
           n_refs=0, task="t2va")))
 
 
+print("\na recall that came back short")
+# The Arsenal fetches a saved character's files one by one. One that does not
+# arrive used to be skipped, and three references of four compile to a valid
+# document about somebody else.
+short = {"cast": [{"name": "maya", "refs": [
+             {"kind": "image", "index": 0, "slots": ["image"]}],
+          "missing": [{"file": "profile.png", "kind": "image"}]}],
+         "shots": [{"line": "@maya waits by the door", "beats": 1}]}
+why = refused(lambda: build(short, n_refs=1))
+check("a character missing a saved file is refused, not rendered from the rest",
+      bool(why), True)
+check("and the refusal names the handle and the file",
+      "@maya" in why and "profile.png" in why, True)
+check("an empty missing list is the ordinary case",
+      bool(build({**short, "cast": [{**short["cast"][0], "missing": []}]},
+                 n_refs=1)), True)
+
+
+print("\nthe reference budget")
+over = G["_ref_over_budget"]
+check("nine pictures, three videos and nothing else is within every limit",
+      over(9, 3, 0), None)
+check("ten pictures are refused, not trimmed to nine",
+      "10 reference images" in (over(10, 0, 0) or ""), True)
+check("four videos are refused by their own cap",
+      "4 reference videos" in (over(0, 4, 0) or ""), True)
+check("audio counts toward the twelve",
+      "12 references in total" in (over(9, 3, 1) or ""), True)
+
+
 print("\nthe degrade")
 check("no scene at all leaves the flat path exactly as it was",
       G["_compile_h3_prompt"](typed="empty diner, 3am", pills=[], task="t2va",

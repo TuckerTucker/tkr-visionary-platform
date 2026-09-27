@@ -94,6 +94,10 @@ SHOT = {
     "_h3_handles", "_h3_subjects", "_h3_label", "_h3_speakers",
     "_h3_resolve", "_h3_task_types", "_h3_shot_text", "_compile_h3_scene",
     "_h3_list", "_h3_asset", "_h3_cap", "_h3_across",
+    # The reference budget. `/api/compile` and `/api/video` both refuse with it,
+    # and a smoke test that re-derived the limits would agree with itself.
+    "MAX_H3_REFS", "MAX_H3_REF_VIDEOS", "MAX_H3_REF_AUDIOS", "MAX_H3_REF_TOTAL",
+    "_ref_over_budget",
 }
 
 # The captioner's two menus, for the same reason the vocabulary is here: the
