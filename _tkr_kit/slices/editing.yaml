@@ -95,6 +95,7 @@ slices:
       - web/src/edit/Clip.tsx
       - web/src/edit/cuts.ts
       - web/src/edit/tracks.css
+      - tools/ui-checks/check_cuts.py
     depends_on:
       - 3
     story_ids:
@@ -118,6 +119,7 @@ slices:
       - web/src/gallery
       - web/src/edit/export.ts
       - web/src/edit/Export.tsx
+      - tools/ui-checks/check_export.py
     depends_on:
       - 3
     story_ids:
@@ -160,6 +162,7 @@ slices:
       - web/src/video/useVideo.ts
       - web/src/edit/engine.ts
       - web/src/edit/useEdit.ts
+      - tools/ui-checks/check_slots.py
     depends_on:
       - 3
     story_ids:
@@ -178,6 +181,7 @@ slices:
       - web/src/edit/Stage.tsx
       - web/src/App.tsx
       - web/src/edit/edit.css
+      - tools/ui-checks/check_stage.py
     depends_on:
       - 3
     story_ids:
