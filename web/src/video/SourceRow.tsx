@@ -90,10 +90,10 @@ export function SourceRow() {
   // The out-point, live: a trim nudged after Continue moves what Generate will
   // send, so the tile reads the clip rather than what Continue captured. The
   // project is subscribed to for exactly that — `continueAtFor` reads it.
-  useEdit((e) => e.project)
+  const project = useEdit((e) => e.project)
   const armed = useContinueCut((c) => c.armed)
   useContinueCut((c) => c.cuts)
-  const at = s.continueFrom ? continueAtFor(s.continueFrom) : null
+  const at = s.continueFrom ? continueAtFor(s.continueFrom, project) : null
   const cut = s.continueFrom && at !== null ? cutFor(s.continueFrom, Number(at.toFixed(3))) : null
   // The frame tile holds the out-point's frame when Continue read it there and
   // nobody has replaced it since — the one case the tile has to say so, because
@@ -111,13 +111,12 @@ export function SourceRow() {
           apart, none hidden inside the Continue button. Not a DropTile:
           nothing can be dropped on it, because its value is a fact about the
           last take rather than a file. */}
-      {/* Wide enough for its words: `.set` is sized for a thumbnail, and a
-          Motion tile with no picture and its lead hidden was an empty square
-          nobody could read the cut off. */}
+      {/* `.motion` (ui.css): a set tile whose face is words, not a picture —
+          `.set` alone is a 32px thumbnail box with its lead hidden, which was
+          an empty square nobody could read the cut off. */}
       {motion && (
-        <button type="button" className="drop mini set" id="v-motion"
+        <button type="button" className="drop mini set motion" id="v-motion"
                 data-at={at ?? undefined} data-snap={cut?.snap ?? undefined}
-                style={{ width: 'auto', padding: '0 8px' }}
                 title={(at === null
                   ? `Motion and audio continue from the end of take ${s.continueFrom ?? ''}.`
                   : cut
@@ -127,13 +126,10 @@ export function SourceRow() {
                       + 'latent’s 17-frame grid and says how far when you Generate.')
                   + ` Click to fall back to its ${at === null ? 'last frame' : 'frame at the out-point'}.`}
                 onClick={() => s.setContinueFrom(null)}>
-          <span className="lead">Motion ›</span>
-          {/* A <b>, not a span: `.drop.mini>span` is pinned to a 16px icon box
-              and `.set>.lead` is hidden, so either would carry nothing. */}
-          <b id="v-motion-at">
+          <span className="lead" id="v-motion-at">
             {at === null ? 'Motion' : `Motion · ${secs(cut?.continuedAt ?? at)}`}
             {cut && cut.snap > 0 ? ` (−${secs(cut.snap)})` : ''}
-          </b>
+          </span>
         </button>
       )}
       {cutFrame !== null && (

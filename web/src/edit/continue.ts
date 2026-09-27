@@ -14,6 +14,13 @@
  * far it moved (`continued_at`, `continue_snap`). An untrimmed take sends no
  * `continue_at` at all, so its behaviour is byte-for-byte what it was.
  *
+ * **When the continuation lands, the source's out-point moves to the snap.**
+ * The new take opens where the context ended, `continued_at`, and the source
+ * clip would otherwise still play on to the out-point it had — up to 16 frames
+ * that both sides of the join then show, the same motion twice. So the landing
+ * edit (`slot.continue`) also trims the source back to `continued_at`, one undo
+ * entry for both, and each slot says what the snap did (Slot.tsx).
+ *
  * **The out-point is read when Generate is pressed, not when Continue was.**
  * Continue arms and Generate spends, and between the two somebody can nudge the
  * trim another frame — a value captured at arm time would send the cut they had
@@ -29,7 +36,6 @@ import type { AnyClip, IProject } from '@openvideo/core'
 import { sourceUs } from './cuts'
 import { sec } from './engine'
 import { clipOfSlot } from './slots'
-import { useEdit } from './useEdit'
 
 const DEFAULT_FPS = 24
 
@@ -76,8 +82,9 @@ export type Armed = {
 }
 
 /** Where the server cut, as it reported it: the out-point asked for, where the
- *  context now ends, and how far back the snap moved it. */
-export type Cut = { requested: number; continuedAt: number; snap: number }
+ *  context now ends, and how far back the snap moved it — and `from`, the take
+ *  it cut, when the page sent the request (a status does not name it). */
+export type Cut = { requested: number; continuedAt: number; snap: number; from?: string }
 
 type ContinueState = {
   armed: Armed | null
@@ -104,12 +111,17 @@ function clipPlaying(project: IProject | null, jobId: string, slotId: string | n
 }
 
 /**
- * The out-point to continue `jobId` from, read live — see the file comment.
- * Null means continue from the end, which is also what an untrimmed take
- * means, so an unarmed or untrimmed continuation sends nothing new.
+ * The out-point to continue `jobId` from, read live off `project` (the drawn
+ * arrangement, `useEdit`'s) — see the file comment. Null means continue from
+ * the end, which is also what an untrimmed take means, so an unarmed or
+ * untrimmed continuation sends nothing new.
+ *
+ * The project is handed in rather than read from `useEdit` here: `useEdit`
+ * reads this file's cuts when a continuation lands, and a module each of the
+ * two imports is an import cycle whose evaluation order decides which of them
+ * sees the other undefined.
  */
-export function continueAtFor(jobId: string): number | null {
-  const project = useEdit.getState().project
+export function continueAtFor(jobId: string, project: IProject | null): number | null {
   const armed = useContinueCut.getState().armed
   const clip = clipPlaying(project, jobId, armed?.jobId === jobId ? armed.slotId : null)
   if (clip) return outPointOf(clip, project?.settings.fps)
@@ -117,9 +129,11 @@ export function continueAtFor(jobId: string): number | null {
 }
 
 /** The `/api/video` fields a continuation adds beside `continue_from`. */
-export function continueAtBody(continueFrom: string | null): { continue_at?: number } {
+export function continueAtBody(
+  continueFrom: string | null, project: IProject | null,
+): { continue_at?: number } {
   if (!continueFrom) return {}
-  const at = continueAtFor(continueFrom)
+  const at = continueAtFor(continueFrom, project)
   return at === null ? {} : { continue_at: Number(at.toFixed(3)) }
 }
 
@@ -139,17 +153,52 @@ export function noteCut(runId: string, body: Record<string, unknown>, said: Reco
   // A status carries where the cut landed and how far it moved, not what was
   // asked — the sum is what was asked, to the millisecond both are rounded to.
   const requested = num(body.continue_at) ?? Number((continuedAt + snap).toFixed(3))
-  const from = typeof body.continue_from === 'string' ? body.continue_from : null
-  const cut: Cut = { requested, continuedAt, snap }
-  useContinueCut.setState((s) => ({
-    cuts: { ...s.cuts, [runId]: cut, ...(from && { [cutKey(from, requested)]: cut }) },
-  }))
+  const sent = typeof body.continue_from === 'string' ? body.continue_from : null
+  useContinueCut.setState((s) => {
+    // The finished job's status does not say which take it continued; the
+    // reply to the request did, so the source filed then is kept — it is what
+    // tells a landing continuation whose out-point to move (`landedCut`).
+    const from = sent ?? s.cuts[runId]?.from ?? null
+    const cut: Cut = { requested, continuedAt, snap, ...(from !== null && { from }) }
+    return {
+      cuts: { ...s.cuts, [runId]: cut, ...(from !== null && { [cutKey(from, requested)]: cut }) },
+    }
+  })
+}
+
+/**
+ * The cut take `jobId` continued from, read once as it lands: the take it cut
+ * and where, or null when it was no cut or its source is not known.
+ *
+ * The continuation opens at `continuedAt`, which the snap put up to 16 frames
+ * before the out-point the source clip still shows — so the source's out-point
+ * moves back to it in the same edit (`slot.continue`'s `cut`), or those frames
+ * of motion play twice across the join.
+ */
+export function landedCut(jobId: string): { from: string; continuedAt: number } | null {
+  const cut = useContinueCut.getState().cuts[jobId]
+  return cut?.from ? { from: cut.from, continuedAt: cut.continuedAt } : null
 }
 
 /** The cut the server made for take `jobId`, or null — what a slot playing
  *  that take shows. */
 export function useTakeCut(jobId: string | null): Cut | null {
   return useContinueCut((s) => (jobId ? s.cuts[jobId] ?? null : null))
+}
+
+/**
+ * The cut a continuation of take `jobId` moved that take's out-point back for,
+ * while the out-point is still where it was moved to — what the *source* slot
+ * shows. Derived from the clip rather than recorded at landing, so an undo, or
+ * a trim somebody makes afterwards, takes the mark away with the reason for it.
+ */
+export function useSourceCut(jobId: string | null, outAt: number | null, fps: number = DEFAULT_FPS): Cut | null {
+  return useContinueCut((s) => {
+    if (!jobId || outAt === null) return null
+    const half = 1 / (fps > 0 ? fps : DEFAULT_FPS) / 2
+    return Object.values(s.cuts).find((c) =>
+      c.from === jobId && c.snap > 0 && Math.abs(c.continuedAt - outAt) < half) ?? null
+  })
 }
 
 /** The cut the armed continuation will make, once the server has said. */

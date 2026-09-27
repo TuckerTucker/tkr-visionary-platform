@@ -106,7 +106,7 @@ export function videoBody(s: Store): Record<string, unknown> {
     // Where the cut is, when the take was trimmed — read now, not when
     // Continue was pressed (see `edit/continue.ts`). Absent for a take played
     // to its end, which keeps an untrimmed continuation's body what it was.
-    ...continueAtBody(s.continueFrom),
+    ...continueAtBody(s.continueFrom, useEdit.getState().project),
     // The cast's files when there is a cast, and the flat trays otherwise. Never
     // both: `<Picture N>` is a *position* in this array, so a cast ref pointing
     // at index 1 and a tray photo also sitting at index 1 is a well-formed

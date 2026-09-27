@@ -40,6 +40,10 @@
  *   dissolve where the cut used to be. Other tracks are not moved: an overlay
  *   sits at a time, not after a clip, and guessing which it belongs to is a
  *   guess.
+ * - *A continuation moves its source's out-point to where it opens.* The
+ *   server snaps the cut down onto the motion latent's grid, so without this
+ *   up to 16 frames play twice across the join. Same command, so one undo puts
+ *   the source's trim back and takes the continuation out (`cutBack`).
  * - *`take.choose` carries the clip, not only the index.* The handler cannot
  *   read the take list (it lives in the store, not the Core) or a file's length
  *   (that is an async read); the caller does both and hands over the clip the
@@ -48,7 +52,7 @@
 import type { AnyClip, CommandHandler, IProject, ITrack, Patch } from '@openvideo/core'
 
 import type { Engine } from './engine'
-import { relayV1, v1Clips } from './cuts'
+import { edgeOf, planTrim, refused, relayV1, v1Clips } from './cuts'
 import { slotOf, v1, v1Track } from './project'
 
 export const SLOT_RENDER = 'slot.render'
@@ -79,8 +83,17 @@ export type TakeChoosePayload = { slotId: string; index: number; clip: AnyClip; 
 
 /** `slot.continue` — a new slot, `slotId`, filled with `clip`, directly after
  *  `fromSlotId` on its track. With `fromSlotId` gone (removed, or undone while
- *  the take rendered) the new slot goes on the end of V1. */
-export type SlotContinuePayload = { fromSlotId: string; slotId: string; clip: AnyClip; keepGaps?: boolean }
+ *  the take rendered) the new slot goes on the end of V1.
+ *
+ *  `cut` is where the continuation opens in its source: take `jobId`, `to` µs
+ *  into it (`continued_at`). See `cutBack`. */
+export type SlotContinuePayload = {
+  fromSlotId: string
+  slotId: string
+  clip: AnyClip
+  keepGaps?: boolean
+  cut?: { jobId: string; to: number }
+}
 
 type State = Pick<IProject, 'clips' | 'tracks' | 'settings'>
 
@@ -212,9 +225,13 @@ function swap(state: State, old: AnyClip, next: AnyClip, p: Placing): Patch[] {
  *
  * With no track at all, V1 is created in the same patches, so the edit and its
  * undo are still one entry.
+ *
+ * `state` may already hold other changes made in the same edit; `was` is the
+ * state before any of them, which is what the patches are taken against — so
+ * the undo puts back what was there, not the half-made edit.
  */
 function insert(state: State, trackId: string | null, afterId: string | null, at: number | null,
-  span: number, clip: AnyClip, p: Placing): Patch[] {
+  span: number, clip: AnyClip, p: Placing, was: State = state): Patch[] {
   const existing = (trackId ? state.tracks.find((t) => t.id === trackId) : undefined) ?? v1(state)
   const tracks = existing
     ? state.tracks.map((t) => (t.id === existing.id ? { ...t, clipIds: [...t.clipIds, clip.id] } : t))
@@ -224,12 +241,12 @@ function insert(state: State, trackId: string | null, afterId: string | null, at
     const i = afterId ? order.findIndex((c) => c.id === afterId) : -1
     order.splice(i >= 0 ? i + 1 : order.length, 0, clip)
     const after = relayV1({ settings: state.settings, tracks, clips: { ...state.clips, [clip.id]: clip } }, order)
-    return patchesFor(state, after, null)
+    return patchesFor(was, after, null)
   }
   const start = at ?? (existing ? endOf(state, existing) : 0)
   const next = placed(clip, start)
   const clips = ripple({ ...state.clips, [next.id]: next }, existing, start + span, lengthOf(next) - span, next.id)
-  return patchesFor(state, { ...state, tracks, clips }, null)
+  return patchesFor(was, { ...state, tracks, clips }, null)
 }
 
 function endOf(state: State, track: ITrack): number {
@@ -254,15 +271,52 @@ export const takeChoose: CommandHandler<TakeChoosePayload> = (state, cmd) => {
   return swap(state, old, stamped(clip, slotId), { keepGaps: !!keepGaps })
 }
 
+/**
+ * `from` with its out-point moved back to `cut.to` — the point its
+ * continuation opens at — or null when there is nothing to move.
+ *
+ * The server snaps a continuation's out-point *down* onto the latent's 17-frame
+ * grid, so the new take opens up to 16 frames before where the source clip's
+ * picture stops. Left there, the join plays that stretch of motion twice: once
+ * as the source's tail, again as the continuation's head. The source is cut
+ * back in the same edit so the two meet where the motion does, and one undo
+ * restores both.
+ *
+ * It is `planTrim`'s arithmetic — frame-snapped, clamped to the file and to the
+ * shortest clip a trim may leave, the file's length written down — so a cut
+ * made here is the cut the out handle would have made, and undoes and re-trims
+ * like one. Nothing moves when:
+ *
+ * - the clip no longer plays the take that was continued (a different take was
+ *   chosen into the slot while this one rendered — its out-point is not the
+ *   one the snap was measured against);
+ * - the cut is not earlier than the out-point it has (nobody lengthens a clip
+ *   on the strength of a continuation);
+ * - V1 is holding a gap for a clip whose file would not load: a trim is refused
+ *   then (`v1Lock`) for the reason the gap is kept, and this is a trim.
+ */
+function cutBack(state: State, from: AnyClip, cut: { jobId: string; to: number }): AnyClip | null {
+  if (from.metadata?.jobId !== cut.jobId) return null
+  const plan = planTrim(asProject(state), from.id, 'out', cut.to)
+  if (refused(plan)) return null
+  const trimmed = plan.project.clips[from.id]
+  const had = edgeOf(from, 'out')
+  return trimmed && edgeOf(trimmed, 'out') < had ? trimmed : null
+}
+
 /** See `SlotContinuePayload`. */
 export const slotContinue: CommandHandler<SlotContinuePayload> = (state, cmd) => {
-  const { fromSlotId, slotId, clip, keepGaps } = cmd.payload
+  const { fromSlotId, slotId, clip, keepGaps, cut } = cmd.payload
   const p = { keepGaps: !!keepGaps }
   const next = stamped(clip, slotId)
   const from = inSlot(state, fromSlotId)
   const track = from ? trackOf(state, from.id) : null
   if (!from || !track) return insert(state, null, null, null, 0, next, p)
-  if (relays(state, track, p)) return insert(state, track.id, from.id, null, 0, next, p)
+  if (relays(state, track, p)) {
+    const cutFrom = cut ? cutBack(state, from, cut) : null
+    const put = cutFrom ? { ...state, clips: { ...state.clips, [from.id]: cutFrom } } : state
+    return insert(put, track.id, from.id, null, 0, next, p, state)
+  }
   return insert(state, track.id, null, from.timing.display.to, 0, next, p)
 }
 

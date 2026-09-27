@@ -45,6 +45,7 @@ import {
   appendTake, atEndOfV1, emptyProject, mediaSrcs, mintSlotId, park, readProject, rebase,
   settingsFor, slotOf, takePayload, takeSrc, v1, V1_ID, v1Track, withParked, type Parked,
 } from './project'
+import { landedCut } from './continue'
 import {
   registerCommands, SLOT_CONTINUE, SLOT_RENDER, TAKE_CHOOSE,
   type SlotContinuePayload, type SlotRenderPayload, type TakeChoosePayload,
@@ -631,8 +632,12 @@ async function land(s: Session, core: Core, take: SlotTake): Promise<void> {
     return
   }
   if (target?.kind === 'continue') {
+    // Where the server said the continuation opens, so the source's out-point
+    // moves there in the same undo entry — see `cutBack` in commands.ts.
+    const cut = landedCut(take.jobId)
     const payload: SlotContinuePayload = {
       fromSlotId: target.from, slotId, clip: fresh(read), keepGaps: holdsGap(),
+      ...(cut && { cut: { jobId: cut.from, to: Math.round(us(cut.continuedAt)) } }),
     }
     core.execute(withId({ type: SLOT_CONTINUE, payload }))
     return

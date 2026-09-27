@@ -2158,6 +2158,12 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
 .drop.mini img{width:100%;height:100%;max-height:none;object-fit:cover;border-radius:0}
 .drop.mini.set{width:32px;padding:0;border-style:solid;border-color:var(--line-2)}
 .drop.mini.set>.lead{display:none}
+/* The Motion tile (SourceRow): set, but with no picture — its words are its
+   face, and they carry where the cut landed. Under `.set` alone it was a 32px
+   square with its only label hidden, which is a tile nobody can read the cut
+   off. Solid like every set tile, wide enough for its words. */
+.drop.mini.set.motion{width:auto;padding:0 8px}
+.drop.mini.set.motion>.lead{display:block;color:inherit;font-size:12px}
 /* Out of play this run because its opposite number is filled. Dimmed rather
    than removed: the row's whole job is to show that keyframes and references
    are alternatives, and a control that disappears when you use its neighbour
