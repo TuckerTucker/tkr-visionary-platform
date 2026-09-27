@@ -22,7 +22,11 @@ slices:
       - cut-several-takes-into-one-scene
     title: OpenVideo pinned into the image build
     layer: integration
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "5e9ba70: smoke_pins web passes; typecheck/build pass; engine spike in
+        Chrome played, seeked, round-tripped, undid and exported under the CSP"
   - number: 2
     feature: scene-assembly
     delivers: scenes/{id}/ holding the intent sidecars, beside the takes they
@@ -44,7 +48,11 @@ slices:
       - cut-several-takes-into-one-scene
     title: A scene folder on the volume, and the route that reads and writes it
     layer: data
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "01d3d3c: tools/smoke_scenes.py passes; typecheck/build pass; save-reload
+        loop driven in Chrome (23 checks)"
   - number: 3
     feature: scene-assembly
     delivers: The store's `takes` compiled into an IProject on V1 and played on the
@@ -201,7 +209,11 @@ slices:
       - cut-several-takes-into-one-scene
     title: The arrangement stored as a pinned IProject
     layer: data
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "7c1ff65: smoke_scenes arrangement section (22 checks) passes; smoke_auth
+        passes; typecheck/build pass, entry chunk has no engine"
   - number: 11
     feature: generative-commands
     delivers: Trim, reorder, choose a take and render all undo from one history.
