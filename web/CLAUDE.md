@@ -64,6 +64,14 @@ and two domains, and the page follows the domains.
   parked at 0:00 — the product's best moment spent asking for a click. The
   soundtrack is one tap away on the native controls.
 
+  **Once the scene has a cut, the stage holds the landed take paused at its
+  start** — the playhead moves to it, and it does not play. The muted file
+  still bridges while the Studio reads it, so the land is announced; but the
+  stage plays the *cut*, which has sound (a detached track's included), and a
+  soundtrack starting on its own is what the muted-autoplay rule exists to
+  prevent. Play is one press on the timeline. Once per job, so a later edit
+  does not drag the head back to the take that landed last.
+
 - **The canvas is the largest thing on screen, always.** Options live in a bar
   under it, never a rail beside it: a settings column costs the picture 384px
   of the one dimension it cannot get back, and vertical is the cheap axis. The
@@ -1213,6 +1221,61 @@ about the frame are worth stating:
 
 What does not carry is the prose. A take is a beat, and reopening on the sentence
 you already rendered invites editing the last one rather than writing the next.
+
+**One generation per render; the rest waits as pending slots.** Generate used to
+send every shot with the seconds summed, the server clamped the frames to one
+generation, and the document's `[Shot N]` cut times ran past the end of the clip
+— shots that were asked for and never rendered. Now a render sends
+`splitScene`'s first generation. When that take lands with shots left, Continue
+is armed from it and the composer holds the remainder; nothing renders on its
+own, because three minutes of GPU per link is the person's to spend. A composer
+somebody wrote in during the render is left alone.
+
+- **The shot bars live inside the V1 slots.** A slot is one generation, and H3
+  makes the cuts between its shots inside one take, so each take records its
+  shots and its slot draws them as hairlines — not clips of their own. The
+  composer's own track and the edit timeline were the same film drawn twice at
+  one scale; with takes there is one timeline, and the composer's shots are the
+  dashed pending slots after V1's end, drawn where Generate will put them.
+- **A shot longer than a generation spans chained slots**, each continued from
+  the last's latent, its pieces numbered `N·k`. It starts a generation of its
+  own — there is no cut inside a shot to break it at — and its last piece leaves
+  room for the shots after it.
+- **Every `H3MC_REANCHOR_TAKES`-th continuation re-anchors**: no latent, the
+  cast's references, and the frame at the out-point as the first frame. The
+  pack's README says quality compounds down a chain and the sound dulls first,
+  so an unbounded chain is a slow fade to mud no single join shows. The Motion
+  tile says *Re-anchor* and why before Generate — a join that sounds different
+  without warning reads as a fault. Every continued take records `from`, which
+  is what counts the chain, and `reanchored` stops the count.
+- **Continue from a trimmed take continues from the out-point**, which the
+  server snaps *down* onto the latent's 17-frame grid, and the source's trim
+  moves back to meet it in the same undo entry — left where it was, up to 16
+  frames of motion play twice across the join. The Motion tile and both slots
+  say how far it moved. A stale continuation's offer renders it again *in its
+  own slot* the same way; it used to land a second slot beside the stale one.
+
+**The timeline's keys are bound on the timeline**, so none of them can mean
+anything elsewhere, and each letter is stopped there — the page routes a stray
+letter into the prompt, and a T that made a title is not also the first letter
+of a sentence. Space plays the cut (not full screen: under your hand is the cut,
+not a render). On a trim handle ←/→ move that edge a frame, Shift a second,
+Home/End to the file's ends; Alt+←/→ on a clip reorders it along V1. T puts a
+title at the playhead, I an insert, D detaches the focused clip's sound onto the
+first free A track. ⌘Z/⇧⌘Z (Ctrl elsewhere) undo and redo every edit, a landed
+render included, except inside a text field, which owns its own.
+
+**The drop strip is the empty space under the last track, made a target** — not
+a panel and not a library. It lists nothing; a file somebody brings lands where
+it was let go, on a new track, and one that cannot be placed never lights it up
+and says what the timeline takes if dropped anyway. A drag *along* it draws an
+insert; a plain press opens the file picker for that time.
+
+**Regions are refused on a take, in words, on the stage.** `/api/video` has no
+regions field and H3 no regional conditioning, so a box drawn there would be
+sent nowhere while looking exactly like one that works. Silence was the first
+answer and it failed: the same ⌘-drag draws a box on a still, so on a take it
+read as the app not hearing. The gesture gets the sentence where it landed.
 
 `takes` lives on the store and deliberately **not** inside `scene`: that type
 mirrors `_validate_scene` and is the request body, so a record of what has
