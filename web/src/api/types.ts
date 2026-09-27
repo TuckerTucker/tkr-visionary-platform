@@ -356,3 +356,39 @@ export type DupeReport = {
    *  silently missing from every group it belongs in. */
   unreadable?: string[]
 }
+
+/**
+ * What a scene folder's `scene.json` keeps under `intent`, as the page writes it.
+ *
+ * **Open on purpose.** The index signature is what lets a field this build does
+ * not model ride through a read and a save untouched: the page spreads the
+ * intent it read under the one it writes, so a later build's field survives an
+ * earlier build's save. Narrowing this to the fields listed would make the
+ * compiler agree with dropping the rest.
+ *
+ * The named fields are loose because this is read off disk — a folder somebody
+ * edited by hand, or wrote with a different build, is still a scene — and
+ * `edit/persist.ts` is where it is checked field by field.
+ */
+export type SceneIntent = {
+  /** `store.scene`, whose pool files are named by `pool` rather than inlined. */
+  scene?: unknown
+  /** Pool id → the file in `refs/` holding its bytes. */
+  pool?: Record<string, ScenePoolRef>
+  takes?: unknown[]
+  /** Slice 7 owns this shape; carried through untouched until then. */
+  slots?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+/** One pool file with its bytes replaced by the name of the file holding them. */
+export type ScenePoolRef = { name: string; kind: string; ref: string }
+
+/** A row of `/api/scenes`, newest first. `error` is set when its scene.json
+ *  does not parse — the folder is listed as damaged rather than left out. */
+export type SceneSummary = { id: string; modified: number; takes: number; error?: string }
+
+/** `/api/scenes/{id}`: the intent exactly as stored, and what is in `refs/`. */
+export type SceneRecord = { id: string; intent: SceneIntent | null; refs: string[] }
+
+export type SceneSaved = { ok: true; id: string; modified: number }

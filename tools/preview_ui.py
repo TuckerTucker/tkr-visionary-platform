@@ -598,6 +598,15 @@ RUNS: dict = {}
 # save-then-recall loop without a volume — a page reload keeps the server alive,
 # so a "fresh session" still finds what the last one saved.
 CHARS: dict = {}
+# The stub's scene folders, same reasoning: a reload of the page has to find
+# the scene it just saved, or the preview cannot show the one thing a scene
+# store is for. `refs` holds bytes, as the volume does, so scene-file serves
+# what was uploaded rather than a swatch standing in for it.
+SCENES: dict = {}
+SCENE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+SCENE_FILE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}$")
+SCENE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp",
+               ".mp4": "video/mp4", ".wav": "audio/wav", ".mp3": "audio/mpeg"}
 
 
 def train_status(job_id: str, name: str = "probe_lora") -> dict:
@@ -862,6 +871,29 @@ class Handler(BaseHTTPRequestHandler):
                              "volume — reopen Settings to refresh the list."})
             STATE["loras"].remove(row)
             return self.reply({"ok": True})
+
+        m = re.match(r"/api/scenes/([^/]+)$", path)
+        if m:
+            sid = m.group(1)
+            if not SCENE_NAME.match(sid):
+                return self.reply({"error": f"Scene id {sid!r} is not 1-64 "
+                                            "letters, numbers, _ or -."})
+            try:
+                data = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                data = {}
+            if not isinstance(data.get("intent"), dict):
+                return self.reply({"error": "A scene's intent is an object."})
+            rec = SCENES.setdefault(sid, {"created": time.time(), "refs": {}})
+            for name, b64 in (data.get("refs") or {}).items():
+                base = name.rsplit("/", 1)[-1]
+                if not SCENE_FILE.match(base):
+                    return self.reply({"error": f"Scene file {name!r} is not a "
+                                                "safe name."})
+                rec["refs"][base] = base64.b64decode(b64)
+            rec["intent"] = data["intent"]
+            rec["modified"] = time.time()
+            return self.reply({"ok": True, "id": sid, "modified": rec["modified"]})
 
         m = re.match(r"/api/characters/([^/]+)$", path)
         if m:
@@ -1230,6 +1262,28 @@ class Handler(BaseHTTPRequestHandler):
             # line has nothing to read without it.
             return self.reply({"sessions": [session_view(r) for r in SESSIONS],
                                "total": len(SESSIONS)})
+        if path == "/api/scenes":
+            return self.reply({"scenes": sorted(
+                ({"id": k, "modified": v["modified"],
+                  "takes": len(v["intent"].get("takes") or [])}
+                 for k, v in SCENES.items()),
+                key=lambda r: r["modified"], reverse=True)})
+        m = re.match(r"/api/scenes/([^/]+)$", path)
+        if m:
+            rec = SCENES.get(m.group(1))
+            if not rec:
+                return self.reply({"error": f"No scene {m.group(1)!r}."})
+            return self.reply({"id": m.group(1), "intent": rec["intent"],
+                               "refs": sorted(rec["refs"])})
+        m = re.match(r"/api/scene-file/([^/]+)/(.+)$", path)
+        if m:
+            name = m.group(2).rsplit("/", 1)[-1]
+            data = (SCENES.get(m.group(1)) or {}).get("refs", {}).get(name)
+            if data is None:
+                return self.reply({"error": f"No {name!r} in scene "
+                                            f"{m.group(1)!r}."}, code=404)
+            ext = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            return self.reply(data, SCENE_TYPES.get(ext, "application/octet-stream"))
         if path == "/api/characters":
             return self.reply({"characters": [
                 {"handle": h, "note": c.get("note", ""),

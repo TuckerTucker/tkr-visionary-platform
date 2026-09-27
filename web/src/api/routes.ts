@@ -13,7 +13,8 @@
  */
 import { api, post, type Res } from './client'
 import type {
-  AppState, CompileResult, DupeReport, Insight, JobStatus, Session, ShotPill } from './types'
+  AppState, CompileResult, DupeReport, Insight, JobStatus, SceneIntent, SceneRecord,
+  SceneSaved, SceneSummary, Session, ShotPill } from './types'
 
 const seg = encodeURIComponent
 
@@ -279,6 +280,20 @@ export const saveCharacter = (handle: string, body: unknown) =>
   post<Record<string, unknown>>(`/api/characters/${seg(handle)}`, body)
 export const characterFileUrl = (handle: string, file: string) =>
   `/api/character-file/${seg(handle)}/${seg(file)}`
+
+/** Scene folders. The listing is ids and counts so the page can open the
+ *  newest on load without touching any scene's bytes; a scene's files come off
+ *  their own route, the same split the characters make. */
+export const scenes = () => api<{ scenes: SceneSummary[] }>('/api/scenes')
+export const scene = (id: string) => api<SceneRecord>(`/api/scenes/${seg(id)}`)
+/** Additive: `refs` carries only files the folder does not have yet, and a
+ *  save that leaves one out leaves it on the volume. */
+export const saveScene = (
+  id: string,
+  body: { intent: SceneIntent; refs?: Record<string, string> },
+) => post<SceneSaved>(`/api/scenes/${seg(id)}`, body)
+export const sceneFileUrl = (id: string, name: string) =>
+  `/api/scene-file/${seg(id)}/${seg(name)}`
 
 export const gallery = (before = 0, limit = 200) =>
   api<Record<string, unknown>>(`/api/gallery?before=${before}&limit=${limit}`)

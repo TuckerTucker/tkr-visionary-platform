@@ -464,6 +464,15 @@ export type Store = {
    * refuses, not a state the page can reach.
    */
   continueFrom: string | null
+  /**
+   * The folder on the volume this scene saves into, or null before it has one.
+   *
+   * Null on a blank first load and minted by `edit/persist.ts` on the first
+   * change worth keeping — never on page open, or every visit that typed
+   * nothing would leave an empty folder behind for somebody to clean up.
+   */
+  sceneId: string | null
+  setSceneId: (id: string | null) => void
   setDocOpen: (on: boolean) => void
   setDoc: (text: string | null) => void
   /** Append what just landed. Called from the run rather than by re-asking the
@@ -662,6 +671,8 @@ export const useStore = create<Store>((set, get) => ({
   doc: null,
   takes: [],
   continueFrom: null,
+  sceneId: null,
+  setSceneId: (sceneId) => set({ sceneId }),
   setContinueFrom: (continueFrom) => set({ continueFrom }),
   addTake: (t) => set((s) => ({ takes: [...s.takes, t] })),
   clearTakes: () => set({ takes: [], continueFrom: null }),

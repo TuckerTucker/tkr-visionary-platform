@@ -171,6 +171,13 @@ OUTPUTS = WORKSPACE / "outputs"
 # people back out. `character.json` beside them is the receipt that keeps what
 # filenames cannot: which picture is the sheet, what each file provides.
 CHARACTERS = WORKSPACE / "characters"
+# A scene: the intent somebody gave across several takes — cast, photographs,
+# prose, pills and the takes themselves — as a folder beside the characters, and
+# for the same reason. A page reload used to be the end of a scene, because all
+# of it lived in one tab's memory; a folder of plain files survives the tab and
+# is readable without the app. `scene.json` holds the intent verbatim and
+# `refs/` the bytes it points at.
+SCENES = WORKSPACE / "scenes"
 # On the models volume, beside what it stages for. The download path promises
 # "same filesystem, so this is an instant rename rather than a 26 GB copy" —
 # staging on the data volume would quietly turn that rename into a five-minute
@@ -4002,6 +4009,153 @@ def _dataset_dir(name: str) -> Path:
 
 def _name_taken(name: str) -> bool:
     return (DATASETS / name).exists() or (DRAFTS / name).exists()
+
+
+# ── scenes ──────────────────────────────────────────────────────────────────
+# Module-level rather than inside `web()` so tools/smoke_scenes.py can exercise
+# the storage rules with no FastAPI and no Modal; the routes are thin wrappers
+# that add the reload and the commit.
+
+SCENE_JSON = "scene.json"
+SCENE_VERSION = 1
+# The subfolders a scene file is served out of, in the order they are looked
+# in: what the person gave first, then what was rendered or exported for it.
+SCENE_FILE_DIRS = ("refs", "media")
+# A file inside a scene folder. Wider than NAME_RE because it carries an
+# extension, and anchored on a non-dot first character so neither a dotfile nor
+# `..` can be named — `Path(name).name` strips the directories, this is what
+# stops the one component left from being one of those.
+SCENE_FILE_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9_.-]{0,79}$")
+
+
+def _check_scene_id(sid: str) -> str:
+    # Its own sentence rather than `_check_name`'s, which says "Set names" —
+    # a refusal naming the wrong kind of thing is the one a person reads twice.
+    if not NAME_RE.match(sid or ""):
+        raise ValueError(f"Scene id {sid!r} is not 1-64 letters, numbers, _ or - "
+                         "— the page mints these, so a different one is a "
+                         "hand-typed URL or a stale tab.")
+    return sid
+
+
+def _check_scene_file(name: str) -> str:
+    base = Path(name or "").name
+    if not SCENE_FILE_RE.match(base):
+        raise ValueError(f"Scene file {name!r} is not 1-80 letters, numbers, "
+                         "_ . or -, starting with no dot.")
+    return base
+
+
+def _read_scene(d: Path) -> dict:
+    """
+    One scene's record, or ValueError naming the file and what broke.
+
+    Raising rather than answering `{}` is the point: a scene.json that does not
+    parse read as empty is a scene the page would then save over, and the one
+    thing the folder exists for — surviving — is what an optimistic reader
+    throws away. The page opens a new scene instead and the old folder stays
+    for somebody to repair by hand.
+    """
+    f = d / SCENE_JSON
+    try:
+        rec = json.loads(f.read_text())
+    except OSError as exc:
+        raise ValueError(f"Could not read {f}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{f} does not parse: {exc}") from exc
+    if not isinstance(rec, dict):
+        raise ValueError(f"{f} holds a {type(rec).__name__}, not an object.")
+    return rec
+
+
+def _scene_refs(d: Path) -> list[str]:
+    r = d / "refs"
+    if not r.is_dir():
+        return []
+    return sorted(p.name for p in r.iterdir()
+                  if p.is_file() and not p.name.startswith("."))
+
+
+def _list_scenes() -> list[dict[str, Any]]:
+    """Every scene folder, newest first. A folder whose record does not parse
+    still lists — with its error and the folder's own mtime — so it is visible
+    as damaged rather than silently absent."""
+    if not SCENES.is_dir():
+        return []
+    out = []
+    for d in SCENES.iterdir():
+        if not d.is_dir() or not NAME_RE.match(d.name):
+            continue
+        row: dict[str, Any] = {"id": d.name, "modified": d.stat().st_mtime,
+                               "takes": 0}
+        try:
+            rec = _read_scene(d)
+        except ValueError as exc:
+            row["error"] = str(exc)
+        else:
+            row["modified"] = float(rec.get("modified") or row["modified"])
+            takes = (rec.get("intent") or {}).get("takes") \
+                if isinstance(rec.get("intent"), dict) else None
+            row["takes"] = len(takes) if isinstance(takes, list) else 0
+        out.append(row)
+    out.sort(key=lambda r: r["modified"], reverse=True)
+    return out
+
+
+def _save_scene(sid: str, intent: Any, refs: Any) -> dict[str, Any]:
+    """
+    Write one scene: the refs it is given, then its record. Raises ValueError
+    with a sentence; never touches a ref it was not given.
+
+    Refs first, so a record on disk never names a file that is not beside it.
+    The record is written to a temporary name and renamed over, because a
+    half-written scene.json is exactly the file `_read_scene` refuses — a crash
+    mid-write would otherwise turn one lost save into a scene nobody can open.
+    """
+    _check_scene_id(sid)
+    if not isinstance(intent, dict):
+        raise ValueError("A scene's intent is an object; this one was "
+                         f"{type(intent).__name__}.")
+    refs = refs or {}
+    if not isinstance(refs, dict):
+        raise ValueError("refs is {name: base64}; this one was "
+                         f"{type(refs).__name__}.")
+    blobs: dict[str, bytes] = {}
+    for name, b64 in refs.items():
+        clean = _check_scene_file(str(name))
+        try:
+            blobs[clean] = base64.b64decode(str(b64 or ""), validate=True)
+        except ValueError as exc:
+            raise ValueError(f"Ref {clean!r} is not base64: {exc}") from exc
+    d = SCENES / sid
+    existing: dict[str, Any] = {}
+    if (d / SCENE_JSON).exists():
+        # Refused, not overwritten: see `_read_scene`.
+        existing = _read_scene(d)
+    (d / "refs").mkdir(parents=True, exist_ok=True)
+    for name, data in blobs.items():
+        (d / "refs" / name).write_bytes(data)
+    now = time.time()
+    # Fields this reader does not model are carried, not dropped: a record is
+    # read long after it is written, and a later writer's field survives an
+    # earlier writer's save only if nothing between them discards it.
+    rec = {**existing, "version": SCENE_VERSION,
+           "created": existing.get("created") or now,
+           "modified": now, "intent": intent}
+    tmp = d / f".{SCENE_JSON}.tmp"
+    tmp.write_text(json.dumps(rec, indent=1))
+    os.replace(tmp, d / SCENE_JSON)
+    return {"ok": True, "id": sid, "modified": now}
+
+
+def _scene_file(sid: str, name: str) -> Path | None:
+    _check_scene_id(sid)
+    base = _check_scene_file(name)
+    for sub in SCENE_FILE_DIRS:
+        f = SCENES / sid / sub / base
+        if f.is_file():
+            return f
+    return None
 
 
 def _touch_session(sid: str) -> None:
@@ -11415,6 +11569,73 @@ def web():
             return JSONResponse({"error": f"No {name!r} for {handle!r}."},
                                 status_code=404)
         return FileResponse(f)
+
+    # ── scenes ─────────────────────────────────────────────────────────────
+
+    @api.get("/api/scenes")
+    def list_scenes() -> dict[str, Any]:
+        """Ids, times and take counts, newest first — the page opens the first
+        one on load, so this answers before any scene's bytes are touched."""
+        _reload_volume()
+        return {"scenes": _list_scenes()}
+
+    @api.get("/api/scenes/{sid}")
+    def get_scene(sid: str) -> dict[str, Any]:
+        """
+        One scene's intent, exactly as stored, and the names in its refs/.
+
+        The intent is not re-shaped on the way out. The page spreads what it
+        read under what it writes, so a field only a later page knows about
+        survives an older page's save — but only if nothing here trims it.
+        """
+        try:
+            _check_scene_id(sid)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        _reload_volume()
+        d = SCENES / sid
+        if not d.is_dir():
+            return {"error": f"No scene {sid!r} under {SCENES}."}
+        try:
+            rec = _read_scene(d)
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"id": sid, "intent": rec.get("intent"), "refs": _scene_refs(d)}
+
+    @api.post("/api/scenes/{sid}")
+    def save_scene(sid: str, payload: dict) -> dict[str, Any]:
+        """
+        Save one scene: `{intent, refs?: {name: base64}}`.
+
+        Unlike a character, which is saved whole on purpose, this is saved
+        continuously — so it is additive. Refs arrive once, the first time the
+        page has them, and a save that does not re-send one leaves it where it
+        is: re-sending nine photographs on every keystroke's debounce is the
+        payload this shape exists to avoid.
+        """
+        _reload_volume()
+        try:
+            out = _save_scene(sid, payload.get("intent"), payload.get("refs"))
+        except (ValueError, OSError) as exc:
+            return {"error": str(exc)}
+        volume.commit()
+        return out
+
+    @api.get("/api/scene-file/{sid}/{name}")
+    def scene_file(sid: str, name: str) -> Any:
+        """One file out of a scene folder, by name. Bytes by their own route,
+        never inlined into the record the page reads on load."""
+        try:
+            f = _scene_file(sid, name)
+            if f is None:
+                _reload_volume()
+                f = _scene_file(sid, name)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        if f is None:
+            return JSONResponse({"error": f"No {name!r} in scene {sid!r}."},
+                                status_code=404)
+        return FileResponse(f, media_type=MEDIA_TYPES.get(f.suffix.lower()))
 
     @api.get("/api/datasets")
     def list_datasets() -> dict[str, Any]:
