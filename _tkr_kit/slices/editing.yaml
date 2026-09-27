@@ -158,6 +158,8 @@ slices:
       - web/src/edit/slots.ts
       - web/src/edit/Slot.tsx
       - web/src/video/useVideo.ts
+      - web/src/edit/engine.ts
+      - web/src/edit/useEdit.ts
     depends_on:
       - 3
     story_ids:
@@ -174,6 +176,8 @@ slices:
     paths:
       - web/src/canvas
       - web/src/edit/Stage.tsx
+      - web/src/App.tsx
+      - web/src/edit/edit.css
     depends_on:
       - 3
     story_ids:
