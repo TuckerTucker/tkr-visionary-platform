@@ -228,7 +228,11 @@ slices:
       - finish-a-scene-with-my-own-material-over-it
     title: A take's soundtrack travels with it until detached
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "9cf3e11: all 20 UI checks pass on main (check_detach, check_continue_at,
+        check_inherit among them); smoke_graphs local half 16/16"
   - number: 10
     feature: scene-assembly
     delivers: OpenVideo's project JSON written verbatim into the scene folder,
@@ -300,7 +304,11 @@ slices:
       - render-a-shot-as-an-edit
     title: Continue from the out-point
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "9cf3e11: all 20 UI checks pass on main (check_detach, check_continue_at,
+        check_inherit among them); smoke_graphs local half 16/16"
   - number: 13
     feature: generative-commands
     delivers: One timeline on screen. A slot is one generation and holds the shots
@@ -317,6 +325,8 @@ slices:
       - web/src/scene/Timeline.tsx
       - web/src/scene/Shots.tsx
       - web/src/edit/Slot.tsx
+      - tools/ui-checks/check_shots.py
+      - web/src/scene/model.ts
     depends_on:
       - 7
       - 12
@@ -344,7 +354,11 @@ slices:
       - cut-away-without-rebuilding-the-scene
     title: Inserts inherit the scene they cover
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "9cf3e11: all 20 UI checks pass on main (check_detach, check_continue_at,
+        check_inherit among them); smoke_graphs local half 16/16"
   - number: 15
     feature: cross-track-context
     delivers: Re-rendering a slot marks the slots chained after it on its track, and
@@ -354,6 +368,8 @@ slices:
     paths:
       - web/src/edit/stale.ts
       - web/src/edit/Export.tsx
+      - web/src/edit/Stale.tsx
+      - tools/ui-checks/check_stale.py
     depends_on:
       - 5
       - 12
