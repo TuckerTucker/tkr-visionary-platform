@@ -22,7 +22,28 @@
  */
 const BACK_OFF = 1 / 16
 
+/**
+ * Half a frame at H3's 24fps. A trimmed take's out point is a frame boundary,
+ * so the last frame anybody sees is the one *ending* there — seeking to the
+ * boundary itself paints the first frame the trim removed, which is the one
+ * frame the person cut because it went wrong. Half a frame back lands squarely
+ * inside the last frame kept.
+ */
+const HALF_FRAME = 1 / 48
+
 export function lastFrame(src: string): Promise<string | null> {
+  return frameAt(src, Infinity)
+}
+
+/**
+ * The frame showing just before `seconds` into a clip, as the base64 a keyframe
+ * slot takes — the out-point's frame, for a Continue from a trimmed take whose
+ * motion latent is not there to cut. `Infinity` is the clip's last frame.
+ *
+ * A <video> rather than the Stage's `renderFrame`: the stage has to be mounted
+ * to draw, and the frame is wanted whether or not the editor is on screen.
+ */
+export function frameAt(src: string, seconds: number): Promise<string | null> {
   return new Promise((resolve) => {
     const v = document.createElement('video')
     // Same origin — the file route serves it — so the canvas stays untainted and
@@ -48,7 +69,8 @@ export function lastFrame(src: string): Promise<string | null> {
     v.onloadeddata = () => {
       const end = v.seekable.length ? v.seekable.end(v.seekable.length - 1) : v.duration
       if (!Number.isFinite(end) || end <= 0) { done(null); return }
-      v.currentTime = Math.max(0, end - BACK_OFF)
+      const at = Number.isFinite(seconds) ? Math.min(seconds - HALF_FRAME, end - BACK_OFF) : end - BACK_OFF
+      v.currentTime = Math.max(0, at)
     }
     // `seeked` rather than `timeupdate`: the frame is only painted once the seek
     // has actually completed, and drawing early gives you whatever was decoded

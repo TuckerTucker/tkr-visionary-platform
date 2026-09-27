@@ -10,11 +10,12 @@ import { readScene, sceneSeconds, typedProse } from '../scene/model'
 import { resolveVid } from '../console/resolve'
 import { mintSlotId } from '../edit/project'
 import {
-  chosenTake, clearSlotRun, expectLanding, lastV1Slot, peekLanding, setSlotRun, slotPlaying,
-  takeLanding, useSlotRuns, type SlotTake, type SlotTarget,
+  chosenTake, clearSlotRun, clipOfSlot, expectLanding, lastV1Slot, peekLanding, setSlotRun,
+  slotPlaying, takeLanding, useSlotRuns, type SlotTake, type SlotTarget,
 } from '../edit/slots'
 import { useEdit } from '../edit/useEdit'
-import { lastFrame } from './lastFrame'
+import { arm, continueAtBody, noteCut, outPointOf, snapNote, type Cut } from '../edit/continue'
+import { frameAt } from './lastFrame'
 
 /**
  * One clip, from press to playback.
@@ -102,6 +103,10 @@ export function videoBody(s: Store): Record<string, unknown> {
     first_frame: s.continueFrom ? null : s.keyframe.first,
     last_frame: s.continueFrom ? null : s.keyframe.last,
     ...(s.continueFrom && { continue_from: s.continueFrom }),
+    // Where the cut is, when the take was trimmed — read now, not when
+    // Continue was pressed (see `edit/continue.ts`). Absent for a take played
+    // to its end, which keeps an untrimmed continuation's body what it was.
+    ...continueAtBody(s.continueFrom),
     // The cast's files when there is a cast, and the flat trays otherwise. Never
     // both: `<Picture N>` is a *position* in this array, so a cast ref pointing
     // at index 1 and a tray photo also sitting at index 1 is a well-formed
@@ -124,6 +129,16 @@ function phaseOf(st: JobStatus): string {
     ? `Step ${String(st.step)}/${String(st.total_steps ?? st.steps ?? '?')}`
       + (st.eta ? ` · ${String(st.eta)} left` : '')
     : (st.phase === 'loading' ? 'Loading the model…' : (st.phase || 'Working…'))
+}
+
+/** The meta line's account of a cut, when the take continued from one: where
+ *  it opened and how far the snap moved it. Empty for every other take. */
+function cutLine(st: JobStatus): string {
+  const at = st.continued_at
+  const snap = st.continue_snap
+  if (typeof at !== 'number' || typeof snap !== 'number') return ''
+  const cut: Cut = { requested: Number((at + snap).toFixed(3)), continuedAt: at, snap }
+  return snapNote(cut)
 }
 
 type Ends = {
@@ -204,9 +219,17 @@ function landTake(st: JobStatus, jobId: string, line: string, slot: string | nul
  * What does *not* carry is the prose. A take is a beat, and reopening on the
  * sentence you already rendered would invite editing the last one rather than
  * writing the next.
+ *
+ * `at` is the take's out-point when it was trimmed. The frame read is then the
+ * one at the cut, not the file's last — so clearing the Motion tile, or the
+ * route's degrade when the latent is gone, opens on what the person kept
+ * rather than on the second they trimmed away.
  */
-async function armContinue(from: Pick<SceneTake, 'jobId' | 'file'>): Promise<void> {
-  const frame = await lastFrame(fileUrl(from.jobId, from.file))
+async function armContinue(
+  from: Pick<SceneTake, 'jobId' | 'file'>, at: number | null = null, slotId: string | null = null,
+): Promise<void> {
+  const frame = await frameAt(fileUrl(from.jobId, from.file), at ?? Infinity)
+  arm({ jobId: from.jobId, slotId, at, frame })
   const s = useStore.getState()
   s.setContinueFrom(from.jobId)
   s.setKeyframe('first', frame)
@@ -248,7 +271,9 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
 
   const finish = useCallback((st: JobStatus, jobId: string) => {
     const file = (st.files as string[] | undefined)?.[0] ?? null
+    noteCut(jobId, {}, st)
     const meta = [
+      cutLine(st),
       st.width ? `${String(st.width)}×${String(st.height)}` : '',
       st.seconds ? `${String(st.seconds)}s · ${String(st.frames)} frames · ${String(st.fps)} fps` : '',
       st.seed != null ? `seed ${String(st.seed)}` : '',
@@ -272,7 +297,8 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
       ...p, running: true, runId: null, percent: 0, phase: 'Queued…', error: null,
     }))
     const target = generateTarget(s)
-    const r = await video(videoBody(s))
+    const body = videoBody(s)
+    const r = await video(body)
     if (failed(r)) {
       // The last clip stays: a request that never started should not blank what you
       // were watching. The whole `ApiError` — see `useGenerate`, same reason.
@@ -280,6 +306,10 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
       return
     }
     const runId = r.job_id
+    // The route answers the snap before a GPU is rented — pure arithmetic on
+    // the source's record — so the Motion tile can say where the cut landed
+    // for the whole length of the render rather than only once it is over.
+    noteCut(runId, body, r as Record<string, unknown>)
     expectLanding(runId, target)
     setRun((p) => ({ ...p, runId }))
     poll(runId, {
@@ -347,8 +377,11 @@ export function useVideo(onLanded: (it: GalleryItem) => void) {
     const cut = last ? chosenTake(useStore.getState().takes, last, project) : null
     const from = cut ?? (run.jobId && run.file ? { jobId: run.jobId, file: run.file } : null)
     if (!from) return
+    // The out-point only when the take came from the cut: the canvas's own
+    // take has no clip, so it has no trim, so it continues from its end.
+    const clip = cut && last ? clipOfSlot(project, last) : null
     setLinking(true)
-    await armContinue(from)
+    await armContinue(from, clip ? outPointOf(clip, project?.settings.fps) : null, cut ? last : null)
     setLinking(false)
   }, [run.jobId, run.file])
 
@@ -463,6 +496,9 @@ export async function stopSlot(slotId: string): Promise<void> {
  * is a new beat, and there is nothing to render until it has been written.
  */
 export async function continueSlot(slotId: string): Promise<void> {
-  const take = chosenTake(useStore.getState().takes, slotId, useEdit.getState().project)
-  if (take) await armContinue(take)
+  const project = useEdit.getState().project
+  const take = chosenTake(useStore.getState().takes, slotId, project)
+  if (!take) return
+  const clip = clipOfSlot(project, slotId)
+  await armContinue(take, clip ? outPointOf(clip, project?.settings.fps) : null, slotId)
 }

@@ -850,6 +850,44 @@ def media_api() -> dict:
     return _APP_CACHE["media"]
 
 
+# Continuing from an out-point. The bounds and the snap are app.py's own, so a
+# trimmed take continued here is refused with the sentence the deployment says
+# and moved by the amount it moves — a stub that echoed `continue_at` back
+# unsnapped would show a slot saying "no snap" for a cut the server would move
+# by two-thirds of a second. Every stub take is a plain (uncontinued) source of
+# CLIP_SECONDS; the continued-source offset is smoke_graphs.py's to check.
+CUT_NAMES = {"H3_FPS", "H3_FRAME_STEP", "H3_FRAME_BASE", "H3MC_CONTEXT_FRAMES",
+             "H3_LATENT_CYCLE", "H3_LATENT_BASE", "H3_AUDIO_HZ",
+             "_h3_out_point_bounds", "_validate_continue_at", "_h3_cut_index"}
+
+
+def cut_api() -> dict:
+    stamp = APP.stat().st_mtime_ns
+    if _APP_CACHE.get("cut_stamp") != stamp:
+        _APP_CACHE.update(cut_stamp=stamp, cut=pull(CUT_NAMES))
+    return _APP_CACHE["cut"]
+
+
+def continue_cut(p: dict) -> dict:
+    """`continued_at`/`continue_snap` for a `/api/video` body, or `{error}`."""
+    raw = p.get("continue_at")
+    if raw in (None, ""):
+        return {}
+    source = str(p.get("continue_from") or "")
+    if not source:
+        return {"error": "continue_at is an out-point in the take being "
+                         "continued, and no take is (continue_from is empty). "
+                         "Press Continue on the take first."}
+    ns = cut_api()
+    try:
+        at = ns["_validate_continue_at"](
+            raw, delivered_frames=CLIP_SECONDS * CLIP_FPS, source=f"take {source}")
+    except ValueError as exc:
+        return {"error": str(exc)}
+    cut = ns["_h3_cut_index"](at, False)
+    return {"continued_at": cut["continued_at"], "continue_snap": cut["snap"]}
+
+
 def multipart_files(body: bytes, ctype: str) -> dict:
     """{field: (filename, bytes)} — `multipart` without the filename is a
     dropped file that cannot be named after itself."""
@@ -1396,9 +1434,18 @@ class Handler(BaseHTTPRequestHandler):
             # A new id per take, because the thing worth watching here is the *swap*:
             # the previous clip stays up until its replacement lands, and with one
             # reused id "replaced" and "never changed" are the same two frames.
+            try:
+                vp = json.loads(body or b"{}")
+            except json.JSONDecodeError:
+                vp = {}
+            cut = continue_cut(vp if isinstance(vp, dict) else {})
+            if "error" in cut:
+                return self.reply(cut)
             job = "vid%03d" % sum(1 for k in RUNS if k.startswith("vid"))
-            RUNS[job] = {"polls": 0, "stopped": False}
-            return self.reply({"ok": True, "job_id": job})
+            # The cut rides on the run so its status can report it on landing,
+            # the way the GPU job's `info` does.
+            RUNS[job] = {"polls": 0, "stopped": False, "cut": cut}
+            return self.reply({"ok": True, "job_id": job, **cut})
 
         # A family's queue. Worth stubbing rather than falling through to the
         # no-job-id reply, because the state this button spends all its time in
@@ -1754,6 +1801,7 @@ class Handler(BaseHTTPRequestHandler):
                 "seconds": CLIP_SECONDS if real else 5,
                 "frames": CLIP_SECONDS * CLIP_FPS if real else 120, "fps": 24,
                 "seed": 4242, "steps": 20, "duration_s": 214.0,
+                **job.get("cut", {}),
             })
 
         # Hours, not seconds — so the fields a long run is read by are the ones

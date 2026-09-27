@@ -51,6 +51,13 @@ boundary of what it proves:
 
 A pass here means the graphs are wired to nodes that exist. It does not mean
 the video is good.
+
+**One half runs on a laptop:** `python3 tools/smoke_graphs.py` checks the
+out-point arithmetic — where a saved motion latent is cut so a trimmed take
+continues from its cut (`_h3_cut_index`) — and then says how to run the rest.
+That half needs no ComfyUI because what it guards is not a node name but the
+pack's slicing rule, which is arithmetic: a cut that does not end on the VAE's
+17-frame cycle is a latent the pack refuses, or reads at the wrong instant.
 """
 
 import json
@@ -60,7 +67,200 @@ import time
 from pathlib import Path
 from typing import Any
 
-import modal
+
+# ── the out-point cut, locally ──────────────────────────────────────────────
+#
+# Above `import modal` on purpose: the half that can run without a container
+# should not need the SDK installed to say so.
+
+# The pinned pack's own rule, copied as the oracle rather than imported from
+# app.py — nodes.py at H3MC_SHA: FRAME_PER_TOKEN, `_steps_for_frames`, the
+# `start % 5` refusal in `_video_tail_from_latent`, and the overhang band in
+# `_audio_tail_from_latent`. Checking app.py's arithmetic against app.py's
+# arithmetic would prove only that it agrees with itself.
+_PACK_FRAME_PER_TOKEN = (1, 4, 4, 4, 4)
+
+
+def _pack_pixel_frames(steps: int) -> int:
+    return sum(_PACK_FRAME_PER_TOKEN[k % 5] for k in range(steps))
+
+
+def _pack_steps_for_frames(n: int) -> int | None:
+    k, covered = 0, 0
+    while covered < n:
+        covered += _PACK_FRAME_PER_TOKEN[k % 5]
+        k += 1
+    return k if covered == n else None
+
+
+def _out_point_checks() -> list[str]:
+    """The cut index for a plain and a continued source, and the refusals."""
+    from _from_app import pull
+
+    ns = pull({"H3_FPS", "H3_FRAME_STEP", "H3_FRAME_BASE", "H3MC_CONTEXT_FRAMES",
+               "H3_LATENT_CYCLE", "H3_LATENT_BASE", "H3_AUDIO_HZ",
+               "_h3_out_point_bounds", "_validate_continue_at", "_h3_cut_index",
+               "_h3_cut_context"})
+    cut_index, validate = ns["_h3_cut_index"], ns["_validate_continue_at"]
+    ctx = ns["H3MC_CONTEXT_FRAMES"]
+    window = _pack_steps_for_frames(ctx) or 0
+    bad: list[str] = []
+
+    def expect(label: str, cond: bool, detail: str = "") -> None:
+        print(f"  {' ok ' if cond else 'FAIL'}  {label}"
+              + (f"  ({detail})" if detail and not cond else ""), flush=True)
+        if not cond:
+            bad.append(f"{label} {detail}".rstrip())
+
+    # Named cases, each for the failure it covers.
+    c = cut_index(124 / 24, False)
+    expect("an untrimmed plain take is not cut at all",
+           c["frames"] == 124 and c["video_steps"] == 37 and c["snap"] == 0, str(c))
+    c = cut_index(4.0, False)
+    expect("a plain take trimmed to 4.00s snaps DOWN to 90 frames (3.75s)",
+           c["frames"] == 90 and c["video_steps"] == 27
+           and c["continued_at"] == 3.75 and c["snap"] == 0.25, str(c))
+    c = cut_index(ctx / 24, False)
+    expect("the floor is exactly one context window",
+           c["frames"] == ctx and c["video_steps"] == window, str(c))
+    # A continued take's delivered frame 0 is latent frame 22: 124 sampled,
+    # 102 delivered. Forgetting the head would put the cut 22 frames early.
+    c = cut_index(102 / 24, True)
+    expect("an untrimmed continued take cuts at its whole latent (head counted)",
+           c["frames"] == 124 and c["head"] == ctx and c["snap"] == 0, str(c))
+    c = cut_index(2.0, True)
+    expect("a continued take trimmed to 2.00s cuts latent frame 56 = 1.417s",
+           c["frames"] == 56 and c["continued_at"] == round(34 / 24, 3)
+           and c["snap"] == round(2.0 - 34 / 24, 3), str(c))
+    c = cut_index(ctx / 24, True)
+    expect("a continued take at the floor still leaves a whole window",
+           c["frames"] == 39, str(c))
+
+    # Every out-point of every legal source length, against the pack's rule.
+    grid = [17 * n + 5 for n in range(7, 21)]           # 124 .. 345 sampled
+    worst = 0.0
+    sweep: list[str] = []
+    for continued in (False, True):
+        for sampled in grid:
+            head = ctx if continued else 0
+            delivered = sampled - head
+            total_steps = _pack_steps_for_frames(sampled) or 0
+            for out in range(ctx, delivered + 1):
+                c = cut_index(out / 24, continued)
+                steps, frames = c["video_steps"], c["frames"]
+                why = []
+                if _pack_pixel_frames(steps) != frames:
+                    why.append("steps and frames disagree")
+                if (steps - window) % 5:
+                    why.append("the pack's window would not start at cycle 0")
+                if steps > total_steps or steps < window:
+                    why.append(f"{steps} steps outside [{window}, {total_steps}]")
+                if frames > out + head:
+                    why.append("snapped past the out-point")
+                if abs(c["audio_steps"] - frames * 5 / 3) >= 0.5:
+                    why.append("audio outside the pack's overhang band")
+                if c["snap"] > 16 / 24 + 1e-3:  # 3dp rounding
+                    why.append(f"snap {c['snap']}s is more than one cycle")
+                worst = max(worst, c["snap"])
+                if why:
+                    sweep.append(f"{'continued' if continued else 'plain'} "
+                                 f"{sampled}f cut at {out}f — {'; '.join(why)}")
+    expect(f"every out-point of every source length lands on the pack's grid "
+           f"(worst snap {worst:.3f}s)", not sweep, "; ".join(sweep[:5]))
+
+    # The refusals the route answers with, and what they have to name.
+    def refused(raw: Any, frames: int, needle: str) -> bool:
+        try:
+            validate(raw, delivered_frames=frames, source="take vidX")
+        except ValueError as exc:
+            return needle in str(exc)
+        return False
+
+    expect("an out-point before the window is refused, naming the minimum",
+           refused(0.5, 124, f"{ctx / 24:.2f}s"))
+    expect("an out-point past the take is refused, naming its length",
+           refused(6.0, 124, f"{124 / 24:.2f}s"))
+    expect("a non-number is refused", refused("soon", 124, "seconds"))
+    expect("NaN is refused", refused(float("nan"), 124, "seconds"))
+    expect("half a frame over the end is the end",
+           validate(124 / 24 + 0.01, delivered_frames=124, source="t") == 124 / 24)
+    try:
+        cut_index(0.2, False)
+        expect("the cut refuses below the window on its own", False)
+    except ValueError:
+        expect("the cut refuses below the window on its own", True)
+
+    # The cut itself, on stand-in tensors: what is sliced along which axis.
+    # safetensors.torch is faked with numpy, which slices the same way; the GPU
+    # image has the real one and this laptop may not.
+    try:
+        import numpy as np
+    except ImportError:
+        print("  skip  the tensor cut (no numpy here) — the arithmetic above "
+              "still ran", flush=True)
+        return bad
+    import types
+
+    class T(np.ndarray):
+        """numpy with torch's `.contiguous()`, the one tensor method the cut calls."""
+
+        def contiguous(self) -> "T":
+            return self
+
+    def zeros(*shape: int) -> T:
+        return np.zeros(shape).view(T)
+
+    store: dict[str, Any] = {}
+    fake = types.ModuleType("safetensors.torch")
+    setattr(fake, "load_file", lambda p: dict(store[p]))
+    setattr(fake, "save_file",
+            lambda d, p, metadata=None: store.__setitem__(p, dict(d)))
+    saved = {k: sys.modules.get(k) for k in ("safetensors", "safetensors.torch")}
+    sys.modules.setdefault("safetensors", types.ModuleType("safetensors"))
+    sys.modules["safetensors.torch"] = fake
+    try:
+        # A continued 124-frame take: 37 video steps, 207 audio steps.
+        store["src"] = {"video": zeros(1, 48, 37, 4, 6),
+                        "audio": zeros(1, 32, 2, 207)}
+        ns["_h3_cut_context"](Path("src"), Path("dst"), cut_index(2.0, True))
+        out = store["dst"]
+        expect("the tensor cut keeps 17 video steps on the time axis",
+               out["video"].shape == (1, 48, 17, 4, 6), str(out["video"].shape))
+        expect("and 93 audio steps on the last axis (56 frames x 5/3)",
+               out["audio"].shape == (1, 32, 2, 93), str(out["audio"].shape))
+        # An unbatched latent shorter than the cut is kept whole — and the
+        # record says where it really ends rather than where it was asked to.
+        store["short"] = {"video": zeros(32, 12, 4, 6),
+                          "audio": zeros(1, 32, 2, 65)}
+        done = ns["_h3_cut_context"](Path("short"), Path("dst2"),
+                                     cut_index(124 / 24, False))
+        expect("a latent shorter than the cut is kept whole, and says so",
+               store["dst2"]["video"].shape == (32, 12, 4, 6)
+               and done["frames"] == 39 and done["continued_at"] == round(39 / 24, 3)
+               and done["snap"] == round(124 / 24 - 39 / 24, 3), str(done))
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+    return bad
+
+
+if __name__ == "__main__":
+    # See the note at the bottom of the file for why the graph half cannot run
+    # here. This half can, and a check that only ran inside a container would
+    # be a check nobody ran before trimming a take.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    print("[smoke] the out-point cut (local)", flush=True)
+    problems = _out_point_checks()
+    if problems:
+        raise SystemExit(f"\n{len(problems)} problem(s) in the out-point cut.")
+    print("\nThe out-point cut lands on the pack's grid. The graph half is a "
+          "Modal function:\n\n    modal run tools/smoke_graphs.py\n", flush=True)
+    raise SystemExit(0)
+
+import modal  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -476,15 +676,10 @@ def main() -> None:
 # Not `main()`. `main` is a `modal.Function` after decoration, so calling it
 # here raises "'Function' object is not callable", and `main.local()` would get
 # further only to spawn ComfyUI from /opt/comfyui — a path in `comfy_image`,
-# not on your laptop. There is no local form of this check to fall back to.
+# not on your laptop. So the local form is the out-point half alone, run by
+# the guard at the top of the file, which exits before `import modal`.
 #
-# The guard is here because the failure without it was silence: run under an
-# interpreter that has modal and the module imports, defines every function,
-# prints nothing and exits 0. A check that reports success by not running is
-# worse than no check, and this file is the only thing asserting that the
-# graphs name nodes that exist.
-if __name__ == "__main__":
-    raise SystemExit(
-        "This is a Modal function, not a local script: it drives the ComfyUI "
-        f"in comfy_image at {COMFY}, which exists in the container and not "
-        "here.\n\n    modal run tools/smoke_graphs.py\n")
+# That guard used to sit here because the failure without it was silence: run
+# under an interpreter that has modal and the module imports, defines every
+# function, prints nothing and exits 0. It moved rather than went — a local run
+# still ends by saying the graph half has not run, and how to run it.
