@@ -24,6 +24,7 @@ import ast
 import base64
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -128,6 +129,15 @@ check("the listing is newest first",
 check("it counts takes", listing[0]["takes"] == 0)
 check("a damaged scene lists with its error",
       "does not parse" in (listing[1].get("error") or ""))
+# A drop uploads into media/ before either saver has written a record, so a
+# folder holding only media is a scene's first gesture, not damage.
+dropped = ns["SCENES"] / "scn20990101000000d0d0"
+(dropped / "media").mkdir(parents=True)
+(dropped / "media" / "clip.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+row = next(r for r in ns["_list_scenes"]() if r["id"] == dropped.name)
+check("a folder with only dropped media lists without an error",
+      "error" not in row and row["takes"] == 0, str(row))
+shutil.rmtree(dropped)
 try:
     ns["_save_scene"](ok, intent, {"../evil.png": "!!!"})
     check("a non-base64 ref is refused", False)

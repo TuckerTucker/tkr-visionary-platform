@@ -46,7 +46,7 @@ import { sceneFileUrl, sceneMedia } from '../api/routes'
 import { useStore } from '../store'
 import jostUrl from '../styles/jost-600.woff2'
 import { absoluteUrl, sec } from './engine'
-import { newSceneId } from './persist'
+import { sceneIdFor } from './persist'
 import { batch, execute, pause, seek, useEdit, type EditCommand } from './useEdit'
 
 /** What a dropped file can become. */
@@ -275,19 +275,10 @@ export const useDrop = create<DropState>(() => ({ busy: null, error: null, editi
 /** What a drop resolved to: the track it made and the clip on it. */
 export type Dropped = { trackId: string; trackName: string; clipId: string }
 
-/**
- * The scene the file belongs to. Minted here when there is none yet, the way
- * persist.ts mints one on the first change worth keeping — a drop always is —
- * and into the same store field, so both savers and this upload agree on the
- * folder.
- */
-function sceneIdNow(): string {
-  const s = useStore.getState()
-  if (s.sceneId) return s.sceneId
-  const id = newSceneId()
-  s.setSceneId(id)
-  return id
-}
+/** The scene the file belongs to — through persist's one minting function,
+ *  because a drop is always worth keeping and a second minter is how one scene
+ *  ends up split across two folders. */
+const sceneIdNow = (): string => sceneIdFor(true) as string
 
 const mb = (n: number): string => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${String(Math.ceil(n / 1024))} KB`)
 

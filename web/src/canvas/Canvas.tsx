@@ -5,6 +5,7 @@ import { RetryImg } from '../media/thumb'
 import { IconClose, IconExpand, IconPhoto, IconPlay, IconPlus } from '../icons'
 import { Frame } from '../regions/Frame'
 import { RegionLayer } from '../regions/RegionLayer'
+import { StageRegions } from '../regions/StageRegions'
 import { attached, regionsLive, useStore } from '../store'
 import { fullScreenStage, Stage } from '../edit/Stage'
 import { useEdit } from '../edit/useEdit'
@@ -397,6 +398,9 @@ export function Canvas({
               the same way whichever layer is drawing. */}
           {surface === 'stage' && (
             <Stage landed={vidRun.jobId} onShowing={setStaged}>
+              {/* First, and a direct child: it listens on the stage box itself so
+                  the bridge below keeps its own presses. */}
+              <StageRegions />
               {/* The bridge — see `staged`. Muted and playing for the reason the
                   plain clip below is; `controls` because if the engine never
                   arrives this is the render, for as long as the page is open. */}

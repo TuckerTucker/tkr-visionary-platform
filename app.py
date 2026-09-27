@@ -4176,10 +4176,12 @@ def _list_scenes() -> list[dict[str, Any]]:
         # IProject to read one number is the listing touching every scene's
         # bytes, which it exists not to do.
         edited = proj.stat().st_mtime if proj.exists() else 0.0
-        if not (d / SCENE_JSON).exists() and edited:
-            # Arranged before its intent landed — see `_save_project`. Not
-            # damage, so it lists without an error.
-            row["modified"] = edited
+        if not (d / SCENE_JSON).exists():
+            # Arranged, or a file dropped into media/, before its intent
+            # landed — see `_save_project` and the media route. Not damage, so
+            # it lists without an error; listing it as damaged flagged every
+            # scene whose first gesture was a drop.
+            row["modified"] = edited or row["modified"]
         else:
             try:
                 rec = _read_scene(d)

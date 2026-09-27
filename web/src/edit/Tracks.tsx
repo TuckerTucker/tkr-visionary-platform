@@ -65,6 +65,9 @@ export type TracksProps = {
   tools?: ReactNode
   clipOverlay?: (clip: AnyClip, track: ITrack) => ReactNode
   laneOverlay?: (track: ITrack) => ReactNode
+  /** After the last lane, inside the timed body — the drop strip, whose left
+   *  edge has to be time zero like every lane's. */
+  after?: ReactNode
 }
 
 /** Room past the end of the cut, so the last clip is never flush against the
@@ -99,7 +102,7 @@ function commit(p: Plan | Refusal): void {
   if (batch(p.commands) && p.at !== undefined) seek(p.at)
 }
 
-export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
+export function Tracks({ tools, clipOverlay, laneOverlay, after }: TracksProps) {
   const phase = useEdit((s) => s.phase)
   const error = useEdit((s) => s.error)
   const core = useEdit((s) => s.core)
@@ -446,6 +449,7 @@ export function Tracks({ tools, clipOverlay, laneOverlay }: TracksProps) {
               </div>
             )
           })}
+          {after}
           {phase === 'ready' && <div className="et-playhead" id="edit-head" ref={head} aria-hidden="true" />}
         </div>
       </div>

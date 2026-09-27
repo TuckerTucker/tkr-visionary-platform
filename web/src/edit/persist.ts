@@ -144,9 +144,10 @@ function forgetFolder(): void {
  * One function for both because they are debounced separately: an arrangement
  * change can fire before the intent's first save, and two savers each minting
  * would split one scene across two folders. `worth` is the caller's own test
- * of whether what it holds is a scene rather than a blank page.
+ * of whether what it holds is a scene rather than a blank page. drop.ts is a
+ * third caller: an upload lands in the folder before either saver has run.
  */
-function sceneIdFor(worth: boolean): string | null {
+export function sceneIdFor(worth: boolean): string | null {
   const s = useStore.getState()
   if (s.sceneId) return s.sceneId
   if (!worth) return null
