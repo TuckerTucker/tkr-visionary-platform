@@ -1,0 +1,149 @@
+capability: editing
+stories:
+  - name: cut several takes into one scene
+    status: planned
+    actor: Director
+    intent: have a scene longer than one generation as one thing, not a folder of
+      clips
+    trigger_action: presses Continue on a finished take
+    preconditions:
+      - A video take has rendered
+    steps:
+      - Render a take
+      - Press Continue and render the next, twice
+      - Trim the end of the second take and drag the third ahead of it
+      - Give one cut a crossfade
+      - Export
+    acceptance_criteria:
+      - given: three takes rendered by Continue
+        when: the scene is looked at
+        then: they are on V1 in order without any further gesture
+      - given: a trim or a reorder
+        when: playback runs
+        then: it reflects the change on the next frame and re-fetches nothing
+      - given: a cut nobody touched
+        when: it plays
+        then: it is hard; a crossfade is there only where one was given
+      - given: an export in a Chromium browser
+        when: it finishes
+        then: the MP4 is an output in the gallery
+      - given: Firefox
+        when: the scene is open
+        then: it previews and export is disabled with the reason on the control
+      - given: the page closed and reopened
+        when: the scene loads
+        then: its takes, trims, order and crossfades are as they were left
+    feature: scene-assembly
+  - name: finish a scene with my own material over it
+    status: planned
+    actor: Director
+    intent: add a cutaway, a title and my own music without leaving for another
+      editor
+    trigger_action: drops a file below the last track
+    preconditions:
+      - A scene with at least one take on V1
+    steps:
+      - Drop a clip of my own below V1
+      - Drop a music file below the picture tracks
+      - Add a title at the playhead
+      - Drag a take's soundtrack onto an A track
+    acceptance_criteria:
+      - given: a video or photograph dropped below V1
+        when: it lands
+        then: V2 exists and the file sits at the drop time
+      - given: an audio file dropped
+        when: it lands
+        then: an A track exists and holds it
+      - given: a dropped file
+        when: the datasets are listed
+        then: it appears in none of them
+      - given: a take's soundtrack dragged onto an A track
+        when: undo is pressed once
+        then: it is linked to its clip again
+      - given: an arrangement saved at one pinned OpenVideo version
+        when: it reloads
+        then: every field is intact, including ones the page does not read
+    feature: tracks
+  - name: render a shot as an edit
+    status: planned
+    actor: Director
+    intent: have rendering reached by undo like any other change, and never be
+      asked whether I am sure
+    trigger_action: renders a slot on the timeline
+    preconditions:
+      - A scene with a slot on V1
+    steps:
+      - Trim a take
+      - Render the slot again
+      - Step between its takes with ‹ ›
+      - Undo twice
+      - Continue from the trimmed take
+    acceptance_criteria:
+      - given: a render followed by undo
+        when: the slot is looked at
+        then: it shows its previous take and the undone take's bytes are still on
+          the volume
+      - given: a trim then a render
+        when: undo is pressed twice
+        then: the render is undone first, then the trim
+      - given: a slot whose prose names three shots
+        when: it renders
+        then: it is one take with three cuts, not three takes
+      - given: a trimmed take
+        when: Continue renders the next
+        then: motion and audio carry from the out-point, and the slot says how far
+          the latent grid moved it
+    feature: generative-commands
+  - name: cut away without rebuilding the scene
+    status: planned
+    actor: Director
+    intent: have an insert know which scene it is in
+    trigger_action: drops an empty slot on V2 over V1
+    preconditions:
+      - A scene with a cast on V1
+    steps:
+      - Drop an empty slot on V2 at 0:12
+      - Drop one inherited cast member
+      - Render the insert
+      - Re-render the V1 slot under it
+    acceptance_criteria:
+      - given: an empty slot on V2 at 0:12
+        when: it opens
+        then: it has the cast, look and LoRAs of the V1 slot under 0:12, each
+          marked inherited
+      - given: an inherited item dropped
+        when: the V1 slot is looked at
+        then: it is unchanged
+      - given: V1 slot 2 re-rendered
+        when: the scene is looked at
+        then: V1 slot 3 and any overlay conditioned on slot 2 are marked stale, and
+          none re-renders on its own
+      - given: stale slots
+        when: export is pressed
+        then: they are named before anything encodes
+    feature: cross-track-context
+  - name: make one image without meeting a timeline
+    status: planned
+    actor: Author
+    intent: finish a still and leave without learning that motion exists
+    trigger_action: opens the page for the first time
+    preconditions:
+      - A first-run image session
+    steps:
+      - Write a prompt and render
+      - Step the batch
+      - Draw a region and render again
+    acceptance_criteria:
+      - given: a first-run image session
+        when: the page is looked at
+        then: there is no timeline and no track
+      - given: a batch
+        when: it is stepped
+        then: it costs a compositor frame and re-fetches nothing
+      - given: a region drawn on a still slot
+        when: the slot moves
+        then: the region moves with it
+      - given: a video slot under the playhead
+        when: the region tool is reached for
+        then: it is disabled and says H3 takes no regions
+    feature: one-canvas

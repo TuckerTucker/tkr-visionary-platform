@@ -13,9 +13,13 @@ slices:
       - web/package.json
       - web/package-lock.json
       - web/vite.config.ts
+      - web/index.html
+      - web/src/edit/engine.ts
+      - tools/smoke_pins.py
     depends_on:
       - 17
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: OpenVideo pinned into the image build
     layer: integration
     status: planned
@@ -29,10 +33,15 @@ slices:
       written.
     paths:
       - app.py
+      - tools/preview_ui.py
+      - tools/smoke_scenes.py
       - web/src/api
+      - web/src/store.ts
+      - web/src/edit/persist.ts
     depends_on:
       - 17
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: A scene folder on the volume, and the route that reads and writes it
     layer: data
     status: planned
@@ -42,13 +51,22 @@ slices:
       OpenVideo stage, saved through slice 10's store from the first clip.
       Continue appends; nothing else has to be done for a take to be in the cut.
     paths:
-      - web/src/edit
+      - web/src/edit/project.ts
+      - web/src/edit/useEdit.ts
+      - web/src/edit/Stage.tsx
+      - web/src/edit/Tracks.tsx
+      - web/src/edit/Clip.tsx
+      - web/src/edit/edit.css
       - web/src/store.ts
+      - web/src/video/useVideo.ts
+      - web/src/App.tsx
+      - tools/ui-checks/check_edit.py
     depends_on:
       - 1
       - 2
       - 10
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: Takes become V1 clips on the Pixi stage
     layer: ui
     status: planned
@@ -59,10 +77,14 @@ slices:
       seamless — the pinned context is trimmed off at decode — so a default
       crossfade would overlap audio that already continues.
     paths:
-      - web/src/edit
+      - web/src/edit/Tracks.tsx
+      - web/src/edit/Clip.tsx
+      - web/src/edit/cuts.ts
+      - web/src/edit/tracks.css
     depends_on:
       - 3
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: Trim, reorder, and a crossfade on any cut
     layer: ui
     status: planned
@@ -76,12 +98,16 @@ slices:
       press.
     paths:
       - app.py
+      - tools/preview_ui.py
+      - tools/smoke_outputs.py
       - web/src/api
-      - web/src/edit
       - web/src/gallery
+      - web/src/edit/export.ts
+      - web/src/edit/Export.tsx
     depends_on:
       - 3
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: Export in the page, landing in the gallery
     layer: ui
     status: planned
@@ -94,12 +120,16 @@ slices:
       clip dropped on V2 is not training material."
     paths:
       - app.py
+      - tools/preview_ui.py
+      - tools/smoke_scenes.py
       - web/src/api
-      - web/src/edit
       - web/src/media
+      - web/src/edit/drop.ts
+      - web/src/edit/DropZone.tsx
     depends_on:
       - 4
-    story_ids: []
+    story_ids:
+      - finish-a-scene-with-my-own-material-over-it
     title: Tracks made by a drop — your media, text, audio
     layer: ui
     status: planned
@@ -110,11 +140,14 @@ slices:
       generation is an edit. A slot keeps every take it has had and steps them
       with ‹ 1 / 4 ›.
     paths:
-      - web/src/edit
-      - web/src/video
+      - web/src/edit/commands.ts
+      - web/src/edit/slots.ts
+      - web/src/edit/Slot.tsx
+      - web/src/video/useVideo.ts
     depends_on:
       - 3
-    story_ids: []
+    story_ids:
+      - render-a-shot-as-an-edit
     title: slot.render, take.choose and slot.continue as custom commands
     layer: api
     status: planned
@@ -126,10 +159,11 @@ slices:
       the console budget."
     paths:
       - web/src/canvas
-      - web/src/edit
+      - web/src/edit/Stage.tsx
     depends_on:
       - 3
-    story_ids: []
+    story_ids:
+      - make-one-image-without-meeting-a-timeline
     title: The Pixi stage is the canvas for stills too
     layer: ui
     status: planned
@@ -138,10 +172,12 @@ slices:
     delivers: Picture and sound arrive together from H3 and stay linked; dragging
       the soundtrack onto an A track detaches it, and one undo re-links it.
     paths:
-      - web/src/edit
+      - web/src/edit/detach.ts
+      - web/src/edit/Clip.tsx
     depends_on:
       - 6
-    story_ids: []
+    story_ids:
+      - finish-a-scene-with-my-own-material-over-it
     title: A take's soundtrack travels with it until detached
     layer: ui
     status: planned
@@ -154,11 +190,15 @@ slices:
       disagree with it. Reloading at the same pin loses no field.
     paths:
       - app.py
-      - web/src/edit
+      - tools/preview_ui.py
+      - tools/smoke_scenes.py
+      - web/src/api
+      - web/src/edit/persist.ts
     depends_on:
       - 1
       - 2
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: The arrangement stored as a pinned IProject
     layer: data
     status: planned
@@ -168,11 +208,13 @@ slices:
       Undoing a render returns the previous take and leaves the bytes on the
       volume. No scene action asks for confirmation; undo is the recovery.
     paths:
-      - web/src/edit
+      - web/src/edit/history.ts
+      - web/src/edit/UndoBar.tsx
     depends_on:
       - 4
       - 7
-    story_ids: []
+    story_ids:
+      - render-a-shot-as-an-edit
     title: One undo stack for every scene edit
     layer: ui
     status: planned
@@ -188,12 +230,14 @@ slices:
       the next take opens cold."
     paths:
       - app.py
+      - tools/smoke_graphs.py
       - web/src/video
-      - web/src/edit
+      - web/src/edit/continue.ts
     depends_on:
       - 4
       - 7
-    story_ids: []
+    story_ids:
+      - render-a-shot-as-an-edit
     title: Continue from the out-point
     layer: ui
     status: planned
@@ -209,11 +253,15 @@ slices:
       dulls first.
     paths:
       - app.py
-      - web/src/scene
-      - web/src/edit
+      - tools/preview_ui.py
+      - web/src/scene/Timeline.tsx
+      - web/src/scene/Shots.tsx
+      - web/src/edit/Slot.tsx
     depends_on:
       - 7
-    story_ids: []
+      - 12
+    story_ids:
+      - render-a-shot-as-an-edit
     title: The shot bars live inside the V1 slots
     layer: ui
     status: planned
@@ -223,12 +271,13 @@ slices:
       LoRAs, and can take V1's frame at that time as a reference. Each inherited
       item is marked inherited and dropping one is one gesture.
     paths:
-      - web/src/edit
-      - web/src/scene
+      - web/src/edit/inherit.ts
+      - web/src/edit/Inherited.tsx
     depends_on:
       - 6
       - 7
-    story_ids: []
+    story_ids:
+      - cut-away-without-rebuilding-the-scene
     title: Inserts inherit the scene they cover
     layer: ui
     status: planned
@@ -239,12 +288,14 @@ slices:
       before encoding; a stale slot offers to re-render from the new cut and
       never does it on its own.
     paths:
-      - web/src/edit
+      - web/src/edit/stale.ts
+      - web/src/edit/Export.tsx
     depends_on:
       - 5
       - 12
       - 14
-    story_ids: []
+    story_ids:
+      - cut-away-without-rebuilding-the-scene
     title: Staleness along chains and overlays
     layer: ui
     status: planned
@@ -255,10 +306,10 @@ slices:
       disabled with that reason rather than drawing boxes nothing will read.
     paths:
       - web/src/regions
-      - web/src/edit
     depends_on:
       - 8
-    story_ids: []
+    story_ids:
+      - make-one-image-without-meeting-a-timeline
     title: Regions over the frame at the playhead
     layer: ui
     status: planned
@@ -273,7 +324,8 @@ slices:
       - web/CLAUDE.md
       - docs/roadmap.md
     depends_on: []
-    story_ids: []
+    story_ids:
+      - cut-several-takes-into-one-scene
     title: The rules that multi-track editing overrides
     layer: domain
     status: done
