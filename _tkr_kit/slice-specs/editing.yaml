@@ -1,20 +1,20 @@
 capability: editing
 slice_specs:
   - slice: 1
-    status: draft
+    status: done
     title: OpenVideo pinned into the image build
     purpose: The engine the editing capability arranges, previews and exports with,
       at versions that cannot move under a build, loaded only when time is
       added, and unable to report on the person using it.
     interface:
-      - "`@openvideo/core` and `@openvideo/engine-pixi` in web/package.json at exact
-        versions (no range), their integrity hashes in package-lock.json."
+      - "`@openvideo/core` and `@openvideo/engine-pixi` in web/package.json at
+        exact versions (no range), their integrity hashes in package-lock.json."
       - "`web/src/edit/engine.ts` — the only module that imports either package.
         Exports `loadEngine(): Promise<Engine | ApiError>` (never rejects, like
-        api/client; a dynamic import, so the
-        engine is its own chunk), `absoluteUrl(path)`, `OPENVIDEO_PIN` (the
-        pinned core version string, read by slice 10) and the microsecond
-        helpers `us(seconds)` / `sec(us)`."
+        api/client; a dynamic import, so the engine is its own chunk),
+        `absoluteUrl(path)`, `OPENVIDEO_PIN` (the pinned core version string,
+        read by slice 10) and the microsecond helpers `us(seconds)` /
+        `sec(us)`."
       - A Content-Security-Policy `<meta>` in web/index.html whose `connect-src`
         is the page's own origin plus `blob:` and `data:` — one file both app.py
         and the preview serve, so both carry the same policy.
@@ -41,14 +41,18 @@ slice_specs:
         versions and the lockfile carries an integrity hash for each."
       - The served page carries the CSP header; the preview server serves the
         same header.
-    data_lifecycle: No new store. The engine's own OPFS cache is browser-side and
-      is bounded in slice 3.
+    data_lifecycle: No new store. The engine's own OPFS cache is browser-side and is
+      bounded in slice 3.
     references:
       - web/package.json
       - web/vite.config.ts
       - app.py
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 2
-    status: draft
+    status: done
     title: A scene folder on the volume, and the route that reads and writes it
     purpose: A scene survives the page. The intent the person gave — cast,
       photographs, prose, pills, and every take the scene has had — lives as
@@ -79,8 +83,7 @@ slice_specs:
         keeps the page state and says so where the scene is shown, and the next
         change retries.
       - "The reader keeps every field it does not model: the page spreads what
-        it read under what it writes, and the server stores `intent`
-        verbatim."
+        it read under what it writes, and the server stores `intent` verbatim."
       - No trim, order or position is written here — they are the IProject's
         (slice 10).
       - Behind the password by existing; OPEN_PATHS is unchanged.
@@ -91,8 +94,8 @@ slice_specs:
         the old folder.
     tests:
       - "tools/smoke_scenes.py (no network, no modal): round-trip a scene with
-        an unknown field and get it back; a bad id is refused by name; refs
-        not re-sent survive a save."
+        an unknown field and get it back; a bad id is refused by name; refs not
+        re-sent survive a save."
       - tools/preview_ui.py stubs every new route, so the page works against it.
     data_lifecycle: "`scenes/{id}/` is a new store. Retention: kept until deleted;
       plain files, readable without the app."
@@ -100,16 +103,20 @@ slice_specs:
       - app.py
       - web/src/api
       - web/src/store.ts
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 3
-    status: draft
+    status: done
     title: Takes become V1 clips on the Pixi stage
-    purpose: The takes the store has recorded since Continue existed are, at
-      last, one cut — played on the OpenVideo stage with no gesture beyond
-      rendering them.
+    purpose: The takes the store has recorded since Continue existed are, at last,
+      one cut — played on the OpenVideo stage with no gesture beyond rendering
+      them.
     interface:
-      - "`web/src/edit/project.ts` — pure functions over IProject: `v1(project)`,
-        `appendTake(project, take, slotId)`, `slotOf(clip)`. The slot id lives
-        in `clip.metadata.slotId`."
+      - "`web/src/edit/project.ts` — pure functions over IProject:
+        `v1(project)`, `appendTake(project, take, slotId)`, `slotOf(clip)`. The
+        slot id lives in `clip.metadata.slotId`."
       - "`web/src/edit/Stage.tsx` — mounts the Studio with `interactivity:
         false` and plays the scene."
       - "`web/src/edit/Tracks.tsx` — the timeline under the stage: V1 drawn as
@@ -136,8 +143,12 @@ slice_specs:
     references:
       - web/src/store.ts
       - web/src/video/useVideo.ts
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 4
-    status: draft
+    status: done
     title: Trim, reorder, and a crossfade on any cut
     purpose: The cut is shaped on the track itself.
     interface:
@@ -151,8 +162,8 @@ slice_specs:
       - Every change is a Core command, so it undoes; nothing re-fetches.
       - V1 stays gapless — a trim or a move ripples the clips after it.
     errors:
-      - A trim past the source's length is impossible to make; the handle
-        stops at the source's end.
+      - A trim past the source's length is impossible to make; the handle stops
+        at the source's end.
     tests:
       - typecheck and build pass.
       - "check_edit.py: a trim changes the clip's duration and the next clip's
@@ -160,13 +171,18 @@ slice_specs:
     data_lifecycle: None beyond the IProject.
     references:
       - web/src/edit
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 5
-    status: draft
+    status: done
     title: Export in the page, landing in the gallery
     purpose: The cut becomes an MP4 found where every render is.
     interface:
-      - "`web/src/edit/exportCut.ts` — `exportCut(project, onProgress, signal)` (not export.ts: beside Export.tsx on a case-insensitive disk, `./edit/Export` resolves to it)
-        encoding with the engine's Compositor."
+      - "`web/src/edit/exportCut.ts` — `exportCut(project, onProgress, signal)`
+        (not export.ts: beside Export.tsx on a case-insensitive disk,
+        `./edit/Export` resolves to it) encoding with the engine's Compositor."
       - "POST /api/outputs (multipart: `file`, `meta` JSON) → `{ok, job_id,
         name}`. Writes `outputs/{exp…}/{HHMMSS}.mp4` and `visionary.json` with
         `kind: video`, `source: edit`, the scene id and the take list."
@@ -190,14 +206,18 @@ slice_specs:
     references:
       - app.py
       - web/src/gallery
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 6
-    status: draft
+    status: done
     title: Tracks made by a drop — your media, text, audio
     purpose: Inserts, titles and music over the scene, arriving the way every
       picture already arrives here — by a drop.
     interface:
-      - "POST /api/scenes/{id}/media (multipart) → `{ok, name}`; the file lands in
-        `scenes/{id}/media/` and is served by /api/scene-file."
+      - "POST /api/scenes/{id}/media (multipart) → `{ok, name}`; the file lands
+        in `scenes/{id}/media/` and is served by /api/scene-file."
       - A drop zone below the last track of each kind; a text insert at the
         playhead.
     behavior:
@@ -216,21 +236,25 @@ slice_specs:
     references:
       - app.py
       - web/src/media
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 7
-    status: draft
+    status: done
     title: slot.render, take.choose and slot.continue as custom commands
     purpose: Rendering is an edit — on the same history as a trim.
     interface:
       - "`web/src/edit/commands.ts` registers `slot.render`, `take.choose`,
-        `slot.continue` with the engine's command registry, emitting
-        whole-clip patches with `oldValue`."
+        `slot.continue` with the engine's command registry, emitting whole-clip
+        patches with `oldValue`."
       - A slot's takes step with ‹ n / N › on the slot.
     behavior:
       - slot.render starts an ordinary /api/video job; the slot shows it
         rendering; the landed take becomes the slot's clip.
       - A slot keeps every take it has had — each take in the intent's `takes`
-        carries its `slot`; the chosen take is derived from the Core clip so
-        it moves with undo.
+        carries its `slot`; the chosen take is derived from the Core clip so it
+        moves with undo.
       - The job/status/stop contract is unchanged — stop cancels the job.
     errors:
       - A refused job — the refusal on the slot, verbatim.
@@ -240,11 +264,15 @@ slice_specs:
     data_lifecycle: Takes stay in their job folders; the slot lists them.
     references:
       - web/src/video/useVideo.ts
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 8
-    status: draft
+    status: done
     title: The Pixi stage is the canvas for stills too
-    purpose: One canvas for both domains, without making a first-run image
-      session pay for motion.
+    purpose: One canvas for both domains, without making a first-run image session
+      pay for motion.
     interface:
       - The canvas is one surface with two layers — the frame layer that shows a
         still, and the stage that mounts when the scene has time.
@@ -252,8 +280,8 @@ slice_specs:
       - A still is a zero-duration scene of one slot. The frame layer renders it
         without loading the engine; time added mounts the stage over the same
         surface. Decided over mounting Pixi for stills, because the engine is
-        890 KB gzipped and "duration starts at zero" vetoes making a still
-        wait for it.
+        890 KB gzipped and "duration starts at zero" vetoes making a still wait
+        for it.
       - A render is replaced when the next lands; a click addresses what is
         under it; the console budget holds.
       - Stepping a batch costs a compositor frame and re-fetches nothing.
@@ -265,11 +293,15 @@ slice_specs:
     data_lifecycle: None.
     references:
       - web/src/canvas
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 9
-    status: draft
+    status: done
     title: A take's soundtrack travels with it until detached
-    purpose: Picture and sound arrive together and stay linked until separated
-      on purpose.
+    purpose: Picture and sound arrive together and stay linked until separated on
+      purpose.
     interface:
       - "Dragging a take's sound strip onto an A track, or D on the focused
         clip, runs `clip.detach` — one registered command: an Audio clip with
@@ -288,16 +320,20 @@ slice_specs:
     data_lifecycle: None beyond the IProject.
     references:
       - web/src/edit
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 10
-    status: draft
+    status: done
     title: The arrangement stored as a pinned IProject
     purpose: The arrangement's only record, written as OpenVideo writes it.
     interface:
       - "`scenes/{id}/project.json` — `{openvideo, project}`: the pinned core
         version and `core.project.export()` verbatim."
-      - "POST /api/scenes/{id}/project `{openvideo, project}` → `{ok, modified}`;
-        GET /api/scenes/{id} returns `project` and `openvideo` alongside the
-        intent."
+      - "POST /api/scenes/{id}/project `{openvideo, project}` → `{ok,
+        modified}`; GET /api/scenes/{id} returns `project` and `openvideo`
+        alongside the intent."
       - "`persist.ts` — `saveProject()` debounced on Core change."
     behavior:
       - Every Core change saves. Reload imports the stored project; the undo
@@ -313,18 +349,21 @@ slice_specs:
     data_lifecycle: "`scenes/{id}/project.json` — deleted with the scene."
     references:
       - app.py
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 11
-    status: draft
+    status: done
     title: One undo stack for every scene edit
-    purpose: Undo is total within the scene, because it is what replaces
-      confirmation.
+    purpose: Undo is total within the scene, because it is what replaces confirmation.
     interface:
       - "⌘Z / ⇧⌘Z (Ctrl on others) and on-surface undo/redo, driving Core's
         history only."
     behavior:
-      - Trim, reorder, crossfade, choose a take, render, detach — each one
-        undo entry. Undoing a render returns the previous take and leaves the
-        bytes on the volume.
+      - Trim, reorder, crossfade, choose a take, render, detach — each one undo
+        entry. Undoing a render returns the previous take and leaves the bytes
+        on the volume.
       - No scene action asks for confirmation.
       - The keys are ignored while focus is in a text field.
     errors:
@@ -334,24 +373,27 @@ slice_specs:
     data_lifecycle: None.
     references:
       - web/src/edit
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 12
-    status: draft
+    status: done
     title: Continue from the out-point
-    purpose: A take trimmed because its last second went wrong is continued from
-      the cut, not from that second.
+    purpose: A take trimmed because its last second went wrong is continued from the
+      cut, not from that second.
     interface:
       - "/api/video gains `continue_at` (seconds into the source take, delivered
         frames) beside `continue_from`."
       - The GPU job cuts the saved latent so its context window ends at the
         out-point, snapped to the latent frame grid and the 40 Hz audio grid,
-        before the pack loads it; `meta.continued_at` records the snapped
-        time.
+        before the pack loads it; `meta.continued_at` records the snapped time.
     behavior:
       - A continued source's saved latent includes its own pinned head; the
         offset accounts for it.
       - The slot shows how far the snap moved the cut.
-      - With no saved latent, the next take opens on the frame at the
-        out-point (studio.renderFrame) and says it did; with no frame, cold.
+      - With no saved latent, the next take opens on the frame at the out-point
+        (studio.renderFrame) and says it did; with no frame, cold.
     errors:
       - An out-point before the context window's length — refused naming the
         minimum.
@@ -362,8 +404,12 @@ slice_specs:
     references:
       - app.py
       - web/src/video
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 13
-    status: draft
+    status: done
     title: The shot bars live inside the V1 slots
     purpose: One timeline on screen.
     interface:
@@ -374,8 +420,8 @@ slice_specs:
     behavior:
       - A slot's prose with three shots is one take with three cuts.
       - A shot longer than one generation spans chained slots; every
-        H3MC_REANCHOR_TAKES-th opens from the cast's references rather than
-        the latent.
+        H3MC_REANCHOR_TAKES-th opens from the cast's references rather than the
+        latent.
     errors:
       - None new.
     tests:
@@ -383,20 +429,24 @@ slice_specs:
     data_lifecycle: None.
     references:
       - web/src/scene
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 14
-    status: draft
+    status: done
     title: Inserts inherit the scene they cover
     purpose: A cutaway never rebuilds the cast and the look.
     interface:
       - "An empty insert (drawn along the drop strip, I at the playhead) is a
-        zero-opacity Text clip with `metadata {slotId, insert: true}` — the
-        only clip types the engine keeps without a src are Text, Caption,
-        Effect and Transition — on a picture track above V1."
+        zero-opacity Text clip with `metadata {slotId, insert: true}` — the only
+        clip types the engine keeps without a src are Text, Caption, Effect and
+        Transition — on a picture track above V1."
       - "What it inherited — the scene's cast, look and LoRAs, the covered V1
         slot as `from`, and whether it takes V1's frame — lives at
-        `track.inserts[slotId]` in the IProject, so each drop is one undo
-        entry and survives the render swap. Cast and look are scene-wide by
-        design, so there is no per-slot snapshot to copy."
+        `track.inserts[slotId]` in the IProject, so each drop is one undo entry
+        and survives the render swap. Cast and look are scene-wide by design, so
+        there is no per-slot snapshot to copy."
     behavior:
       - Dropping an inherited item is one gesture and touches only the insert.
       - The V1 frame at the insert's time can be taken as a reference.
@@ -407,11 +457,15 @@ slice_specs:
     data_lifecycle: Inherited items live in project.json, on the insert's track.
     references:
       - web/src/scene
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 15
-    status: draft
+    status: done
     title: Staleness along chains and overlays
-    purpose: A re-render says what it has made out of date and redoes nothing on
-      its own.
+    purpose: A re-render says what it has made out of date and redoes nothing on its
+      own.
     interface:
       - "Each take records `conditionedOn` (the take a continuation or a frame
         insert was made from) in the intent's `takes`; `stale` is derived by
@@ -432,11 +486,15 @@ slice_specs:
     data_lifecycle: None.
     references:
       - web/src/edit
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - slice: 16
-    status: draft
+    status: done
     title: Regions over the frame at the playhead
-    purpose: A region means something on a still slot and says why it means
-      nothing on a video one.
+    purpose: A region means something on a still slot and says why it means nothing
+      on a video one.
     interface:
       - "`store.regions` is the one still slot's set — there is only one still
         slot today. When stills sit beside other slots, it becomes
@@ -451,3 +509,7 @@ slice_specs:
     data_lifecycle: None.
     references:
       - web/src/regions
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"

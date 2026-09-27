@@ -1,7 +1,7 @@
 capability: editing
 features:
   - name: scene-assembly
-    status: planned
+    status: done
     user_story: As someone who has rendered several takes of one scene, I want them
       to play and export as one cut, so that a scene longer than 14.4 seconds is
       a thing I have rather than a folder of clips.
@@ -22,8 +22,8 @@ features:
         trimmed off at decode — so a crossfade there would overlap audio that
         already continues.
       - Export encodes in the page and the MP4 appears in the gallery as an
-        output, through a route that writes outputs — never through
-        /api/upload, which stages images into a training dataset.
+        output, through a route that writes outputs — never through /api/upload,
+        which stages images into a training dataset.
       - In Firefox the scene previews and export is disabled with the reason on
         the control.
       - Closing and reopening the page restores the scene, its trims and its
@@ -41,17 +41,21 @@ features:
         - web/src/store.ts
         - web/src/api
         - web/src/gallery
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: tracks
-    status: planned
+    status: done
     user_story: As a director, I want a cutaway, a title and my own music over the
       scene, so that the scene is finished here rather than in another editor.
     description: Multi-track, on OpenVideo's arrangement as-is. A track is made by
       dropping something below the last one — your own footage, your own
       photographs, text, audio — never by an add-track button. An H3 take's
       soundtrack travels with its clip until you drag it onto an A track. Your
-      own files are stored in the scene folder, not in a dataset, because a
-      clip dropped on V2 is not training material and nothing should make it
-      one by accident. The IProject's reader keeps every field it does not model.
+      own files are stored in the scene folder, not in a dataset, because a clip
+      dropped on V2 is not training material and nothing should make it one by
+      accident. The IProject's reader keeps every field it does not model.
     acceptance_criteria:
       - Dropping a file below V1 makes V2 and places it at the drop time;
         dropping audio makes an A track.
@@ -70,8 +74,12 @@ features:
         - web/src/edit
         - web/src/media
         - app.py
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: generative-commands
-    status: planned
+    status: done
     user_story: As someone editing a scene, I want rendering a shot to be an edit
       like any other, so that undo reaches it and nothing asks me whether I am
       sure.
@@ -80,15 +88,15 @@ features:
       /api/status and /api/stop. A slot's takes step with the same ‹ 1 / 4 › the
       canvas already uses for a batch. A slot is one generation and holds the
       shots rendered in it — the `[Shot N]` cuts H3 makes inside one take — so
-      scene/Timeline.tsx's shot bars move inside the V1 slots and its break
-      mark becomes the slot boundary, rather than each shot becoming a
-      generation of its own and losing the cuts the model makes for free. A
-      shot longer than one generation spans several slots chained by Continue,
-      re-anchored from the cast's references at an interval named beside
-      H3MC_CONTEXT_FRAMES, because the pack's own README says quality compounds
-      down a chain and audio dulls first. Continue from a trimmed take cuts the
-      saved motion latent at the out-point on the server, so motion and audio
-      still continue from where the cut is rather than from a still.
+      scene/Timeline.tsx's shot bars move inside the V1 slots and its break mark
+      becomes the slot boundary, rather than each shot becoming a generation of
+      its own and losing the cuts the model makes for free. A shot longer than
+      one generation spans several slots chained by Continue, re-anchored from
+      the cast's references at an interval named beside H3MC_CONTEXT_FRAMES,
+      because the pack's own README says quality compounds down a chain and
+      audio dulls first. Continue from a trimmed take cuts the saved motion
+      latent at the out-point on the server, so motion and audio still continue
+      from where the cut is rather than from a still.
     acceptance_criteria:
       - Undo after a render returns the slot to its previous take; the bytes of
         the undone take stay on the volume.
@@ -101,9 +109,10 @@ features:
         cuts, not as three takes.
       - A 30-second shot renders as three chained takes that play as one clip on
         V1, and the chain re-anchors from references at the named interval.
-      - Continue from a trimmed take carries motion and audio from the out-point,
-        snapped to the latent's frame grid with the snap shown on the slot; with
-        no saved latent it opens on the frame at the out-point and says so.
+      - Continue from a trimmed take carries motion and audio from the
+        out-point, snapped to the latent's frame grid with the snap shown on the
+        slot; with no saved latent it opens on the frame at the out-point and
+        says so.
     consumes_api:
       - /api/video
       - /api/status/{job_id}
@@ -116,8 +125,12 @@ features:
         - web/src/video
         - web/src/canvas
         - app.py
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: cross-track-context
-    status: planned
+    status: done
     user_story: As a director cutting away mid-scene, I want the insert to know
       which scene it is in, so that I never rebuild the cast and the look for a
       three-second cutaway.
@@ -144,8 +157,12 @@ features:
         - web/src/edit
         - web/src/scene
         - web/src/video
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: one-canvas
-    status: planned
+    status: done
     user_story: As someone making one image, I want to finish and leave without
       learning that motion exists, and as someone making a film I want the same
       surface to hold it.
@@ -172,3 +189,7 @@ features:
         - web/src/edit
         - web/src/canvas
         - web/src/regions
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"

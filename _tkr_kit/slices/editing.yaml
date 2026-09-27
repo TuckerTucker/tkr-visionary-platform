@@ -334,7 +334,10 @@ slices:
       - render-a-shot-as-an-edit
     title: The shot bars live inside the V1 slots
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "148583e: check_shots and all 22 UI checks pass on main; smoke tests pass"
   - number: 14
     feature: cross-track-context
     delivers: A slot on V2 over V1 opens with the covered slot's cast, look and

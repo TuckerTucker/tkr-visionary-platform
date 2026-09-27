@@ -1,10 +1,9 @@
 capability: editing
 stories:
   - name: cut several takes into one scene
-    status: planned
+    status: done
     actor: Director
-    intent: have a scene longer than one generation as one thing, not a folder of
-      clips
+    intent: have a scene longer than one generation as one thing, not a folder of clips
     trigger_action: presses Continue on a finished take
     preconditions:
       - A video take has rendered
@@ -34,11 +33,14 @@ stories:
         when: the scene loads
         then: its takes, trims, order and crossfades are as they were left
     feature: scene-assembly
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: finish a scene with my own material over it
-    status: planned
+    status: done
     actor: Director
-    intent: add a cutaway, a title and my own music without leaving for another
-      editor
+    intent: add a cutaway, a title and my own music without leaving for another editor
     trigger_action: drops a file below the last track
     preconditions:
       - A scene with at least one take on V1
@@ -64,11 +66,15 @@ stories:
         when: it reloads
         then: every field is intact, including ones the page does not read
     feature: tracks
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: render a shot as an edit
-    status: planned
+    status: done
     actor: Director
-    intent: have rendering reached by undo like any other change, and never be
-      asked whether I am sure
+    intent: have rendering reached by undo like any other change, and never be asked
+      whether I am sure
     trigger_action: renders a slot on the timeline
     preconditions:
       - A scene with a slot on V1
@@ -81,8 +87,8 @@ stories:
     acceptance_criteria:
       - given: a render followed by undo
         when: the slot is looked at
-        then: it shows its previous take and the undone take's bytes are still on
-          the volume
+        then: it shows its previous take and the undone take's bytes are still on the
+          volume
       - given: a trim then a render
         when: undo is pressed twice
         then: the render is undone first, then the trim
@@ -91,11 +97,15 @@ stories:
         then: it is one take with three cuts, not three takes
       - given: a trimmed take
         when: Continue renders the next
-        then: motion and audio carry from the out-point, and the slot says how far
-          the latent grid moved it
+        then: motion and audio carry from the out-point, and the slot says how far the
+          latent grid moved it
     feature: generative-commands
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: cut away without rebuilding the scene
-    status: planned
+    status: done
     actor: Director
     intent: have an insert know which scene it is in
     trigger_action: drops an empty slot on V2 over V1
@@ -109,21 +119,25 @@ stories:
     acceptance_criteria:
       - given: an empty slot on V2 at 0:12
         when: it opens
-        then: it has the cast, look and LoRAs of the V1 slot under 0:12, each
-          marked inherited
+        then: it has the cast, look and LoRAs of the V1 slot under 0:12, each marked
+          inherited
       - given: an inherited item dropped
         when: the V1 slot is looked at
         then: it is unchanged
       - given: V1 slot 2 re-rendered
         when: the scene is looked at
-        then: V1 slot 3 and any overlay conditioned on slot 2 are marked stale, and
-          none re-renders on its own
+        then: V1 slot 3 and any overlay conditioned on slot 2 are marked stale, and none
+          re-renders on its own
       - given: stale slots
         when: export is pressed
         then: they are named before anything encodes
     feature: cross-track-context
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
   - name: make one image without meeting a timeline
-    status: planned
+    status: done
     actor: Author
     intent: finish a still and leave without learning that motion exists
     trigger_action: opens the page for the first time
@@ -147,3 +161,7 @@ stories:
         when: the region tool is reached for
         then: it is disabled and says H3 takes no regions
     feature: one-canvas
+    evidence:
+      kind: commit
+      ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
+        pass on main"
