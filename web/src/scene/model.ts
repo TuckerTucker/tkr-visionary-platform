@@ -393,6 +393,196 @@ export function times(shots: Shot[], seconds: number): [number, number][] {
   })
 }
 
+// ── generations ─────────────────────────────────────────────────────────────
+
+/** A generation's ceiling in seconds — `H3_MAX_FRAMES` / `H3_FPS`, 345/24,
+ *  rounded down to what the bars can land on. */
+export const TAKE_SECONDS = 14
+/** The shortest a bar can be pulled, and the step it moves in — half a second
+ *  is the finest a person reads off a 30px-per-second track. */
+export const SHOT_MIN = 1
+export const SHOT_STEP = 0.5
+/** The longest a bar can be pulled. Not a generation's ceiling: a shot longer
+ *  than one generation spans several, chained by Continue — "a 5 minute scene
+ *  where the protagonist sits in a chair" is the owner's own example, so it is
+ *  the bound. */
+export const SHOT_MAX = 300
+
+/**
+ * Seconds per shot, as the next run will read them. While the scene is not
+ * live — one shot, nothing dragged — that is the duration menu's one number
+ * (`menu`), not `SHOT_SECONDS`: the bar shows what will actually run, and the
+ * first drag hands authority to the track exactly as `sceneSeconds` decides.
+ */
+export const shotSecs = (sc: Scene, menu: number): number[] =>
+  sceneSeconds(sc) == null ? [menu > 0 ? menu : SHOT_SECONDS] : shares(sc.shots)
+
+/** Snap a pulled length onto the bar's grid and its bounds. */
+export const clampBeats = (sec: number) =>
+  Math.round(Math.min(SHOT_MAX, Math.max(SHOT_MIN, sec)) / SHOT_STEP) * SHOT_STEP
+
+/** One shot's stretch inside one generation. A shot longer than a generation
+ *  is several pieces, `part` of `parts`. Seconds are the generation's own. */
+export type Piece = {
+  shotId: string
+  /** Index into the scene's shots. */
+  i: number
+  from: number
+  to: number
+  part: number
+  parts: number
+}
+
+/** One generation's worth of shots — a slot. */
+export type Generation = { pieces: Piece[]; seconds: number }
+
+/**
+ * The shots, cut into generations — which is where the slots on V1 come from.
+ *
+ * **A slot is one generation and holds the shots rendered in it.** H3 makes the
+ * `[Shot N]` cuts inside one take for free, so shots pack into a generation
+ * until the next one would cross the cap, and the break is where the running
+ * total crosses it — the rule the break mark always drew, now a boundary
+ * between slots rather than a mark on a bar. A shot that fits is never split:
+ * there is no cut inside a shot to break it at, so splitting one would put a
+ * join where the person asked for continuity.
+ *
+ * **A shot longer than a generation starts one of its own and runs on** across
+ * as many as it needs, each continued from the last's latent; its final piece
+ * leaves room for the shots after it. `secs` is the seconds per shot — `shares`,
+ * or the duration menu's one number while the scene is not live.
+ */
+export function generations(secs: number[], ids: string[], cap = TAKE_SECONDS): Generation[] {
+  const out: Generation[] = []
+  let cur: Generation | null = null
+  const put = (g: Generation, p: Omit<Piece, 'from' | 'to'>, len: number) => {
+    g.pieces.push({ ...p, from: g.seconds, to: g.seconds + len })
+    g.seconds += len
+  }
+  for (let i = 0; i < secs.length; i++) {
+    const sec = secs[i]!
+    const shotId = ids[i] ?? String(i)
+    if (sec <= cap) {
+      if (cur && cur.seconds + sec > cap) { out.push(cur); cur = null }
+      cur ??= { pieces: [], seconds: 0 }
+      put(cur, { shotId, i, part: 1, parts: 1 }, sec)
+      continue
+    }
+    if (cur && cur.pieces.length) out.push(cur)
+    const parts = Math.ceil(sec / cap)
+    let left = sec
+    for (let p = 1; p <= parts; p++) {
+      cur = { pieces: [], seconds: 0 }
+      const len = Math.min(cap, left)
+      put(cur, { shotId, i, part: p, parts }, len)
+      left -= len
+      if (p < parts) out.push(cur)
+    }
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+/**
+ * The scene the next Generate renders, and the shots left for the ones after.
+ *
+ * `now` is the first generation: its shots, each carrying its seconds in this
+ * generation as its beats — a long shot's first piece carries that piece's. `later` is everything else, a long shot's
+ * remainder under the same id. With one generation `now` is the scene itself,
+ * unchanged — which is what keeps the degrade exact: one shot, nothing dragged,
+ * and `readScene` still returns null.
+ */
+export function splitScene(sc: Scene, secs: number[]): { now: Scene; later: Shot[] } {
+  const gens = generations(secs, sc.shots.map((x) => x.id))
+  const first = gens[0]
+  if (gens.length < 2 || !first) return { now: sc, later: [] }
+  // Every shot in `now` carries its seconds as a number, dragged or not: left
+  // null, a split that leaves one shot reads as the degrade, and the run takes
+  // the duration menu's length instead of the shot's.
+  const now = first.pieces.map((p) => ({ ...sc.shots[p.i]!, beats: p.to - p.from }))
+  const used = new Map(first.pieces.map((p) => [p.i, p.to - p.from]))
+  const later = sc.shots.flatMap((shot, i) => {
+    const took = used.get(i)
+    if (took === undefined) return [shot]
+    const rest = (secs[i] ?? 0) - took
+    return rest > 0 ? [{ ...shot, beats: rest }] : []
+  })
+  return { now: { ...sc, shots: now }, later }
+}
+
+/** What a take records about the shots it was rendered from: each one's
+ *  sentence and its seconds, so the slot can draw its cuts after the composer
+ *  has moved on to the next beat. Seconds rather than a share, because they are
+ *  what was asked for; the slot scales them to the file it got. */
+export type TakeShot = { line: string; beats: number }
+
+/** The record for a generation about to be rendered. */
+export const takeShots = (sc: Scene, secs: number[]): TakeShot[] =>
+  sc.shots.map((s, i) => ({ line: s.line, beats: secs[i] ?? SHOT_SECONDS }))
+
+/**
+ * A take's recorded shots, read defensively — the field rides on `SceneTake`
+ * as an unknown, from scenes saved before it existed and by whatever writes it
+ * next. Null when there is nothing usable, and the slot then draws no cuts
+ * rather than inventing them.
+ */
+export function shotsOf(take: unknown): TakeShot[] | null {
+  if (typeof take !== 'object' || take === null) return null
+  const raw: unknown = (take as Record<string, unknown>).shots
+  if (!Array.isArray(raw)) return null
+  const out: TakeShot[] = []
+  for (const r of raw as unknown[]) {
+    if (typeof r !== 'object' || r === null) return null
+    const { line, beats } = r as Record<string, unknown>
+    if (typeof beats !== 'number' || !Number.isFinite(beats) || beats <= 0) return null
+    out.push({ line: typeof line === 'string' ? line : '', beats })
+  }
+  return out.length ? out : null
+}
+
+/**
+ * Is this continuation the one that re-anchors?
+ *
+ * `chainLength` is how many takes the chain already holds since it last opened
+ * from references — the take being continued from included — so the take about
+ * to be made is continuation number `chainLength`. Every `every`-th one opens
+ * from the cast's references instead of the latent (`H3MC_REANCHOR_TAKES`,
+ * served in /api/state): the pack's own README says quality compounds down a
+ * chain and audio dulls first, so an unbounded chain is a slow fade to mud.
+ * A non-positive or non-integer interval never re-anchors rather than
+ * re-anchoring every take, which would be no chain at all.
+ */
+export function reanchorDue(chainLength: number, every: number): boolean {
+  if (!Number.isInteger(every) || every < 1) return false
+  if (!Number.isInteger(chainLength) || chainLength < 1) return false
+  return chainLength % every === 0
+}
+
+/**
+ * How many takes the chain ending at `jobId` holds since it last opened from
+ * references. Walks each take's `from` (the job it continued) back until a take
+ * that did not continue, or one marked `reanchored`; both count as the chain's
+ * first take. A take the list no longer holds ends the walk where it is, and a
+ * cycle — which only a hand-edited sidecar could make — ends it at the repeat.
+ */
+export function chainLength(
+  takes: readonly { jobId: string }[], jobId: string,
+): number {
+  const by = new Map(takes.map((t) => [t.jobId, t as Record<string, unknown>]))
+  const seen = new Set<string>()
+  let at: string | null = jobId
+  let n = 0
+  while (at !== null && !seen.has(at)) {
+    seen.add(at)
+    const t = by.get(at)
+    if (!t) break
+    n += 1
+    if (t.reanchored === true) break
+    at = typeof t.from === 'string' ? t.from : null
+  }
+  return n
+}
+
 export const clock = (t: number) => {
   const m = Math.floor(t / 60)
   return `${String(m).padStart(2, '0')}:${(t - m * 60).toFixed(3).padStart(6, '0')}`

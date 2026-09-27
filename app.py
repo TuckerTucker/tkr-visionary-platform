@@ -341,6 +341,21 @@ H3MC_REPO = "https://github.com/NikoDemon80/ComfyUI-H3-Motion-Context"
 H3MC_CONTEXT_FRAMES = 22
 H3MC_AUDIO_CONTEXT = 24  # one second on the model's 40 Hz audio grid
 
+# How many continuations a chain runs on the latent before the next one opens
+# from the cast's references instead. The pack's README at H3MC_SHA, under
+# Limitations: "Quality degrades down a chain. [...] Losses compound like
+# photocopying a photocopy, and in audio the top end goes first. [...] after
+# several clips the sound gets duller and more muffled. Picture holds up much
+# better." It names no number, so this is the smallest count "several" can
+# mean: every third continuation re-anchors, and no take is more than three
+# generations of photocopy away from the references. A shot longer than one
+# generation is several chained slots (`generations` in web/src/scene/model.ts),
+# and an unbounded chain is the 16-clip build the README measured the dulling
+# on. Where a restart lands best — "at a natural musical transition", the same
+# section says — is judgement, so it stays the person's: the interval only says
+# when one is due.
+H3MC_REANCHOR_TAKES = 3
+
 # What a take's saved latent is called in its job directory on the volume.
 # ComfyUI's output folder is container disk, so the latent is harvested beside
 # the clip — a chain that only worked while the container stayed warm would be
@@ -11583,6 +11598,10 @@ def web():
             "max_refs": MAX_H3_REFS,
             "max_ref_audios": MAX_H3_REF_AUDIOS,
             "max_ref_videos": MAX_H3_REF_VIDEOS,
+            # Served so the page's Continue arms a re-anchor at the interval
+            # the pack's quality limit sets, rather than keeping a copy of the
+            # number that drifts the first time it is tuned.
+            "h3mc_reanchor_takes": H3MC_REANCHOR_TAKES,
             # Same reason as gpus: which controls each video model reads, and
             # what is on the volume for each of its tasks, are properties of
             # the deployment. The composer builds itself from this.
