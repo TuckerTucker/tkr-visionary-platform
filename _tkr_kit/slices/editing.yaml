@@ -146,6 +146,7 @@ slices:
       - web/src/media
       - web/src/edit/drop.ts
       - web/src/edit/DropZone.tsx
+      - tools/ui-checks/check_drop_tracks.py
     depends_on:
       - 4
     story_ids:
@@ -244,6 +245,7 @@ slices:
     paths:
       - web/src/edit/history.ts
       - web/src/edit/UndoBar.tsx
+      - tools/ui-checks/check_undo.py
     depends_on:
       - 4
       - 7
