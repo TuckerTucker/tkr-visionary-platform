@@ -5,6 +5,7 @@ import { fileUrl, getState, warm } from './api/routes'
 import { Canvas } from './canvas/Canvas'
 import { useGenerate } from './canvas/useGenerate'
 import { Console } from './console/Console'
+import { Export } from './edit/Export'
 import { useSaveState } from './edit/persist'
 import { fullScreenStage, stageIsFullScreen } from './edit/Stage'
 import { toggle as toggleCut } from './edit/useEdit'
@@ -76,6 +77,13 @@ export function App() {
 
   const gen = useGenerate(landed)
   const vid = useVideo(landed)
+  // An exported cut joins the gallery the way a render does — recorded now,
+  // listed once the volume has it — but it is not a land on the canvas, so
+  // none of `landed`'s canvas-side effects apply.
+  const exported = useCallback((it: GalleryItem) => {
+    record(it)
+    window.setTimeout(() => void reload(), 600)
+  }, [record, reload])
 
   const fire = useCallback(() => {
     if (useStore.getState().kind === 'image') void gen.start()
@@ -629,7 +637,7 @@ export function App() {
                     : 'Loading…'
                 }
               />
-              {s.kind === 'video' && <EditSurface />}
+              {s.kind === 'video' && <EditSurface onExported={exported} />}
               <Console run={gen.run} vidRun={vid.run} onGenerate={fire} onStop={stopRun}
                        lastShot={<LastShot items={items}
                                            onOpen={(rows, i) => setShown({ rows, i })} />} />
@@ -704,14 +712,14 @@ export function App() {
  * `tools` is where controls for the whole cut mount — Export, Undo — at the end
  * of the timeline's transport row.
  */
-function EditSurface() {
+function EditSurface({ onExported }: { onExported: (it: GalleryItem) => void }) {
   const hasTime = useStore((st) => st.takes.length > 0)
   const saveError = useSaveState((st) => st.error)
   if (!hasTime && !saveError) return null
   return (
     <section className="edit" id="edit">
       <ErrorNote err={saveError} />
-      {hasTime && <Tracks tools={null} />}
+      {hasTime && <Tracks tools={<Export onLanded={onExported} />} />}
     </section>
   )
 }
