@@ -102,7 +102,12 @@ slices:
       - cut-several-takes-into-one-scene
     title: Trim, reorder, and a crossfade on any cut
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "11382af: all 17 UI checks pass on wired main (check_cuts, check_slots,
+        check_undo, check_drop_tracks, check_region_slot among them);
+        smoke_scenes passes"
   - number: 5
     feature: scene-assembly
     delivers: WebCodecs encodes the cut in the browser and POST /api/outputs writes
@@ -153,7 +158,12 @@ slices:
       - finish-a-scene-with-my-own-material-over-it
     title: Tracks made by a drop — your media, text, audio
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "11382af: all 17 UI checks pass on wired main (check_cuts, check_slots,
+        check_undo, check_drop_tracks, check_region_slot among them);
+        smoke_scenes passes"
   - number: 7
     feature: generative-commands
     delivers: Each one an ordinary Visionary job over /api/video, /api/status and
@@ -174,7 +184,12 @@ slices:
       - render-a-shot-as-an-edit
     title: slot.render, take.choose and slot.continue as custom commands
     layer: api
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "11382af: all 17 UI checks pass on wired main (check_cuts, check_slots,
+        check_undo, check_drop_tracks, check_region_slot among them);
+        smoke_scenes passes"
   - number: 8
     feature: one-canvas
     delivers: "A still is a zero-duration scene: one slot and no time axis until
@@ -253,7 +268,12 @@ slices:
       - render-a-shot-as-an-edit
     title: One undo stack for every scene edit
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "11382af: all 17 UI checks pass on wired main (check_cuts, check_slots,
+        check_undo, check_drop_tracks, check_region_slot among them);
+        smoke_scenes passes"
   - number: 12
     feature: generative-commands
     delivers: "Continue carries motion and audio from the out-point, not the file's
@@ -351,7 +371,12 @@ slices:
       - make-one-image-without-meeting-a-timeline
     title: Regions over the frame at the playhead
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "11382af: all 17 UI checks pass on wired main (check_cuts, check_slots,
+        check_undo, check_drop_tracks, check_region_slot among them);
+        smoke_scenes passes"
   - number: 17
     feature: scene-assembly
     delivers: web/CLAUDE.md's 'past a scene you are in an NLE and out of scope'
