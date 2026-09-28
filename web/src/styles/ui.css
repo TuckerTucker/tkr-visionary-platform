@@ -2463,8 +2463,13 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
 /* Where the frame's own card sits. Bottom-left, and capped short of the button
    in the opposite corner so the two never overlap on a narrow frame. */
 .rins.frame-card{left:8px;bottom:8px;max-width:calc(100% - 52px)}
+/* `mask-mode:luminance` because SAM's mask is an opaque grayscale PNG — white on
+   the object, black elsewhere — and an image mask is read by alpha by default, so an
+   opaque one masked nothing and every tap tinted the whole picture blue. Found on the
+   deployed app; check_sam reads a pixel far from the tap to hold it. */
 .sam-overlay{position:absolute;inset:0;background:rgba(59,130,246,.35);
-  mask-size:100% 100%;-webkit-mask-size:100% 100%;pointer-events:none}
+  mask-size:100% 100%;-webkit-mask-size:100% 100%;mask-mode:luminance;
+  -webkit-mask-source-type:luminance;pointer-events:none}
 /* Where a tap asked SAM, while it is being answered — see `samAsk` in RegionLayer. A
    ring on the point rather than a spinner in a corner, because the question is about
    that point. The caption hangs under it only once the wait is long enough to need

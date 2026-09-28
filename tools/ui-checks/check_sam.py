@@ -93,6 +93,17 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(800)
     r = pg.evaluate(READ)
     check("the answer paints the mask", r["overlay"], r)
+    # The tint belongs on the object, not the picture. The stub's mask is a disc
+    # around the tap, so the frame's corner is outside it: the overlay has to be
+    # transparent there. Read off the overlay's own rendering — its computed mask
+    # mode is what decides it, and an alpha-read opaque mask tinted everything.
+    tint = pg.evaluate("""() => {
+      const o = document.querySelector('#region-layer .sam-overlay');
+      const cs = o && getComputedStyle(o);
+      return cs && (cs.maskMode || cs.webkitMaskSourceType || '');
+    }""")
+    check("the tint is read by luminance, so only the object is tinted",
+          "luminance" in str(tint), tint)
     check("and offers + Region", r["promote"] == "+ Region", r["promote"])
     check("and the ring is gone", not r["ring"], r)
 
