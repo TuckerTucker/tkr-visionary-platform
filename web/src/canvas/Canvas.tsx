@@ -8,7 +8,8 @@ import { RegionLayer } from '../regions/RegionLayer'
 import { StageRegions } from '../regions/StageRegions'
 import { Refusal, useRefusal } from '../ui/Refusal'
 import { addReferences, outOfPlay, setFrame, type Role } from './drop/attach'
-import { VideoDrops, zoneAt, zonesFor } from './drop/VideoDrops'
+import { VideoDrops, inviteFor, zoneAt, zonesFor } from './drop/VideoDrops'
+import { refBudget } from '../video/refBudget'
 import { attached, regionsLive, useStore } from '../store'
 import { fullScreenStage, Stage } from '../edit/Stage'
 import { useEdit } from '../edit/useEdit'
@@ -49,6 +50,12 @@ import type { VideoRun } from '../video/useVideo'
  * was refused, because the engine is 890 KB gzipped and "duration starts at zero"
  * vetoes making somebody who wants one image wait for it.
  */
+/** Anything a take has been given, counted the way the run sends it. */
+const attachedToTake = (s: ReturnType<typeof useStore.getState>) => {
+  const b = refBudget(s)
+  return !!(s.keyframe.first || s.keyframe.last) || b.images + b.videos + b.audios > 0
+}
+
 export function Canvas({
   run,
   vidRun,
@@ -213,6 +220,14 @@ export function Canvas({
           <div>
             <div className="glyph" id="canvas-glyph">{image ? <IconPhoto /> : <IconPlay />}</div>
             {blank}
+            {/* The one sentence the empty video canvas says, and only while nothing is
+                attached and no file is being dragged — the zones speak for themselves
+                then. The image side's invitation is the same rule: once, where the
+                attention already is, gone the moment there is something else to say. It
+                is built from the zones this model has, so it never names one it lacks. */}
+            {!image && !blank && !s.fileOver && !attachedToTake(s) && (
+              <p className="vid-invite" id="vid-invite">{inviteFor(zonesFor(s))}</p>
+            )}
           </div>
         </div>
       )}

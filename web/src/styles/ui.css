@@ -2584,6 +2584,10 @@ body.dragging .rbox.drop-hit{opacity:1;border-color:#fff}
   font-weight:500;font-size:12px;line-height:1;white-space:nowrap;
   max-width:calc(100% - 12px);overflow:hidden;text-overflow:ellipsis}
 #vid-drops .vzone.off.hot{opacity:1}
+/* The empty video canvas's one sentence — the image side's `.rl-invite`, under the
+   glyph rather than over a frame, because the video side has no frame until a clip. */
+.vid-invite{margin:10px auto 0;max-width:420px;color:var(--dim);font-size:13px;
+  line-height:1.45;text-align:center}
 #vid-drops .vzone.off.hot::after{color:#f3c07a}
 /* The empty frame's one sentence — see RegionLayer. Dim and dead to the
    pointer, because it is a caption on a surface whose gestures it must not

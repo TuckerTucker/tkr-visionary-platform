@@ -12,12 +12,14 @@ holds them there:
 
 - **No dialog, ever.** Any `alert`/`confirm` during the run fails it.
 - **The video canvas says why it took nothing,** on the canvas.
-- **A tile in the console says it above itself.** `.console` clips anything of its
-  own that floats, so the sentence is portalled and fixed; the check is that it
-  sits above the tile it is about and inside the window.
+- **A tile in the console says it above itself.** The tiles are taps now — the
+  canvas takes the drop — so this goes through the file chooser, the way glass
+  does. `.console` clips anything of its own that floats, so the sentence is
+  portalled and fixed; the check is that it sits above the tile it is about and
+  inside the window.
 - **An unreadable file is named,** with the format that fixes it — the half
   "Could not read that image." never had.
-- **A drop past the cap says what it left out.** Twelve onto a cap of nine used to
+- **Past the cap it says what it left out.** Twelve onto a cap of nine used to
   keep nine and say nothing, which reads as the tray losing pictures.
 - **The next gesture clears it.** No timer, nothing to dismiss.
 """
@@ -125,9 +127,21 @@ with sync_playwright() as pw:
     check("canvas: the next press clears it", said("#canvas .refusal") == "", said())
 
     # ---- a keyframe tile in the console ----------------------------------------
-    drop("#v-drop-first", [[TEXT, "text/plain", "notes.txt"]])
+    # A tap, not a drop target — the canvas takes the drop — so the tile's refusal is
+    # reached the way a tablet reaches it: the file chooser.
+    def pick(sel, files):
+        with pg.expect_file_chooser() as fc:
+            pg.click(sel)
+        fc.value.set_files(files)
+        pg.wait_for_timeout(500)
+
+    def blob(name, mime, b64):
+        import base64
+        return {"name": name, "mimeType": mime, "buffer": base64.b64decode(b64)}
+
+    pick("#v-drop-first", [blob("notes.txt", "text/plain", TEXT)])
     text = said(".refusal.anchored")
-    check("tile: a text file is refused above the tile", "takes an image" in text, text)
+    check("tile: a text file is refused above the tile", "is an image" in text, text)
     where = pg.evaluate(PLACED, "#v-drop-first")
     check("tile: the sentence sits above the tile it is about", bool(where and where["above"]), where)
     check("tile: and inside the window, unclipped by the console",
@@ -138,21 +152,21 @@ with sync_playwright() as pw:
 
     # ---- the reference tray ----------------------------------------------------
     clear_refs()
-    drop("#v-add-ref", [[JUNK, "image/png", "broken.png"]])
+    pick("#v-add-ref", [blob("broken.png", "image/png", JUNK)])
     text = said(".refusal.anchored")
     check("tray: an undecodable picture is named", "broken.png" in text, text)
     check("tray: with the format that fixes it", "PNG or JPEG" in text, text)
 
     cap = pg.evaluate("() => fetch('/api/state').then(r => r.json()).then(s => s.max_refs ?? 9)")
-    drop("#v-add-ref", [[PNG, "image/png", f"p{i}.png"] for i in range(cap + 2)])
+    pick("#v-add-ref", [blob(f"p{i}.png", "image/png", PNG) for i in range(cap + 2)])
     pg.wait_for_timeout(600)
     kept = pg.locator("#v-refs .ref").count()
     text = said(".refusal.anchored")
-    check("tray: a drop past the cap keeps the cap", kept == cap, kept)
+    check("tray: a pick past the cap keeps the cap", kept == cap, kept)
     check("tray: and says what it left out", "2 left out" in text, text)
-    drop("#v-add-ref", [[PNG, "image/png", "one-more.png"]])
+    pick("#v-add-ref", [blob("one-more.png", "image/png", PNG)])
     text = said(".refusal.anchored")
-    check("tray: a full tray says so on the next drop", "limit" in text, text)
+    check("tray: a full tray says so on the next pick", "limit" in text, text)
     clear_refs()
 
     check("no alert() or confirm() at any point", not dialogs, dialogs)

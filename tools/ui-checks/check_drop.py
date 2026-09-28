@@ -63,6 +63,20 @@ DROP = """
 }
 """
 
+# Whether the element *itself* cancels a dragover. The canvas above it does, so a bubble
+# would report yes for every tile under it — the listener is timed to run on the
+# element's own phase and nowhere else.
+DROP_HERE = """
+([sel, b64, mime, name]) => {
+  const el = document.querySelector(sel);
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array([1])], name, {type: mime}));
+  const ev = new DragEvent('dragover', {bubbles: false, cancelable: true, dataTransfer: dt});
+  el.dispatchEvent(ev);
+  return {tileAccepts: ev.defaultPrevented};
+}
+"""
+
 DRAW_BOX = """
 () => {
   // A box, drawn the way a hand draws one. Pointer events on the layer rather than
@@ -147,14 +161,23 @@ with sync_playwright() as pw:
     to_video()
     # References first: a keyframe makes the tray legitimately inert, so testing after
     # one would measure the exclusivity rule, not the handler.
-    report("add picture ref", "#v-add-ref")
+    # The canvas is the video side's one drop target — its zones are
+    # check_video_zones.py's. The console's tiles are taps now: two targets for one
+    # picture was a second way to do the first thing, so they must *not* cancel a
+    # dragover, or the page lights a tile it has handed to the canvas.
+    report("the video canvas", "#canvas")
     clear_refs()
-    report("add video ref", "#v-add-vid", "video/mp4", "x.mp4")
-    clear_refs()
-    report("first keyframe", "#v-drop-first")
-    report("last keyframe", "#v-drop-last")
     clear_keyframes()
-    report("the video canvas", "#vid-out")
+    for label, sel in (("add picture ref", "#v-add-ref"), ("add video ref", "#v-add-vid"),
+                       ("first keyframe", "#v-drop-first"), ("last keyframe", "#v-drop-last")):
+        if not pg.locator(sel).count():
+            continue
+        r = pg.evaluate(DROP_HERE, [sel, PNG, "image/png", "x.png"])
+        ok = not r["tileAccepts"]
+        if not ok:
+            fails.append(f"{label} (still a drop target)")
+        print(f"  {'ok  ' if ok else 'FAIL'} {label:22} {sel:22} is a tap, not a drop target")
+    clear_refs()
     clear_keyframes()
 
     print("\nIMAGE side")

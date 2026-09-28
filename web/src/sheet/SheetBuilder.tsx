@@ -85,7 +85,7 @@ export function SheetBuilder() {
         return { ...h, [slot]: { url, img, own } }
       })
     } catch {
-      refuse('That image could not be decoded — save it as a PNG or JPEG and drop it again.')
+      refuse('That image could not be decoded — save it as a PNG or JPEG and try again.')
       if (own) URL.revokeObjectURL(url)
     }
   }, [refuse])

@@ -95,5 +95,5 @@ export async function fileToB64(url: string): Promise<string | null> {
  */
 export const unreadable = (f: File, kind: 'image' | 'video' = 'image'): string =>
   kind === 'image'
-    ? `The browser could not read ${f.name || 'that image'} — save it as a PNG or JPEG and drop it again.`
-    : `The browser could not read ${f.name || 'that video'} — an MP4 works everywhere; convert it and drop it again.`
+    ? `The browser could not read ${f.name || 'that image'} — save it as a PNG or JPEG and try again.`
+    : `The browser could not read ${f.name || 'that video'} — an MP4 works everywhere; convert it and try again.`

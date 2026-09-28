@@ -15,6 +15,8 @@ console's tiles. Now the canvas is three zones read as a strip of time (see
 - **The left edge is the first frame, the middle a reference,** and the right
   edge the last frame on a model that takes one.
 - **Only the zone under the cursor is captioned.**
+- **The empty canvas says the gesture once** — gone while a file is dragged,
+  because the zones say it then, and gone once anything is attached.
 - **A zone out of play says so before the drop** — "references win" while
   references are attached — **and refuses the drop in words** if you let go
   anyway, leaving what was attached alone.
@@ -157,8 +159,13 @@ with sync_playwright() as pw:
     check("no zones are drawn at rest", pg.locator("#vid-drops").count() == 0)
     check("the empty video canvas is showing", pg.locator("#vid-out.hide").count() == 1)
 
+    invite = pg.locator("#vid-invite")
+    text = invite.text_content() if invite.count() else ""
+    check("the empty canvas says the gesture once", "left edge" in text and "middle" in text, text)
+
     # ---- the strip ---------------------------------------------------------------
     r, seen = hover(0.1)
+    check("and says nothing while a file is being dragged", pg.locator("#vid-invite").count() == 0)
     check("the empty canvas accepts a dragged file", r["accepted"], r)
     check("the zones appear while a file is over the window", len(seen["zones"]) >= 2, seen)
     check("the left edge is the first frame", [h["role"] for h in seen["hot"]] == ["first"], seen)
@@ -173,6 +180,8 @@ with sync_playwright() as pw:
     # ---- letting go ----------------------------------------------------------------
     release(0.1)
     check("a drop on the empty canvas's left edge sets the first frame", first_set())
+    check("and the sentence is gone once something is attached",
+          pg.locator("#vid-invite").count() == 0)
     check("and the zones are gone once it has landed", pg.locator("#vid-drops").count() == 0)
     clear_all()
     release(0.5)

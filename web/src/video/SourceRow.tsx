@@ -107,16 +107,16 @@ export function SourceRow() {
         </b>
       )}
       <DropTile id="v-drop-first" label="First frame" value={s.keyframe.first}
-                off={!!n || motion}
+                off={!!n || motion} drop={false}
                 glyph={<IconFirst />}
-                title="The clip starts on this image. Drop or click; click again to clear."
+                title="The clip starts on this image. Click to pick one — or drop it on the canvas’s left edge; click again to clear."
                 onFile={(f) => setFrame('first', f)}
                 onClear={() => s.setKeyframe('first', null)} />
       {sup.last_frame && (
         <DropTile id="v-drop-last" label="Last frame" value={s.keyframe.last}
-                  off={!!n || motion}
+                  off={!!n || motion} drop={false}
                   glyph={<IconLast />}
-                  title="The clip ends on this image. Drop or click; click again to clear."
+                  title="The clip ends on this image. Click to pick one — or drop it on the canvas’s right edge; click again to clear."
                   onFile={(f) => setFrame('last', f)}
                   onClear={() => s.setKeyframe('last', null)} />
       )}
@@ -172,13 +172,13 @@ export function SourceRow() {
         <>
           <AddTile id="v-add-ref" label="Picture" accept="image/" off={framed && !n}
                    glyph={<IconPhoto />}
-                   title="Add an image reference — the subject, redrawn in a new shot. The prompt refers to it as <Picture 1>."
+                   title="Add an image reference — the subject, redrawn in a new shot. Click to pick, or drop it in the middle of the canvas. The prompt refers to it as <Picture 1>."
                    onFiles={addReferences}
                    picking={addRef === 'img'} onPick={() => setAddRef('img')}
                    onDone={() => setAddRef(null)} />
           <AddTile id="v-add-vid" label="Video" accept="video/" off={framed && !n}
                    glyph={<IconFilm />}
-                   title="Add a video reference. The prompt refers to it as <Video 1>."
+                   title="Add a video reference. Click to pick, or drop it in the middle of the canvas. The prompt refers to it as <Video 1>."
                    onFiles={addReferences}
                    picking={addRef === 'vid'} onPick={() => setAddRef('vid')}
                    onDone={() => setAddRef(null)} />
@@ -218,13 +218,17 @@ const withAt = (list: string[], i: number, v: string) => {
   return out
 }
 
-/** The tray's two add buttons: a tile with no picture in it, that takes several files
- *  at once. Distinct from `DropTile` because it never holds a value — filling it
- *  appends a chip beside it, which is exactly the difference in shape the row exists
- *  to show. */
+/** The tray's two add buttons: a tile with no picture in it, that opens the file picker
+ *  for several files at once. Distinct from `DropTile` because it never holds a value —
+ *  filling it appends a chip beside it, which is exactly the difference in shape the row
+ *  exists to show.
+ *
+ *  **A tap, not a drop target.** The canvas's middle zone is where a reference lands by
+ *  drag; this is the same thing for glass, where there is nothing to drag from. Both
+ *  answer through `canvas/drop/attach`, so the two cannot disagree about the cap. */
 function AddTile({ id, label, title, accept, glyph, off, onFiles, picking, onPick, onDone }: {
   /** Kept because `tools/ui-checks/check_drop.py` addresses every target by id, and a
-   *  target it cannot find is a target nobody is checking accepts a drop. */
+   *  target it cannot find is a target nobody is checking. */
   id: string
   label: string
   title: string
@@ -238,39 +242,17 @@ function AddTile({ id, label, title, accept, glyph, off, onFiles, picking, onPic
   onDone: () => void
 }) {
   const input = useRef<HTMLInputElement>(null)
-  const [hot, setHot] = useState(false)
   // Above the tile rather than on it — it is 32px and lives in the clipping console.
   const [self, setSelf] = useState<HTMLButtonElement | null>(null)
   const [refused, refuse] = useRefusal()
   const give = (files: File[]) => { void onFiles(files).then((r) => { if (r) refuse(r) }) }
   return (
-    <button id={id} ref={setSelf} type="button" data-lb={label} title={title} data-drop={`${label} reference`}
-            className={['drop', 'mini', 'can-drop', hot ? 'hot' : '', off ? 'off' : '']
-              .filter(Boolean).join(' ')}
+    <button id={id} ref={setSelf} type="button" data-lb={label} title={title}
+            className={['drop', 'mini', off ? 'off' : ''].filter(Boolean).join(' ')}
             onClick={(e) => {
               if (off || e.target === input.current) return
               onPick()
               input.current?.click()
-            }}
-            onDragOver={(e) => {
-              if (off) return
-              if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return
-              e.preventDefault()
-              setHot(true)
-            }}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) setHot(false)
-            }}
-            onDrop={(e) => {
-              if (off) return
-              e.preventDefault()
-              setHot(false)
-              const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith(accept))
-              if (!files.length) {
-                refuse(`That tile takes ${accept === 'image/' ? 'an image' : 'a video'}.`)
-                return
-              }
-              give(files)
             }}>
       <span className="lead">{label}</span>
       <span>{glyph}</span>

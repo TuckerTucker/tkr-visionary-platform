@@ -73,3 +73,14 @@ function short(role: Role, s: Store): string {
   if (s.continueFrom) return 'continuing the last take'
   return 'not on this model'
 }
+
+/** The empty video canvas's one sentence, naming only the zones this model has. */
+export function inviteFor(zones: Zone[]): string {
+  const has = (r: Role) => zones.some((z) => z.role === r)
+  const parts = ['the left edge opens the clip on it']
+  if (has('last')) parts.push('the right edge ends it there')
+  if (has('reference')) parts.push('the middle makes it a reference')
+  const list = parts.length > 1
+    ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]!}` : parts[0]!
+  return `Drop a picture on the canvas: ${list}.`
+}

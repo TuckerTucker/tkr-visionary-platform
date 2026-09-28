@@ -41,6 +41,7 @@ export function DropTile({
   locked,
   accept = 'image/',
   id,
+  drop = true,
 }: {
   label: string
   title: string
@@ -54,6 +55,12 @@ export function DropTile({
   locked?: boolean
   accept?: string
   id?: string
+  /** Off where the surface above it already takes the drop — the video side, whose
+   *  canvas zones are the one place a picture lands by drag. The tile stays the tap
+   *  that picks a file, which is the whole of attaching on glass, and the thumbnail
+   *  that says what is attached; it stops outlining itself under a drag, because two
+   *  targets for one picture is a second way to do the first thing. */
+  drop?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [hot, setHot] = useState(false)
@@ -68,7 +75,7 @@ export function DropTile({
 
   return (
     <button id={id} ref={setSelf} type="button" data-lb={label} title={title}
-            className={['drop', 'mini', 'can-drop', value ? 'set' : '', hot ? 'hot' : '',
+            className={['drop', 'mini', drop ? 'can-drop' : '', value ? 'set' : '', hot ? 'hot' : '',
                         off ? 'off' : '', locked ? 'locked' : ''].filter(Boolean).join(' ')}
             data-drop={label}
             onClick={(e) => {
@@ -77,7 +84,7 @@ export function DropTile({
               else onClear()
             }}
             onDragOver={(e) => {
-              if (dead) return
+              if (dead || !drop) return
               // Files only, and only the kind this target takes. Without the type
               // check a video dragged onto the picture tray lights it and the drop
               // then silently does nothing — the same broken promise one level down.
@@ -91,7 +98,7 @@ export function DropTile({
               if (!e.currentTarget.contains(e.relatedTarget as Node)) setHot(false)
             }}
             onDrop={(e) => {
-              if (dead) return
+              if (dead || !drop) return
               e.preventDefault()
               setHot(false)
               const f = [...(e.dataTransfer?.files ?? [])].find((x) => x.type.startsWith(accept))

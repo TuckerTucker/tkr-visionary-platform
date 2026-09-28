@@ -696,7 +696,18 @@ and two domains, and the page follows the domains.
   because the slot is `display:none` until a clip lands and the empty canvas —
   where a first frame is most wanted — took no drop at all. `canvas/drop/attach`
   holds the rules, so a zone and a tile cannot disagree about what a take can
-  use.
+  use. While a scene is composed a reference is somebody: the drop makes one cast
+  member holding every file in it, named from the file when that reads like a
+  name, because the run sends the cast's files and never the flat tray.
+
+  **So the row's tiles are taps, not drop targets.** Two targets for one picture
+  was a second way to do the first thing, so they stopped outlining themselves
+  under a drag (`DropTile`'s `drop={false}`). They were not deleted, and that is
+  the touch rule rather than a hedge: on glass there is nothing to drag from, so
+  the tap that opens the file picker is the whole of attaching there, and a row
+  that only a cursor could fill would be the fork the veto list warns about. They
+  are also where you see what is attached and clear it. The empty video canvas
+  says the gesture once, built from the zones the model has.
 
   The note under the field says "keyframes are ignored" only when there is a
   keyframe to ignore. It said it unconditionally, which made the page's one
