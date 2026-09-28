@@ -623,7 +623,12 @@ caption_image = (
 # images — the first half of Phase 6's touch-to-select. Not on PyPI; installed
 # from GitHub at a pinned commit so a force-push upstream does not change the
 # build under us.
-segment_image = caption_image.run_commands(
+#
+# `git` is installed here and not on the captioning base, whose layers it would
+# otherwise rebuild. Without it pip dies on `git version` before fetching
+# anything, and it did: this image never built from the commit that added it,
+# so no deployment carried a Segmenter — found when a harness looked one up.
+segment_image = caption_image.apt_install("git").run_commands(
     "pip install git+https://github.com/facebookresearch/sam2.git"
     "@2b90b9f5ceec907a1c18123530e92e794ad901a4",
 )
