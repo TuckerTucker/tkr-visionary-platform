@@ -21,8 +21,13 @@ because a veto that is not in context when someone adds a panel is not a veto.
    - Scene and outfit transfer, when the identity-edit LoRA is downloaded
 5. Video LoRA training — **not started, and the trainer is not musubi.** H3
    trains under AI Toolkit; see below.
-6. **The Dynamic Canvas** — next, and sketched rather than specified below
-7. **Editing** — takes become a scene you can cut, on OpenVideo. Planned as the
+6. **The Dynamic Canvas** — in progress. On the image side the first tier is
+   mostly there: regions on the canvas, drops onto a box or the frame, SAM
+   turning a click into a region, and an inpaint that pastes a whole-frame
+   render through the mask. Sampling from the source is backlog
+   `work-UvrttALb`. The video side's pictures still arrive through tiles; that
+   remainder is the `canvas` capability
+7. **Editing** — done. Takes become a scene you can cut, on OpenVideo — the
    `editing` capability; see below
 
 The end state is one application where a generated still flows into a clip

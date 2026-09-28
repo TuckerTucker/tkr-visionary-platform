@@ -602,3 +602,49 @@ capabilities:
       kind: commit
       ref: "148583e: all 17 editing slices done; 22 UI checks and every smoke test
         pass on main"
+  - name: canvas
+    layer: ui
+    status: planned
+    depends_on:
+      - web
+      - inference
+      - prompting
+      - editing
+    provides_to:
+      - web
+    paths:
+      - web/src/canvas/drop
+    description: "Phase 6's first tier, finished: every picture a model can be given
+      arrives as a drop on the thing it is for, and every refusal is said where
+      the gesture landed. The image side is most of the way there — a photo on a
+      box is that character, a photo on the frame is the scene, SAM turns a
+      click into a region. The video side is not: a drop anywhere on the canvas
+      is the first frame and nothing else, and the last frame and every
+      reference still come through SourceRow's tiles. This capability is the
+      remainder, not a rebuild."
+    scope_in:
+      - Drops on the video canvas that say by where they land what the picture
+        is for — first frame, last frame, reference — named at the zone under
+        the cursor while a file is over it, the way a box names itself.
+      - "With a cast in the composer, a picture belongs to a person: the drop
+        goes to that member's well, which is the path the composer already has."
+      - Every refusal on an attach or drop path said on the surface it landed
+        on, cleared by the next gesture — the rins-refusal pattern — instead of
+        alert().
+      - Retiring SourceRow's tiles once the canvas takes every role they take,
+        so there is one way to attach a picture rather than two.
+    scope_out:
+      - Tier two and three of Phase 6 — elements that persist across renders, a
+        frame computed from an arrangement. They wait on models, per
+        docs/roadmap.md.
+      - A conditioning panel, a layers list or an attachments tray anywhere. An
+        attachment is drawn on the thing it is attached to, or not at all.
+      - Proper inpainting. That is backlog work-UvrttALb on the platform
+        capability, because its territory is app.py.
+    acceptance_criteria:
+      - Every picture /api/video accepts can be attached by dropping it on the
+        canvas, with no tile involved.
+      - A file dragged over the video canvas shows what each zone would make of
+        it before it is let go.
+      - No attach or drop path in web/src calls alert().
+      - SourceRow holds no DropTile once the canvas covers its roles.

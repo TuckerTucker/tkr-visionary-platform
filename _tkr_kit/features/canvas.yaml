@@ -1,0 +1,70 @@
+capability: canvas
+features:
+  - name: video-drops
+    status: planned
+    user_story: As someone setting up a take, I want to drop a picture on the canvas
+      and have where I drop it say what it is for, so that a first frame, a last
+      frame and a reference are one gesture each rather than a hunt for the
+      right tile.
+    description: "Today a drop anywhere on the video canvas is the first frame
+      (Canvas.tsx onDrop), and everything else goes through SourceRow's
+      DropTiles in the console. The zones replace that: the left edge is the
+      first frame, the right edge the last, the middle a reference — and only
+      the zone under the cursor names itself while a file is over the window,
+      the same rule the region boxes follow. Keyframes and references still
+      exclude each other because they load different transformers; the zone that
+      the run would ignore says so rather than taking the drop silently. With a
+      scene composer open, a reference makes a cast member through the
+      composer's own intake, because in the composer a picture belongs to
+      somebody."
+    acceptance_criteria:
+      - Dropping an image on the left edge sets the first frame, on the right
+        edge the last frame, in the middle a reference; a video in the middle is
+        a reference video.
+      - While a file is over the window, the zone under the cursor names what it
+        would do, and no other zone is captioned.
+      - With references attached, the keyframe zones name that references win
+        before the drop, not after it.
+      - SourceRow holds no DropTile, and the empty video canvas says the gesture
+        once, where the attention is.
+    references:
+      - docs/roadmap.md
+      - web/CLAUDE.md
+    wiring_assignment:
+      territory:
+        - web/src/canvas
+        - web/src/video
+        - web/src/console
+        - web/src/scene
+        - web/src/styles
+        - tools/ui-checks
+  - name: refusals-in-place
+    status: planned
+    user_story: As someone whose drop was refused, I want to be told on the thing I
+      dropped onto, so that the reason arrives where my attention already is and
+      nothing stops the app to deliver one sentence.
+    description: "Twelve alert() calls remain, most on attach and drop paths: the
+      video canvas, SourceRow, DropTile, Material, CastCard, SheetBuilder and
+      four in App.tsx. RegionLayer already has the right shape — a refusal
+      written on the layer, cleared by the next thing you do, with no timer and
+      nothing to dismiss (rins-refusal). This lifts that into one primitive and
+      puts every refusal on the surface it belongs to."
+    acceptance_criteria:
+      - No call to alert() remains in web/src.
+      - Every former alert says its sentence on the surface the gesture landed
+        on, and the next gesture clears it.
+      - Each refusal names the fix, not only the fault — a format the browser
+        decodes, the model to download, the limit and what to remove.
+    references:
+      - web/CLAUDE.md
+    wiring_assignment:
+      territory:
+        - web/src/ui
+        - web/src/canvas
+        - web/src/video
+        - web/src/media
+        - web/src/scene
+        - web/src/sheet
+        - web/src/App.tsx
+        - web/src/regions
+        - web/src/styles

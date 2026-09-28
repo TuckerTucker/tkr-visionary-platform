@@ -1,0 +1,42 @@
+capability: canvas
+stories:
+  - name: give a take its pictures by dropping them
+    status: planned
+    actor: Director
+    intent: attach a first frame, a last frame or a reference without finding a tile
+    trigger_action: drags a photo from the Finder over the video canvas
+    preconditions:
+      - The composer is on video
+    steps:
+      - Drag a photo over the canvas
+      - Read what the zone under the cursor would do
+      - Let go on the left edge
+      - Drag a second photo to the middle
+    acceptance_criteria:
+      - given: a photo over the left edge
+        when: it is let go
+        then: it is the first frame
+      - given: a photo over the middle with a composer open
+        when: it is let go
+        then: it is a new cast member holding that picture
+      - given: a reference attached
+        when: a photo is dragged over a keyframe zone
+        then: the zone says references win before the drop
+  - name: be told where the gesture landed
+    status: planned
+    actor: Director
+    intent: know why a drop did nothing without a modal stopping the app
+    trigger_action: drops a file a surface cannot take
+    preconditions:
+      - A drop target is on screen
+    steps:
+      - Drop a PDF on the video canvas
+      - Read the sentence on the canvas
+      - Drag the right file
+    acceptance_criteria:
+      - given: a file the surface cannot take
+        when: it is dropped
+        then: the reason and the fix appear on that surface and no dialog opens
+      - given: a refusal on screen
+        when: the next gesture happens
+        then: it is gone

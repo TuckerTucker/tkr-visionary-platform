@@ -1,0 +1,92 @@
+capability: canvas
+slices:
+  - number: 1
+    feature: refusals-in-place
+    delivers: "RegionLayer's rins-refusal generalised into a component any drop
+      surface mounts: a sentence on that surface, cleared by the next pointer or
+      key event, no timer, nothing to dismiss. RegionLayer moves onto it, so
+      there is one implementation from the first commit."
+    paths:
+      - web/src/ui/Refusal.tsx
+      - web/src/regions/RegionLayer.tsx
+      - web/src/styles/ui.css
+    depends_on: []
+    story_ids:
+      - be-told-where-the-gesture-landed
+    title: One refusal primitive, lifted out of the region layer
+    layer: ui
+    status: planned
+  - number: 2
+    feature: refusals-in-place
+    delivers: The twelve alert() calls replaced — the video canvas, SourceRow,
+      DropTile, Material, CastCard, SheetBuilder and App.tsx's four — each on
+      the surface its gesture landed on, each naming the fix.
+    paths:
+      - web/src/App.tsx
+      - web/src/canvas/Canvas.tsx
+      - web/src/video/SourceRow.tsx
+      - web/src/media/DropTile.tsx
+      - web/src/scene/Material.tsx
+      - web/src/scene/CastCard.tsx
+      - web/src/sheet/SheetBuilder.tsx
+    depends_on:
+      - 1
+    story_ids:
+      - be-told-where-the-gesture-landed
+    title: Every alert() said on its own surface
+    layer: ui
+    status: planned
+  - number: 3
+    feature: video-drops
+    delivers: The first-frame-only drop in Canvas.tsx becomes three zones — first
+      frame at the left edge, last frame at the right, reference in the middle —
+      with only the zone under the cursor captioned while a file is over the
+      window. A keyframe zone says references win before the drop when
+      references are attached. Refusals go through slice 1.
+    paths:
+      - web/src/canvas/drop
+      - web/src/canvas/Canvas.tsx
+      - web/src/styles/ui.css
+      - tools/ui-checks/check_drop.py
+    depends_on:
+      - 1
+    story_ids:
+      - give-a-take-its-pictures-by-dropping-them
+    title: Drop zones on the video canvas
+    layer: ui
+    status: planned
+  - number: 4
+    feature: video-drops
+    delivers: With the scene composer open, the middle zone makes a cast member
+      holding the picture, through the same intake the @ picker and Material use
+      — so the cast still has no empty state and there is no second picker.
+    paths:
+      - web/src/canvas/drop
+      - web/src/scene
+    depends_on:
+      - 3
+    story_ids:
+      - give-a-take-its-pictures-by-dropping-them
+    title: A reference dropped into a scene becomes a cast member
+    layer: ui
+    status: planned
+  - number: 5
+    feature: video-drops
+    delivers: "Once the canvas takes every role the tiles take, SourceRow loses its
+      DropTiles, and the empty video canvas says the gesture once where the
+      attention is — the PlateRow lesson kept: a feature nobody can see does not
+      exist. web/CLAUDE.md's SourceRow section is rewritten to say what replaced
+      it."
+    paths:
+      - web/src/video/SourceRow.tsx
+      - web/src/console/Console.tsx
+      - web/src/canvas/Canvas.tsx
+      - web/CLAUDE.md
+    depends_on:
+      - 3
+      - 4
+    story_ids:
+      - give-a-take-its-pictures-by-dropping-them
+    title: SourceRow's tiles retire
+    layer: ui
+    status: planned
