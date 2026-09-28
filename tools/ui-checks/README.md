@@ -115,6 +115,10 @@ it still holds.
   Every job poll skips a tick while the last read is out, so a read that never
   answered stopped the poll for good; on the deployed app a completed render sat
   behind "generate" until a reload lost it. Fails without the read's timeout.
+- `check_state_retry.py` — the first `/api/state` read says the edit LoRA is
+  absent and every later one says it is there, as the volume listing lagged on
+  the deployed app; the plates must not stay locked. Fails without the edit
+  LoRA in `App.tsx`'s re-check.
 - `check_sam.py` — a tap on a render asks SAM, and the page shows it is asking:
   a ring on the point at once, words only once the answer is slow, the mask and
   `+ Region` when it lands, and a failed answer said on the layer. The preview

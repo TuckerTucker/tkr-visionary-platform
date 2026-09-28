@@ -136,15 +136,20 @@ export function App() {
      that lands before the mount has caught up is the same fault one level up.
 
      So this re-checks rather than diagnoses. Bounded at three attempts, and only while
-     the answer is still "there is no DiT here" — the one state that is both the symptom
-     and the thing that disables the button. A genuinely empty volume pays two extra
-     requests on a CPU route once per load and then settles, which is the right price for
-     an install that otherwise tells you to download weights you already have. */
+     a weight the page gates a control on still reads absent — the DiT, which disables
+     Generate, and the identity-edit LoRA, which locks the scene, outfit and object
+     plates. The second was not in the predicate at first, and the same listing lagged
+     on it: on the deployed app the plates came up locked on every fresh load while
+     `/api/state` answered `edit_lora: true` from five seconds on, and opening Settings
+     unlocked them. A volume genuinely without one pays two extra requests on a CPU
+     route once per load and then settles, which is the right price for an install
+     that otherwise tells you to download weights you already have. */
   useEffect(() => {
     let alive = true
-    const hasDit = () => {
+    const settled = () => {
       const st = useStore.getState().state
-      return !!st?.models.some((m) => (m.key === 'turbo' || m.key === 'raw') && m.present)
+      return !!st?.edit_lora
+        && !!st.models.some((m) => (m.key === 'turbo' || m.key === 'raw') && m.present)
     }
     void (async () => {
       for (const wait of [0, 700, 1800]) {
@@ -153,7 +158,7 @@ export function App() {
         await reloadState()
         // Stop on a real answer, and on a real error — retrying a 500 three times just
         // makes the same complaint three times slower.
-        if (!alive || hasDit() || useStore.getState().stateError) return
+        if (!alive || settled() || useStore.getState().stateError) return
       }
     })()
     // Once, beside the state fetch rather than in an effect of its own: they are
