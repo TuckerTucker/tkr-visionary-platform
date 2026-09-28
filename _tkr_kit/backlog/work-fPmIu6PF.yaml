@@ -2,16 +2,25 @@ id: work-fPmIu6PF
 title: Saved characters are recalled only on the video side
 kind: follow-up
 severity: medium
-status: open
+status: closed
 capabilityId: prompting
 anchors:
   - web/src/scene/Mentions.tsx
   - web/src/scene/arsenal.ts
   - web/src/regions
 createdAt: 2026-09-27T03:35:23.867Z
-updatedAt: 2026-09-27T03:35:23.867Z
+updatedAt: 2026-09-28T23:45:00.000Z
 remedy: The arsenal stores a character in no model's syntax, which is what lets
   it cross families — but hydrate() is called only from the scene composer's @
   menu, so a Krea 2 region cannot take a saved likeness. Offer the same recall
   where a region takes its likeness, through the same intake and the same
   missing-file refusal, rather than a second picker.
+evidence:
+  kind: manual
+  ref: "tools/ui-checks/check_recall.py passes against preview_ui on
+    2026-09-28: the region card's character menu lists the saved cast below
+    the LoRAs; picking one fills the box's Photo through intake (the plain
+    photograph, not the sheet) and its empty sentence with the saved note;
+    the photo reaches /api/generate as regions[].ref; a lost file is refused
+    on the card by name and the box is left without a likeness.
+    check_regions.py and baseline.py unchanged. Not run on a deployment."

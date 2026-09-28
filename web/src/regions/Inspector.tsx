@@ -1,14 +1,16 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { IconArrange, IconPhoto, IconTrash } from '../icons'
 import { Menu } from '../ui/Menu'
 import { NumInput } from '../ui/NumInput'
 import { usePopover } from '../ui/Popover'
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { DropTile } from '../media/DropTile'
 import { shrinkB64, unreadable } from '../media/files'
 import { caretProps, dropCaret } from '../lora/caret'
 import { regionNote } from '../lora/note'
 import { chipFrom, loraIndex } from '../lora/tokens'
+import { listCharacters, recallLikeness, type SavedCharacter } from '../scene/arsenal'
 import { attached, regionsLive, useStore, type EditMode, type Region } from '../store'
 import { takeResumeFocus } from './focus'
 import { clamp01, distribute, readRegions } from './geometry'
@@ -109,6 +111,12 @@ function BoxCard(
   const field = useRef<HTMLInputElement>(null)
   const index = loraIndex(s.state)
   const pick = usePopover()
+  // The saved cast, for the same menu the LoRAs are in: both answer "which character
+  // this box is", one trained and one photographed. Names and notes only, fetched
+  // when the card opens — the `@` menu's listing, at the same popover speed.
+  const [saved, setSaved] = useState<SavedCharacter[]>([])
+  useEffect(() => { void listCharacters().then(setSaved) }, [])
+  const [refused, refuse] = useRefusal()
 
   // The caret sink is a module-level ref holding one element, so the field has to
   // withdraw when it goes — and this one goes on every change of selection, not just
@@ -214,12 +222,16 @@ function BoxCard(
         <button id="r-lora" type="button" data-lb="LoRA"
                 className={`opt ib${pick.open ? ' on' : ''}${r.lora ? ' set' : ''}`}
                 onClick={pick.toggle}
-                disabled={!index.length}
-                title={index.length
-                  ? 'Which character this box is. One per box — the node takes one.'
-                  : 'No LoRAs on the volume yet — train one under Train, or drop a '
-                    + '.safetensors into loras/.'}>
-          {r.lora ? r.lora.rel : '+ LoRA'}
+                disabled={!index.length && !saved.length}
+                title={index.length || saved.length
+                  ? 'Which character this box is — a trained LoRA, one per box, or a '
+                    + 'saved character, whose photograph becomes the box’s Photo.'
+                  : 'No LoRAs on the volume and no saved characters yet — train one '
+                    + 'under Train, drop a .safetensors into loras/, or save a '
+                    + 'character from a scene.'}>
+          {/* Named for what the menu holds. `+ LoRA` over a menu of saved characters
+              only would name an act it cannot perform. */}
+          {r.lora ? r.lora.rel : index.length ? '+ LoRA' : '+ Character'}
         </button>
         {pick.open && (
           <Menu anchor={pick.anchor} onClose={pick.close}
@@ -236,6 +248,17 @@ function BoxCard(
                     hint: l.trigger || undefined,
                     on: r.lora?.path === l.path,
                     run: () => s.patchRegion(i, { lora: chipFrom(l, true) }),
+                  })),
+                  // Below the LoRAs rather than mixed in, because picking one does a
+                  // different thing: it fills the Photo, and leaves the LoRA alone —
+                  // the two stack, which is what a box with both already means.
+                  ...(saved.length && index.length ? [{ sep: true } as const] : []),
+                  ...saved.map((c) => ({
+                    label: c.handle,
+                    hint: c.note ? `saved — ${c.note}` : 'saved',
+                    run: () => {
+                      void recallLikeness(r.id, c).then(refuse)
+                    },
                   })),
                 ]} />
         )}
@@ -283,6 +306,9 @@ function BoxCard(
           {num('h', 'H', 'How much of the canvas height this box covers, 0 to 1.')}
         </div>
       )}
+      {/* A saved character whose photograph did not come back, said on the card the
+          pick was made from. */}
+      <Refusal text={refused} />
     </div>
   )
 }

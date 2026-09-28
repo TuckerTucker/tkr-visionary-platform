@@ -93,3 +93,53 @@ export async function hydrate(memberId: string, saved: SavedCharacter): Promise<
   }
   if (missing.length) useStore.getState().patchCast(memberId, { missing })
 }
+
+/**
+ * A saved character as a region's likeness — the image side's recall.
+ *
+ * A character is stored in no model's syntax, which is what lets it cross families;
+ * until this, only the scene composer's `@` menu read it back, so a Krea 2 box could
+ * not take a likeness somebody had saved. A box holds one photograph where a cast
+ * member holds several, so this takes the first plain image — a character sheet is
+ * several views on one canvas, which a single-face mold reads as one strange face —
+ * and a sheet only when there is nothing else.
+ *
+ * Through `intake`, like `hydrate`, so the photograph is shrunk the way a dropped one
+ * is. The box is found again by id when the bytes arrive: the fetch outlives a click,
+ * and an index captured at the start would attach the likeness to whichever box moved
+ * into that slot. The note fills the box's sentence only when the box has none.
+ *
+ * Resolves to a refusal naming the file, or null. A photograph that does not come
+ * back is said rather than skipped, for `hydrate`'s reason: a box that looks recalled
+ * and renders somebody else is the failure this exists to prevent.
+ */
+export async function recallLikeness(regionId: string, saved: SavedCharacter): Promise<string | null> {
+  const images = saved.refs.filter((r) => r.kind === 'image')
+  const ref = images.find((r) => !r.sheet) ?? images[0]
+  if (!ref) {
+    return `${saved.handle} has no photograph saved — a box takes a photograph, and `
+      + `${saved.handle} was saved with ${saved.refs.map((r) => r.kind).join(' and ') || 'nothing'}.`
+  }
+  const gone = `${saved.handle}’s photograph ${ref.file} is not on the volume any more — `
+    + 'drop a photo on the box instead, or save the character again from a scene.'
+  let b64: string
+  try {
+    const res = await fetch(characterFileUrl(saved.handle, ref.file))
+    if (!res.ok) return gone
+    const blob = await res.blob()
+    const got = await intake(new File([blob], ref.file, { type: blob.type }))
+    if (!got) return gone
+    // Not added to the pool: a box holds the bytes, not a pool id, so the preview URL
+    // `intake` made would outlive every reader of it.
+    URL.revokeObjectURL(got.url)
+    b64 = got.b64
+  } catch {
+    return gone
+  }
+  const st = useStore.getState()
+  const i = st.regions.findIndex((r) => r.id === regionId)
+  if (i < 0) return null
+  st.attach(i, 'identity', b64)
+  if (!st.regions[i]!.prompt.trim() && saved.note) st.patchRegion(i, { prompt: saved.note })
+  return null
+}
