@@ -263,12 +263,14 @@ Being honest about coverage, since "it deploys" is not "it works":
 - **The scene composer** — driven and read, never measured against a render.
   `tools/prompt_ab.py` is the measurement that is not a proxy and has not run.
 - **Krea 2, SAM and regional inpaint** — run on an H100 by `tools/ab_inpaint.py`
-  (2026-09-28): plain Turbo renders, SAM 2 masks from a click, and regional
-  inpaints through V12 with the source as a noise-masked latent, at batch 1 and
-  2, measured against the old whole-frame paste and better on every pair. That
-  drives the graphs and the SAM checkpoint directly, not `/api/segment` or
-  `/api/generate` — the page's path to them has run only against
-  `preview_ui.py`'s stubs.
+  (2026-09-29): plain Turbo renders, SAM 2 masks from a click, and regional
+  inpaints through V12 from a soft noise mask over the source, at batch 1 and
+  2, against the old whole-frame paste and the first hard-masked fix — better
+  than both on every case by eye and on the seam numbers. On the deployed app
+  (2026-09-28) the whole gesture ran from the page: a tap on a render, SAM's
+  mask, `+ Region`, a sentence and a render, which is how the halo the hard mask
+  left was found. Not run: a saved character recalled onto a box, because the
+  volume holds none.
 
 ---
 

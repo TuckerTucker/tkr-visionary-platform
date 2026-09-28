@@ -1,0 +1,22 @@
+id: work-Z8uVo1Bo
+title: A regional inpaint of an object can paint a small figure beside it
+kind: bug
+severity: low
+status: open
+capabilityId: platform
+anchors:
+  - app.py
+  - tools/ab_inpaint.py
+createdAt: 2026-09-29T01:30:00.000Z
+updatedAt: 2026-09-29T01:30:00.000Z
+remedy: "In tools/ab_inpaint.py's lamp case — a mug on a desk asked to become 'a
+  short glass of red wine' — every arm that sampled from the source painted a
+  small cartoon figure at the mug's handle, inside the SAM box. The mask is not
+  the cause: it appears with the hard mask and the soft one. The suspect is the
+  region path itself: an inpaint rides a V12 region, and V12 is a likeness
+  engine that reads each box as somebody, while _compose_caption places the
+  box's sentence as a subject. Verify first: render the lamp case with the
+  inpaint's caption left as the typed prompt plus the edit (no subject clause),
+  and with the region's box but no regional node, and see which one loses the
+  figure. The fix should not add a mode: what a SAM region holds is already
+  known to be a thing rather than a performer at the moment it is promoted."

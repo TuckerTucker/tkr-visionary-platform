@@ -6498,16 +6498,45 @@ def _validate_style_refs(raw: Any) -> list[str]:
 # `_keep_entry` never lists it as a result: it is a PNG, and without the dot the
 # gallery would offer the mask as a render to make a cover of.
 INPAINT_MASK = ".inpaint-mask.png"
-# The seam, in pixels of the original. A hard-edged composite of a re-render
-# onto its source shows the mask's staircase as a visible line wherever the
-# two disagree, and after a VAE round trip they disagree a little everywhere.
-INPAINT_FEATHER_PX = 5
-# How far past the mask the sampler may repaint, in pixels of the original. The
-# latent is an eighth of the frame, so the mask reaches it averaged down and a
-# cell on its edge is only partly noised — half-repainted. Two cells of margin
-# put the feathered paste above wholly repainted pixels rather than on that
-# half-way band. A starting value, set by that arithmetic and not yet measured.
+# How far past SAM's mask the sampler may repaint, and how soft the edge of that
+# region is, in pixels of the original. One mask, grown and then blurred, is both
+# what the sampler reads and what the paste uses — see `_inpaint_soft_mask`.
+#
+# The paste used SAM's own edge, feathered by 5px, and a hard noise mask grown
+# 16px past it. So when the new thing was a different shape from the old one,
+# everything between the two silhouettes was background the model painted from
+# nothing in eight steps, and the paste cut back to the source exactly along the
+# old silhouette: on the deployed app a man restyled in a leather coat came back
+# with the grey coat's outline and his old head standing beside him as pale fog.
+# A soft mask noise-masks the band partly at every step, so the model repaints it
+# while it can still see the source there, and the paste fades out across the same
+# band rather than on the old edge. Measured over four arms in tools/ab_inpaint.py.
 INPAINT_GROW_PX = 16
+INPAINT_SOFT_PX = 12
+
+
+def _inpaint_soft_mask(mask: Any) -> Any:
+    """
+    SAM's mask, grown by INPAINT_GROW_PX and blurred by INPAINT_SOFT_PX — and
+    never below SAM's own mask.
+
+    A PIL "L" image in, one out, at the same size: 255 wholly repainted, 0 kept,
+    graded between. Dilated with a 3x3 max filter once per pixel of growth — the
+    same kernel GrowMask uses — because one wide max filter is quadratic in its
+    size and this runs on a megapixel mask.
+
+    The floor keeps what you pointed at wholly repainted. A blur reaching further
+    in than the growth reaches out left 110 of the 357 latent cells inside a
+    mug's own mask at 0.93 — partly the source at every step, inside the very
+    thing being replaced. Only the band around it fades.
+    """
+    from PIL import ImageChops, ImageFilter
+
+    grown = mask
+    for _ in range(INPAINT_GROW_PX):
+        grown = grown.filter(ImageFilter.MaxFilter(3))
+    soft = grown.filter(ImageFilter.GaussianBlur(radius=INPAINT_SOFT_PX))
+    return ImageChops.lighter(soft, mask.point(lambda v: 255 if v >= 128 else 0))
 
 
 def _validate_inpaint(job_id: Any, file: Any, mask: Any) -> dict[str, str] | None:
@@ -6830,17 +6859,15 @@ def _krea2_graph(
                                "inputs": {"samples": source_latent,
                                           "amount": batch_size}}
             source_latent = ["repeat", 0]
-        # The SAM mask is an L PNG, 255 inside; LoadImage converts it to RGB, so
-        # red is the mask itself. Not alpha: LoadImage inverts that channel.
+        # The soft mask the job staged (`_inpaint_soft_mask`), an L PNG, 255
+        # inside; LoadImage converts it to RGB, so red is the mask itself. Not
+        # alpha: LoadImage inverts that channel.
         graph["mask"] = {"class_type": "LoadImageMask",
                          "inputs": {"image": inpaint_mask, "channel": "red"}}
-        graph["grow"] = {"class_type": "GrowMask",
-                         "inputs": {"mask": ["mask", 0], "expand": INPAINT_GROW_PX,
-                                    "tapered_corners": True}}
         # Replaces the empty latent under the same key, so the sampler and
         # anything else reading ["latent", 0] start from the source.
         graph["latent"] = {"class_type": "SetLatentNoiseMask",
-                           "inputs": {"samples": source_latent, "mask": ["grow", 0]}}
+                           "inputs": {"samples": source_latent, "mask": ["mask", 0]}}
 
     # Krea 2 renders on PyTorch attention, against the process-wide SageAttention.
     #
@@ -7132,6 +7159,14 @@ def _krea2_graph(
                         "inputs": {"text": negative_prompt, "clip": clip_src}}
         sampler_model, positive, negative = model_src, ["pos", 0], ["neg", 0]
 
+    # No DifferentialDiffusion, and that is measured rather than overlooked: it
+    # is the node for exactly a graded mask, and on tools/ab_inpaint.py it kept
+    # the thing being replaced — a mug asked to become a glass of wine came back
+    # a mug, with the soft mask and with a plain binary one alike, while every
+    # arm without it made the glass. Why it changes a binary mask at all is not
+    # understood, so it is out until it is. The graded mask alone does the work:
+    # SetLatentNoiseMask blends each step by the mask value, so the band fades.
+
     graph["sample"] = {
         "class_type": "KSampler",
         "inputs": {"model": sampler_model, "seed": seed, "steps": steps,
@@ -7256,7 +7291,7 @@ class ImageGenerator:
                                         raw_ip.get("mask"))
             inpaint_src = inpaint_alpha = None
             if inpaint:
-                from PIL import Image, ImageFilter
+                from PIL import Image
 
                 src_path = OUTPUTS / inpaint["job_id"] / inpaint["file"]
                 if not src_path.is_file():
@@ -7279,8 +7314,11 @@ class ImageGenerator:
                         f"{mask_img.size[1]} and {inpaint['file']} is "
                         f"{inpaint_src.size[0]}x{inpaint_src.size[1]} — click "
                         f"the render again for a fresh mask.")
-                inpaint_alpha = mask_img.filter(
-                    ImageFilter.GaussianBlur(radius=INPAINT_FEATHER_PX))
+                # One mask for the sampler and the paste, so the paste fades
+                # out over the band the sampler faded in — see INPAINT_SOFT_PX.
+                inpaint_alpha = _inpaint_soft_mask(mask_img)
+                soft_png = io.BytesIO()
+                inpaint_alpha.save(soft_png, "PNG")
                 # Through the stager like every other LoadImage input, so the
                 # source and mask get a job-scoped name like every other input.
                 inpaint_staged = {
@@ -7288,7 +7326,8 @@ class ImageGenerator:
                         job_id, base64.b64encode(src_path.read_bytes()).decode(),
                         "inpaint-source"),
                     "inpaint_mask": self._comfy.stage(
-                        job_id, inpaint["mask"], "inpaint-mask"),
+                        job_id, base64.b64encode(soft_png.getvalue()).decode(),
+                        "inpaint-mask"),
                 }
             else:
                 inpaint_staged = {}
@@ -7505,10 +7544,11 @@ class ImageGenerator:
             # which is the thing every existing tool — PNG Info tabs, ComfyUI,
             # the gallery — reads a file to avoid.
             with Image.open(COMFY / "output" / src) as im:
-                # Only the masked area is the new render; every other pixel is
-                # the source's, byte for byte. Sampling already kept the rest of
-                # the frame, but through a VAE round trip, so without this the
-                # face you were keeping would come back a decode away from itself.
+                # Only the soft mask's area is the new render; every pixel it
+                # does not reach is the source's, byte for byte. Sampling already
+                # kept the rest of the frame, but through a VAE round trip, so
+                # without this the face you were keeping would come back a decode
+                # away from itself.
                 out = (Image.composite(im.convert("RGB"), inpaint_src,
                                        inpaint_alpha)
                        if inpaint else im)

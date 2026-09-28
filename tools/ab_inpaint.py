@@ -4,13 +4,28 @@ Does sampling from the source make a better inpaint than pasting a fresh frame?
     modal run tools/ab_inpaint.py --stage sources --out out/inpaint
     modal run tools/ab_inpaint.py --stage compare --out out/inpaint --cases cases.json
 
-`_krea2_graph` used to render an inpaint from an empty latent and paste only the
-masked area back, so the model drew the region for a frame it was never shown.
-It now encodes the source and noises only inside the mask (`SetLatentNoiseMask`).
-That was decided from the mechanism — backlog work-UvrttALb — and a mechanism is
-not a measurement. This renders the same edit both ways, one seed, one caption,
-one mask, with where sampling starts as the only variable, and pastes both
-through the same feathered composite the job uses.
+Three arms, one seed, one caption, one SAM mask each, with how sampling treats
+the mask as the only variable:
+
+  paste    the old path: an empty latent, and SAM's edge feathered 5px pasted
+           onto the source after decode.
+  hard     the first fix (90f197d, deployed 2026-09-28): the source encoded and
+           noised inside SAM's mask grown 16px, hard at every step, pasted on
+           SAM's 5px-feathered edge.
+  soft     the current path: one mask, grown, blurred and floored at SAM's own
+           (`_inpaint_soft_mask`), read by SetLatentNoiseMask and used by the
+           paste.
+
+The hard arm is here because it passed this harness and then failed on the
+deployed app: a man restyled in a leather coat kept his old outline and a
+second head as pale fog, because between the old silhouette and the new one the
+model painted background from nothing and the paste cut back along the old
+edge. The `person` case below is that gesture.
+
+**DifferentialDiffusion was an arm here and lost.** It is the node for a graded
+mask, and with it a mug asked to become a glass of wine stayed a mug — on the
+soft mask and on a binary one alike — while every arm without it made the glass.
+It is recorded so the obvious next idea is not re-tried blind.
 
 Two stages, because the mask has to come from SAM clicking on a render, and the
 point worth clicking is only known once the render has been looked at:
@@ -19,18 +34,20 @@ point worth clicking is only known once the render has been looked at:
   compare   takes `[{name, prompt, click: [x, y], edit, batch?}]`, gets a SAM
             mask for each click and renders both arms at that mask.
 
-**Two numbers per arm, both excess over the source along the mask's edge**, so a
-seam the source already had is not charged to either arm:
+**Two numbers per arm, both excess over the source**, read over the rim of the
+edit — a band either side of SAM's edge, and every pixel the soft mask only
+partly covers — so a seam the source already had is not charged to any arm,
+and a ghost left between the old silhouette and the new one is inside what is
+read:
 
-  edge   mean luminance gradient in a band straddling the boundary — a hard,
-         visible line.
-  light  the same after a wide blur — a step in light or colour across the edge
-         that the feather hides from `edge` and not from an eye.
+  edge   mean luminance gradient over the rim — a hard, visible line.
+  light  the same after a wide blur — a step in light or colour that a feather
+         hides from `edge` and not from an eye.
 
-Lower is better for both. They measure the seam and nothing else: whether the
-edit shows what was asked for is a question for eyes or `judge_renders.py`, which
-is why the pictures are saved as `<name>_bare.png` (paste) beside
-`<name>_rich.png` (sampled) — the pair layout that tool reads.
+Lower is better for both, and they measure the rim and nothing else: whether
+the edit shows what was asked for is for eyes or `judge_renders.py`, so the
+pictures are saved as `<name>_bare.png` (paste), `<name>_hard.png` and `<name>_rich.png`
+(soft).
 
 Renders land in this container's ComfyUI output, never on the volume's
 `outputs/`, so nothing here appears in the gallery.
@@ -50,10 +67,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import (  # noqa: E402
     COMFY,
     IMAGE_DEFAULTS,
-    INPAINT_FEATHER_PX,
+    INPAINT_GROW_PX,
     KREA2_DEFAULTS,
     _Comfy,
     _compose_caption,
+    _inpaint_soft_mask,
     _krea2_graph,
     _validate_regions,
     HF_CACHE,
@@ -89,7 +107,7 @@ PROMPTS = {
 # that turns `edge` into `light`. The band is wider than the feather so the
 # whole blend is inside it; the blur is wide enough that texture averages out
 # and only a change of level survives.
-BAND_PX = INPAINT_FEATHER_PX + 4
+BAND_PX = 9
 LIGHT_BLUR_PX = 12
 
 
@@ -105,14 +123,16 @@ def _graph(prompt: str, seed: int, regions: list[dict], inpaint: dict | None,
     )
 
 
-def _seam(result, source, mask) -> dict[str, float]:
-    """`edge` and `light` for one result, as excess over the source."""
+def _seam(result, source, mask, soft) -> dict[str, float]:
+    """`edge` and `light` for one result over the edit's rim, as excess over the source."""
     import numpy as np
     from PIL import ImageFilter
 
     size = 2 * BAND_PX + 1
     band = (np.asarray(mask.filter(ImageFilter.MaxFilter(size)), dtype=bool)
             & ~np.asarray(mask.filter(ImageFilter.MinFilter(size)), dtype=bool))
+    partial = np.asarray(soft)
+    rim = band | ((partial > 5) & (partial < 250))
 
     def grad(im, blur: int) -> float:
         lum = im.convert("L")
@@ -120,7 +140,7 @@ def _seam(result, source, mask) -> dict[str, float]:
             lum = lum.filter(ImageFilter.GaussianBlur(blur))
         a = np.asarray(lum, dtype=np.float32)
         gy, gx = np.gradient(a)
-        return float(np.hypot(gx, gy)[band].mean())
+        return float(np.hypot(gx, gy)[rim].mean())
 
     return {"edge": round(grad(result, 0) - grad(source, 0), 3),
             "light": round(grad(result, LIGHT_BLUR_PX)
@@ -221,39 +241,52 @@ class Bench:
             (COMFY / "input" / f"ab-{name}-mask.png").write_bytes(mask_png)
             source = Image.open(io.BytesIO(source_png)).convert("RGB")
             mask = Image.open(io.BytesIO(mask_png)).convert("L")
-            alpha = mask.filter(ImageFilter.GaussianBlur(INPAINT_FEATHER_PX))
+            # Each arm's own masks, as each version of the job made them.
+            feathered = mask.filter(ImageFilter.GaussianBlur(5))
+            grown = mask
+            for _ in range(INPAINT_GROW_PX):
+                grown = grown.filter(ImageFilter.MaxFilter(3))
+            soft = _inpaint_soft_mask(mask)
+            for tag, im in (("hard", grown), ("soft", soft)):
+                buf = io.BytesIO()
+                im.save(buf, "PNG")
+                (COMFY / "input" / f"ab-{name}-{tag}.png").write_bytes(buf.getvalue())
 
             # The region the page makes from a SAM hit: the mask's box, holding
             # what the person typed about it. Through the validator and the
-            # caption composer, so both arms read what a real inpaint reads.
+            # caption composer, so every arm reads what a real inpaint reads.
             x1, y1, x2, y2 = case["bbox"]
             regions = _validate_regions([{
                 "x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1,
                 "prompt": case["edit"]}])
             caption = _compose_caption(case["prompt"], regions)
-            inpaint = {"inpaint_image": f"ab-{name}-source.png",
-                       "inpaint_mask": f"ab-{name}-mask.png"}
             batch = int(case.get("batch", 1))
+            def sampled(mask_file: str) -> dict:
+                return _graph(caption, seed, regions,
+                              {"inpaint_image": f"ab-{name}-source.png",
+                               "inpaint_mask": mask_file}, batch)
+            plan = {"paste": (_graph(caption, seed, regions, None, batch), feathered),
+                    "hard": (sampled(f"ab-{name}-hard.png"), feathered),
+                    "soft": (sampled(f"ab-{name}-soft.png"), soft)}
 
             arms = {}
-            # Alternated per case so a container drifting warmer does not
-            # hand the drift to one arm.
-            order = ("paste", "sampled") if len(results) % 2 == 0 \
-                else ("sampled", "paste")
-            for arm in order:
-                graph = _graph(caption, seed, regions,
-                               inpaint if arm == "sampled" else None, batch)
+            # Rotated per case so a container drifting warmer does not hand the
+            # drift to one arm.
+            order = list(plan)
+            k = len(results) % len(order)
+            for arm in order[k:] + order[:k]:
+                graph, alpha = plan[arm]
                 names = self._run(f"{arm}-{name}", graph)
                 pics = []
                 for n in names:
                     with Image.open(COMFY / "output" / n) as im:
-                        # The job's own composite, so neither arm is scored on
-                        # something a real inpaint would never show.
+                        # Each arm's own composite, so none is scored on
+                        # something its version of the job would never show.
                         out = Image.composite(im.convert("RGB"), source, alpha)
                     buf = io.BytesIO()
                     out.save(buf, "PNG")
                     pics.append({"png": base64.b64encode(buf.getvalue()).decode(),
-                                 **_seam(out, source, mask)})
+                                 **_seam(out, source, mask, soft)})
                 arms[arm] = pics
                 print(f"[ab-inpaint] {name} {arm}: "
                       + ", ".join(f"edge {p['edge']:+.3f} light {p['light']:+.3f}"
@@ -292,11 +325,11 @@ def main(stage: str = "sources", out: str = "out/inpaint", cases: str = "",
                      "mask": hit["mask"], "bbox": hit["bbox"]})
 
     rows = Bench().compare.remote(todo, seed)
-    totals: dict[str, list[dict]] = {"paste": [], "sampled": []}
+    totals: dict[str, list[dict]] = {"paste": [], "hard": [], "soft": []}
     for row in rows:
         for arm, pics in row["arms"].items():
             for i, pic in enumerate(pics):
-                suffix = "bare" if arm == "paste" else "rich"
+                suffix = {"paste": "bare", "hard": "hard", "soft": "rich"}[arm]
                 tag = row["name"] + (f"-{i}" if len(pics) > 1 else "")
                 (out_dir / f"{tag}_{suffix}.png").write_bytes(base64.b64decode(pic["png"]))
                 totals[arm].append(pic)

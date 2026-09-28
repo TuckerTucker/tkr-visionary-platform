@@ -1,0 +1,41 @@
+id: work-nNUZTJjf
+title: An inpaint that changes a silhouette leaves the old one behind as fog
+kind: regression
+severity: medium
+status: closed
+capabilityId: platform
+continues: work-UvrttALb
+anchors:
+  - app.py
+  - tools/ab_inpaint.py
+  - web/src/regions/RegionLayer.tsx
+createdAt: 2026-09-28T23:55:00.000Z
+updatedAt: 2026-09-29T01:30:00.000Z
+remedy: "Found on the deployed app the first time it was driven: a man restyled
+  in a leather coat kept the grey coat's outline and his old head beside him as
+  pale fog. The noise mask was SAM's edge grown 16px and hard at every step, and
+  the paste cut back to the source on SAM's own 5px-feathered edge, so between
+  the old silhouette and the new one the model painted background from nothing
+  and the paste drew the old outline. One mask now does both jobs:
+  _inpaint_soft_mask grows SAM's mask, blurs it, and floors it at SAM's own, and
+  SetLatentNoiseMask and the paste both read it. The same pass made the tap on a
+  render say it is asking (a ring, and words once a cold SAM is slow) and say a
+  failed answer, because the first live tap waited on a cold segmenter showing
+  nothing."
+findings:
+  - "tools/ab_inpaint.py, 2026-09-29, H100, six pictures over five cases
+    including the live gesture. Rim excess over the source: paste edge +0.459
+    light +0.239, hard +0.150 / -0.048, soft +0.057 / -0.028. By eye the soft
+    arm is best in every case and the only one with no halo on the street coat."
+  - "DifferentialDiffusion was tried and dropped: with it a mug asked to become
+    a glass of wine stayed a mug, on the soft mask and on a binary one, while
+    every arm without it made the glass. Why it changes a binary mask is not
+    understood; it is out until it is."
+  - "The floor at SAM's mask is measured, not assumed: without it 110 of the
+    357 latent cells inside the mug's own mask sat at 0.93."
+evidence:
+  kind: manual
+  ref: "tools/ab_inpaint.py as above; smoke_graphs passes; check_sam.py drives
+    the tap's ring, slow caption, answer, failure and + Region against
+    preview_ui, which now stubs /api/segment. The live inpaint on the deployed
+    app reproduced the fault before the fix."
