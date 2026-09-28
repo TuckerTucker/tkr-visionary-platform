@@ -217,7 +217,17 @@ export const deleteSession = (id: string) =>
 export const generate = (body: unknown) => post<{ job_id: string }>('/api/generate', body)
 export const video = (body: unknown) => post<{ job_id: string }>('/api/video', body)
 
-export const status = (jobId: string) => api<JobStatus>(`/api/status/${seg(jobId)}`)
+/** How long one status read may take before it is abandoned. Every job's poll is an
+ *  `everyMs`, which skips a tick while the last one is out — so a read that never
+ *  came back stopped the poll for good. On the deployed app one did: the job
+ *  completed, the page sat on "generate", and the only way out was a reload that
+ *  lost the render. A read answers in ~60ms; the slowest seen took 20s and then
+ *  answered, so this gives up well after the second and retries on the next tick. */
+const STATUS_TIMEOUT_MS = 8000
+
+export const status = (jobId: string) =>
+  api<JobStatus>(`/api/status/${seg(jobId)}`,
+                 { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) })
 /** Cooperative: the job checks a flag between steps and unwinds cleanly, so
  *  the container survives and the next request is warm. */
 export const stop = (jobId: string) => post<{ ok?: boolean }>(`/api/stop/${seg(jobId)}`)

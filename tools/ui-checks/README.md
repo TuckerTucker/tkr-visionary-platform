@@ -111,6 +111,10 @@ it still holds.
   the character. An object lands with its note focused; without the edit LoRA
   the plate zones say so before the drop and refuse after it, and Style still
   takes one.
+- `check_poll.py` — one status read held forever, and the render lands anyway.
+  Every job poll skips a tick while the last read is out, so a read that never
+  answered stopped the poll for good; on the deployed app a completed render sat
+  behind "generate" until a reload lost it. Fails without the read's timeout.
 - `check_sam.py` — a tap on a render asks SAM, and the page shows it is asking:
   a ring on the point at once, words only once the answer is slow, the mask and
   `+ Region` when it lands, and a failed answer said on the layer. The preview
