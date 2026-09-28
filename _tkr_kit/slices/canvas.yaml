@@ -15,7 +15,11 @@ slices:
       - be-told-where-the-gesture-landed
     title: One refusal primitive, lifted out of the region layer
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "208c997: typecheck and build; check_region_slot, check_regions,
+        check_drop, check_drop_tracks pass on the preview"
   - number: 2
     feature: refusals-in-place
     delivers: The twelve alert() calls replaced — the video canvas, SourceRow,
@@ -29,13 +33,27 @@ slices:
       - web/src/scene/Material.tsx
       - web/src/scene/CastCard.tsx
       - web/src/sheet/SheetBuilder.tsx
+      - web/src/gallery/Gallery.tsx
+      - web/src/media/files.ts
+      - web/src/regions/PlateRow.tsx
+      - web/src/regions/Inspector.tsx
+      - web/src/regions/RegionLayer.tsx
+      - web/src/ui/Refusal.tsx
+      - web/src/styles/ui.css
+      - tools/ui-checks/check_refusals.py
+      - tools/ui-checks/README.md
     depends_on:
       - 1
     story_ids:
       - be-told-where-the-gesture-landed
     title: Every alert() said on its own surface
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "3378cf4: check_refusals passes; check_drop, check_region_slot,
+        check_regions, check_drop_tracks, check_stage, check_slots, check_meta
+        pass; check_gallery fails as on HEAD"
   - number: 3
     feature: video-drops
     delivers: The first-frame-only drop in Canvas.tsx becomes three zones — first
@@ -48,13 +66,25 @@ slices:
       - web/src/canvas/Canvas.tsx
       - web/src/styles/ui.css
       - tools/ui-checks/check_drop.py
+      - web/src/App.tsx
+      - web/src/video/SourceRow.tsx
+      - web/CLAUDE.md
+      - tools/ui-checks/check_video_zones.py
+      - tools/ui-checks/check_refusals.py
+      - tools/ui-checks/check_stage.py
+      - tools/ui-checks/README.md
     depends_on:
       - 1
     story_ids:
       - give-a-take-its-pictures-by-dropping-them
     title: Drop zones on the video canvas
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "abe37d4: check_video_zones passes on the empty canvas and over the stage;
+        check_refusals, check_drop, check_region_slot, check_regions,
+        check_drop_tracks, check_stage, check_slots, check_meta pass"
   - number: 4
     feature: video-drops
     delivers: With the scene composer open, the middle zone makes a cast member
@@ -63,13 +93,20 @@ slices:
     paths:
       - web/src/canvas/drop
       - web/src/scene
+      - tools/ui-checks/check_video_zones.py
+      - tools/ui-checks/check_refusals.py
     depends_on:
       - 3
     story_ids:
       - give-a-take-its-pictures-by-dropping-them
     title: A reference dropped into a scene becomes a cast member
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "a717f56: check_video_zones (composed case) and check_refusals pass;
+        check_drop, check_region_slot, check_stage, check_slots, check_shots,
+        check_inherit, check_undo, check_meta pass"
   - number: 5
     feature: video-drops
     delivers: "Once the canvas takes every role the tiles take, SourceRow loses its
@@ -82,6 +119,14 @@ slices:
       - web/src/console/Console.tsx
       - web/src/canvas/Canvas.tsx
       - web/CLAUDE.md
+      - web/src/media/DropTile.tsx
+      - web/src/media/files.ts
+      - web/src/sheet/SheetBuilder.tsx
+      - web/src/canvas/drop
+      - web/src/styles/ui.css
+      - tools/ui-checks/check_drop.py
+      - tools/ui-checks/check_refusals.py
+      - tools/ui-checks/check_video_zones.py
     depends_on:
       - 3
       - 4
@@ -89,4 +134,8 @@ slices:
       - give-a-take-its-pictures-by-dropping-them
     title: SourceRow's tiles retire
     layer: ui
-    status: planned
+    status: done
+    evidence:
+      kind: commit
+      ref: "e5c0125: check_drop, check_refusals, check_video_zones, check_stage,
+        check_slots pass on the preview"

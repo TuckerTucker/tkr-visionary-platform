@@ -604,7 +604,7 @@ capabilities:
         pass on main"
   - name: canvas
     layer: ui
-    status: planned
+    status: done
     depends_on:
       - web
       - inference
@@ -648,3 +648,8 @@ capabilities:
         it before it is let go.
       - No attach or drop path in web/src calls alert().
       - SourceRow holds no DropTile once the canvas covers its roles.
+    evidence:
+      kind: commit
+      ref: "208c997..e5c0125: five slices, two features; check_video_zones,
+        check_refusals, check_drop pass on the preview. Not run against a
+        deployed app or on a touch device."

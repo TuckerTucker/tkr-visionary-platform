@@ -1,7 +1,7 @@
 capability: canvas
 features:
   - name: video-drops
-    status: planned
+    status: done
     user_story: As someone setting up a take, I want to drop a picture on the canvas
       and have where I drop it say what it is for, so that a first frame, a last
       frame and a reference are one gesture each rather than a hunt for the
@@ -38,8 +38,12 @@ features:
         - web/src/scene
         - web/src/styles
         - tools/ui-checks
+    evidence:
+      kind: commit
+      ref: "208c997..e5c0125: all five canvas slices done; check_refusals and
+        check_video_zones hold the acceptance criteria"
   - name: refusals-in-place
-    status: planned
+    status: done
     user_story: As someone whose drop was refused, I want to be told on the thing I
       dropped onto, so that the reason arrives where my attention already is and
       nothing stops the app to deliver one sentence.
@@ -68,3 +72,7 @@ features:
         - web/src/App.tsx
         - web/src/regions
         - web/src/styles
+    evidence:
+      kind: commit
+      ref: "208c997..e5c0125: all five canvas slices done; check_refusals and
+        check_video_zones hold the acceptance criteria"

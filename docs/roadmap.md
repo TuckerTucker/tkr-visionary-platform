@@ -25,8 +25,10 @@ because a veto that is not in context when someone adds a panel is not a veto.
    mostly there: regions on the canvas, drops onto a box or the frame, SAM
    turning a click into a region, and an inpaint that pastes a whole-frame
    render through the mask. Sampling from the source is backlog
-   `work-UvrttALb`. The video side's pictures still arrive through tiles; that
-   remainder is the `canvas` capability
+   `work-UvrttALb`. The video side takes its pictures by where they are dropped
+   on the canvas — first frame, reference, last frame — and says every refusal
+   on the surface it landed on (the `canvas` capability, done). What is left of
+   the first tier is that inpaint, and the image plates, which are still tiles
 7. **Editing** — done. Takes become a scene you can cut, on OpenVideo — the
    `editing` capability; see below
 

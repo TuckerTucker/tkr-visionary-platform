@@ -1,7 +1,7 @@
 capability: canvas
 stories:
   - name: give a take its pictures by dropping them
-    status: planned
+    status: done
     actor: Director
     intent: attach a first frame, a last frame or a reference without finding a tile
     trigger_action: drags a photo from the Finder over the video canvas
@@ -22,8 +22,12 @@ stories:
       - given: a reference attached
         when: a photo is dragged over a keyframe zone
         then: the zone says references win before the drop
+    evidence:
+      kind: commit
+      ref: "e5c0125: check_video_zones and check_refusals drive each story end to end
+        on the preview"
   - name: be told where the gesture landed
-    status: planned
+    status: done
     actor: Director
     intent: know why a drop did nothing without a modal stopping the app
     trigger_action: drops a file a surface cannot take
@@ -40,3 +44,7 @@ stories:
       - given: a refusal on screen
         when: the next gesture happens
         then: it is gone
+    evidence:
+      kind: commit
+      ref: "e5c0125: check_video_zones and check_refusals drive each story end to end
+        on the preview"
