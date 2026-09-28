@@ -2465,6 +2465,19 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
 .rins.frame-card{left:8px;bottom:8px;max-width:calc(100% - 52px)}
 .sam-overlay{position:absolute;inset:0;background:rgba(59,130,246,.35);
   mask-size:100% 100%;-webkit-mask-size:100% 100%;pointer-events:none}
+/* Where a tap asked SAM, while it is being answered — see `samAsk` in RegionLayer. A
+   ring on the point rather than a spinner in a corner, because the question is about
+   that point. The caption hangs under it only once the wait is long enough to need
+   one. */
+.sam-ask{position:absolute;z-index:5;width:18px;height:18px;margin:-9px 0 0 -9px;
+  border-radius:50%;border:2px solid rgba(59,130,246,.9);pointer-events:none;
+  animation:sam-ask 1.1s ease-in-out infinite}
+.sam-ask span{position:absolute;top:24px;left:50%;transform:translateX(-50%);
+  padding:5px 11px;border-radius:var(--r-pill);background:rgba(0,0,0,.74);
+  backdrop-filter:blur(8px);color:var(--fg);font-size:12px;line-height:1.2;
+  white-space:nowrap}
+@keyframes sam-ask{50%{transform:scale(1.35);opacity:.55}}
+@media (prefers-reduced-motion:reduce){.sam-ask{animation:none}}
 .sam-promote{position:absolute;z-index:5;display:flex;align-items:center;gap:6px;
   padding:5px 10px;border:0;border-radius:var(--r-inner);
   background:rgba(0,0,0,.82);color:#fff;font-size:12px;line-height:1;

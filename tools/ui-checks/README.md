@@ -111,6 +111,11 @@ it still holds.
   the character. An object lands with its note focused; without the edit LoRA
   the plate zones say so before the drop and refuse after it, and Style still
   takes one.
+- `check_sam.py` — a tap on a render asks SAM, and the page shows it is asking:
+  a ring on the point at once, words only once the answer is slow, the mask and
+  `+ Region` when it lands, and a failed answer said on the layer. The preview
+  had no `/api/segment` until this, so the way into an inpaint had never been
+  driven off a deployment.
 - `check_recall.py` — a saved character as a region's likeness: the card's
   character menu lists the saved cast, picking one fills the box's Photo and
   reaches `/api/generate` as the region's `ref`, and a lost photograph is said

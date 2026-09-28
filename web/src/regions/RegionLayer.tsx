@@ -56,6 +56,10 @@ const CLICK_SLOP = 8
  * prompt — survivable while this was a decoration over the canvas, and not while it is
  * the surface the feature lives on.
  */
+/** How long a SAM answer may take before the marker says why it is waiting. A warm
+ *  segmenter answers well inside it, so the words only appear on a cold one. */
+const SAM_SLOW_MS = 1500
+
 export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
   over?: 'frame' | 'render'
   renderJobId?: string | null
@@ -127,7 +131,16 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
   const [samHit, setSamHit] = useState<{
     mask: string; w: number; h: number; bbox: [number, number, number, number]
   } | null>(null)
-  useEffect(() => { setSamHit(null) }, [renderJobId, renderFile])
+  /** Where a tap asked SAM, while it has not answered. A warm segmenter answers in under
+   *  a second and a cold one in about twenty, and for all twenty the tap used to show
+   *  nothing — the same state as a tap that missed, which is what the first live test
+   *  of this took it for. `slow` flips after SAM_SLOW_MS, and only then is it said
+   *  why: a caption on every sub-second answer would be a flash of words nobody reads. */
+  const [samAsk, setSamAsk] = useState<{ x: number; y: number; slow: boolean } | null>(null)
+  /** The latest tap. An answer to an earlier one arriving late must not paint a mask
+   *  for a place you have since tapped away from. */
+  const samSeq = useRef(0)
+  useEffect(() => { setSamHit(null); setSamAsk(null); samSeq.current++ }, [renderJobId, renderFile])
   const index = loraIndex(state)
 
   // **A press that is not on the card closes the card.** The rule is stated as one
@@ -185,8 +198,18 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
 
   async function segmentClick(jobId: string, file: string, x: number, y: number): Promise<void> {
     setSamHit(null)
+    const seq = ++samSeq.current
+    setSamAsk({ x, y, slow: false })
+    const slow = window.setTimeout(() => {
+      if (samSeq.current === seq) setSamAsk({ x, y, slow: true })
+    }, SAM_SLOW_MS)
     const r = await segmentAt({ job_id: jobId, file, x, y })
-    if (failed(r)) return
+    window.clearTimeout(slow)
+    if (samSeq.current !== seq) return
+    setSamAsk(null)
+    // Said, not dropped: a tap that came back with nothing looked exactly like a tap
+    // that was never received.
+    if (failed(r)) return setRefused(`Could not find what is under that point — ${r.error}`)
     setSamHit({ mask: r.mask, w: r.w, h: r.h, bbox: r.bbox })
   }
 
@@ -194,7 +217,10 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     if (!samHit) return
     const [x1, y1, x2, y2] = samHit.bbox
     const st = useStore.getState()
-    if (st.regions.length >= (st.state?.max_regions ?? 8)) return
+    const max = st.state?.max_regions ?? 8
+    if (st.regions.length >= max) {
+      return setRefused(`${max} regions is what the regional node takes — remove one to add this.`)
+    }
     const r = newRegion({
       x: clamp01(x1), y: clamp01(y1),
       w: clamp01(x2 - x1), h: clamp01(y2 - y1),
@@ -808,6 +834,12 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
         </button>
       )}
 
+      {samAsk && (
+        <div className={`sam-ask${samAsk.slow ? ' slow' : ''}`} aria-live="polite"
+             style={{ left: `${samAsk.x * 100}%`, top: `${samAsk.y * 100}%` }}>
+          {samAsk.slow && <span>Waking the segmenter — the first tap in a while starts it</span>}
+        </div>
+      )}
       {samHit && <>
         <div className="sam-overlay"
              style={{ maskImage: `url(data:image/png;base64,${samHit.mask})`,

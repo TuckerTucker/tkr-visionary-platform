@@ -928,6 +928,44 @@ def multipart(body: bytes, ctype: str) -> dict:
     return out
 
 
+
+# SAM, stubbed: a disc around the point, as the grayscale PNG the real route
+# returns. Without it the tap on a render — the whole of touch-to-select and the
+# way into an inpaint — had never been driven off a deployment at all. Stdlib
+# only, like the rest of this file, so the PNG is written by hand.
+SEG_SIZE, SEG_RADIUS = 64, 0.12
+
+
+def _png_gray(w: int, h: int, rows: list[bytes]) -> bytes:
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + kind + data
+                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+
+    raw = b"".join(b"\x00" + r for r in rows)
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+def segment_stub(body: bytes) -> dict:
+    try:
+        data = json.loads(body or b"{}")
+        x, y = float(data.get("x", 0)), float(data.get("y", 0))
+    except (ValueError, TypeError):
+        return {"error": "x and y must be numbers."}
+    if not data.get("job_id") or not data.get("file"):
+        return {"error": "job_id and file are required."}
+    n, r = SEG_SIZE, SEG_RADIUS
+    rows = [bytes(255 if (i / n - x) ** 2 + (j / n - y) ** 2 <= r * r else 0
+                  for i in range(n)) for j in range(n)]
+    return {"ok": True, "score": 0.97, "w": n, "h": n,
+            "mask": base64.b64encode(_png_gray(n, n, rows)).decode(),
+            "bbox": [max(0.0, x - r), max(0.0, y - r),
+                     min(1.0, x + r), min(1.0, y + r)]}
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -990,6 +1028,8 @@ class Handler(BaseHTTPRequestHandler):
         # typed still in it. A flat {"ok": true} leaves the page redrawing the
         # state it started in, which is the one state that needed no server.
         seed_sessions()
+        if path == "/api/segment":
+            return self.reply(segment_stub(body))
         m = re.match(r"/api/sessions/([^/]+)/(start|stop|delete)$", path)
         if m:
             sid, verb = m.group(1), m.group(2)
