@@ -6,6 +6,7 @@ import { IconClose, IconExpand, IconPhoto, IconPlay, IconPlus } from '../icons'
 import { Frame } from '../regions/Frame'
 import { RegionLayer } from '../regions/RegionLayer'
 import { StageRegions } from '../regions/StageRegions'
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { attached, regionsLive, useStore } from '../store'
 import { fullScreenStage, Stage } from '../edit/Stage'
 import { useEdit } from '../edit/useEdit'
@@ -62,9 +63,11 @@ export function Canvas({
   vidRun: VideoRun
   onOpen: (jobId: string, i: number) => void
   onOpenVideo: (src: string) => void
-  onHandoff: (jobId: string, file: string, as: 'first' | 'reference') => void
-  /** A picture dropped on the video canvas is the frame the clip starts on. */
-  onFirstFrame: (f: File) => Promise<void> | void
+  /** Resolves to a refusal, or null once the picture is on the video side. */
+  onHandoff: (jobId: string, file: string, as: 'first' | 'reference') => Promise<string | null>
+  /** A picture dropped on the video canvas is the frame the clip starts on. Resolves to
+   *  a refusal when the browser cannot decode it. */
+  onFirstFrame: (f: File) => Promise<string | null>
   onClear: () => void
   /** The next generation of the same scene — see `useVideo.chain`. */
   onChain: () => void
@@ -73,6 +76,10 @@ export function Canvas({
 }) {
   const s = useStore()
   const canvasRef = useRef<HTMLDivElement>(null)
+  // Every gesture on the canvas that can be refused says so here, on the canvas: the
+  // two hand-off buttons on a still, and a drop on the video slot.
+  const [refused, refuse] = useRefusal()
+  const tell = (p: Promise<string | null>) => { void p.then((r) => { if (r) refuse(r) }) }
   const gridRef = useRef<HTMLDivElement>(null)
   const capRef = useRef<HTMLParagraphElement>(null)
   const navRef = useRef<HTMLDivElement>(null)
@@ -292,11 +299,11 @@ export function Canvas({
                       on, a reference is a subject the clip is about. */}
                   <span className="acts">
                     <button type="button" title="Animate — use as the first frame of a clip"
-                            onClick={() => onHandoff(run.jobId!, f, 'first')}>
+                            onClick={() => tell(onHandoff(run.jobId!, f, 'first'))}>
                       <IconPlay />
                     </button>
                     <button type="button" title="Use as a reference image"
-                            onClick={() => onHandoff(run.jobId!, f, 'reference')}>
+                            onClick={() => tell(onHandoff(run.jobId!, f, 'reference'))}>
                       <IconPhoto />
                     </button>
                   </span>
@@ -390,10 +397,10 @@ export function Canvas({
                // Said, not swallowed: a file of the wrong kind landing on a target that
                // just lit up for it has to say why nothing happened.
                if (!f) {
-                 alert('The canvas takes an image — it becomes the first frame.')
+                 refuse('The canvas takes an image — it becomes the first frame.')
                  return
                }
-               void onFirstFrame(f)
+               tell(onFirstFrame(f))
              }}>
           {/* The stage, once the scene has time. The dropped-file handler above stays
               on the slot rather than moving onto the stage, so a first frame lands
@@ -438,6 +445,7 @@ export function Canvas({
             : vidRun.meta.join(' · ')}
         </p>
       )}
+      <Refusal text={refused} />
     </div>
   )
 }

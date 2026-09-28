@@ -2479,6 +2479,12 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
 .refusal{position:absolute;left:8px;right:44px;bottom:8px;z-index:9;margin:0;
   padding:7px 10px;border-radius:var(--r-inner);background:rgba(0,0,0,.86);
   color:#f3c07a;font-size:12px;line-height:1.35}
+/* Anchored to a small target in the console — a tile — so it is sized to its sentence
+   rather than to a surface, and fixed because it is portalled out of `.console`'s
+   clipping. `pointer-events:none`: it is read, never pressed, and a press through it
+   onto the tile underneath is the next gesture that clears it. */
+.refusal.anchored{position:fixed;right:auto;bottom:auto;z-index:60;
+  width:max-content;max-width:min(340px,calc(100vw - 16px));pointer-events:none}
 /* The coordinates, while the card that holds them is at opacity 0. The gesture is
    what teaches those numbers and it was the one moment none were on screen — with
    RegionLayer still writing the store once per animation frame to move them. Top-left

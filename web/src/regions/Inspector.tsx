@@ -5,7 +5,7 @@ import { Menu } from '../ui/Menu'
 import { NumInput } from '../ui/NumInput'
 import { usePopover } from '../ui/Popover'
 import { DropTile } from '../media/DropTile'
-import { shrinkB64 } from '../media/files'
+import { shrinkB64, unreadable } from '../media/files'
 import { caretProps, dropCaret } from '../lora/caret'
 import { regionNote } from '../lora/note'
 import { chipFrom, loraIndex } from '../lora/tokens'
@@ -184,7 +184,8 @@ function BoxCard(
                   title="Character reference — a photo of this person. Pulls the box toward that likeness during sampling; stacks with the LoRA, and works without one. Not for clothing or places — an outfit or scene photo goes on the frame card."
                   onFile={async (f) => {
                     const b64 = await shrinkB64(f)
-                    if (b64) s.attach(i, 'identity', b64)
+                    if (!b64) return unreadable(f)
+                    s.attach(i, 'identity', b64)
                   }}
                   onClear={() => s.attach(i, 'identity', null)} />
 

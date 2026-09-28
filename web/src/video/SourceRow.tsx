@@ -4,7 +4,8 @@ import { IconFilm, IconFirst, IconLast, IconPhoto } from '../icons'
 import { Menu } from '../ui/Menu'
 import { usePopover } from '../ui/Popover'
 import { DropTile } from '../media/DropTile'
-import { dataUrl, shrinkB64, toB64 } from '../media/files'
+import { Refusal, useRefusal } from '../ui/Refusal'
+import { dataUrl, shrinkB64, toB64, unreadable } from '../media/files'
 import { supports, useStore } from '../store'
 import { useEdit } from '../edit/useEdit'
 import { continueAtFor, cutFor, secs, snapNote, useContinueCut } from '../edit/continue'
@@ -47,21 +48,25 @@ export function SourceRow() {
   const maxRefs = s.state?.max_refs ?? 9
   const maxVids = s.state?.max_ref_videos ?? 3
 
-  const take = async (kindOf: 'img' | 'vid', files: File[]) => {
+  /** Appends what decodes, up to the cap, and answers with what it could not take — said
+   *  above the tile the files arrived on. */
+  const take = async (kindOf: 'img' | 'vid', files: File[]): Promise<string | null> => {
     // Re-read the bucket and the cap at drop time rather than closing over them:
     // both arrays are replaced wholesale by Reuse and by a model change dropping
     // references it cannot take, so a captured array would be pushed into a
     // detached one.
     const st = useStore.getState()
     const isImg = kindOf === 'img'
+    const noun = isImg ? 'image' : 'video'
     const bucket = isImg ? st.refs : st.refVids
     const max = isImg ? maxRefs : maxVids
     if (bucket.length >= max) {
-      alert(`${max} ${isImg ? 'image' : 'video'} references is the model's limit.`)
-      return
+      return `${max} ${noun} references is the model’s limit — remove one to add another.`
     }
     const out = [...bucket]
-    for (const f of files.slice(0, max - bucket.length)) {
+    const room = max - bucket.length
+    const unread: File[] = []
+    for (const f of files.slice(0, room)) {
       // Images go through the same shrink the region photos do, for the payload half
       // of the reason H3_REF_MAX_SIDE gives: nine photographs straight off a phone is
       // tens of megabytes of base64 in one JSON body. The server caps them again on
@@ -73,18 +78,27 @@ export function SourceRow() {
       // with no picture and a base64 of "null" in the request, which fails on the GPU
       // rather than on the file it came from.
       if (b) out.push(b)
-      // Named, and with a way out. "Could not read that file." was the whole
-      // message and it left the person holding a file and no next move — the
-      // browser is the thing that failed to decode it, so the fix is a format it
-      // does decode, and `isImg` already says which list that is.
-      else alert(isImg
-        ? `The browser could not read ${f.name || 'that image'} — save it as a PNG or`
-          + ' JPEG and drop it again.'
-        : `The browser could not read ${f.name || 'that video'} — an MP4 works`
-          + ' everywhere; convert it and drop it again.')
+      else unread.push(f)
     }
     if (isImg) st.setRefs(out)
     else st.setRefVids(out)
+    // Both said, in one sentence: a drop of twelve onto a cap of nine used to keep nine
+    // and say nothing about the other three, which reads as the tray losing pictures.
+    // An unread file is named with the format that fixes it, because the browser is the
+    // thing that failed to decode it.
+    const said = [
+      unread.length && unreadable(unread[0]!, noun) + (unread.length > 1
+        ? ` (and ${unread.length - 1} more)` : ''),
+      files.length > room && `${files.length - room} left out — ${max} ${noun} references is the model’s limit.`,
+    ].filter(Boolean)
+    return said.length ? said.join(' ') : null
+  }
+  /** A keyframe, or the reason it is not one. */
+  const frame = async (at: 'first' | 'last', f: File): Promise<string | null> => {
+    const b = await toB64(f)
+    if (!b) return unreadable(f)
+    s.setKeyframe(at, b)
+    return null
   }
 
   const motion = !!s.continueFrom
@@ -150,14 +164,14 @@ export function SourceRow() {
                 off={!!n || motion}
                 glyph={<IconFirst />}
                 title="The clip starts on this image. Drop or click; click again to clear."
-                onFile={async (f) => s.setKeyframe('first', await toB64(f))}
+                onFile={(f) => frame('first', f)}
                 onClear={() => s.setKeyframe('first', null)} />
       {sup.last_frame && (
         <DropTile id="v-drop-last" label="Last frame" value={s.keyframe.last}
                   off={!!n || motion}
                   glyph={<IconLast />}
                   title="The clip ends on this image. Drop or click; click again to clear."
-                  onFile={async (f) => s.setKeyframe('last', await toB64(f))}
+                  onFile={(f) => frame('last', f)}
                   onClear={() => s.setKeyframe('last', null)} />
       )}
 
@@ -213,13 +227,13 @@ export function SourceRow() {
           <AddTile id="v-add-ref" label="Picture" accept="image/" off={framed && !n}
                    glyph={<IconPhoto />}
                    title="Add an image reference — the subject, redrawn in a new shot. The prompt refers to it as <Picture 1>."
-                   onFiles={(f) => void take('img', f)}
+                   onFiles={(f) => take('img', f)}
                    picking={addRef === 'img'} onPick={() => setAddRef('img')}
                    onDone={() => setAddRef(null)} />
           <AddTile id="v-add-vid" label="Video" accept="video/" off={framed && !n}
                    glyph={<IconFilm />}
                    title="Add a video reference. The prompt refers to it as <Video 1>."
-                   onFiles={(f) => void take('vid', f)}
+                   onFiles={(f) => take('vid', f)}
                    picking={addRef === 'vid'} onPick={() => setAddRef('vid')}
                    onDone={() => setAddRef(null)} />
           {/* Reference tokens ride through every sampling step, so this is a per-step
@@ -271,15 +285,20 @@ function AddTile({ id, label, title, accept, glyph, off, onFiles, picking, onPic
   accept: string
   glyph: React.ReactNode
   off: boolean
-  onFiles: (files: File[]) => void
+  /** Answers with a refusal, which the tile says above itself. */
+  onFiles: (files: File[]) => Promise<string | null>
   picking: boolean
   onPick: () => void
   onDone: () => void
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [hot, setHot] = useState(false)
+  // Above the tile rather than on it — it is 32px and lives in the clipping console.
+  const [self, setSelf] = useState<HTMLButtonElement | null>(null)
+  const [refused, refuse] = useRefusal()
+  const give = (files: File[]) => { void onFiles(files).then((r) => { if (r) refuse(r) }) }
   return (
-    <button id={id} type="button" data-lb={label} title={title} data-drop={`${label} reference`}
+    <button id={id} ref={setSelf} type="button" data-lb={label} title={title} data-drop={`${label} reference`}
             className={['drop', 'mini', 'can-drop', hot ? 'hot' : '', off ? 'off' : '']
               .filter(Boolean).join(' ')}
             onClick={(e) => {
@@ -302,10 +321,10 @@ function AddTile({ id, label, title, accept, glyph, off, onFiles, picking, onPic
               setHot(false)
               const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith(accept))
               if (!files.length) {
-                alert(`That tile takes ${accept === 'image/' ? 'an image' : 'a video'}.`)
+                refuse(`That tile takes ${accept === 'image/' ? 'an image' : 'a video'}.`)
                 return
               }
-              onFiles(files)
+              give(files)
             }}>
       <span className="lead">{label}</span>
       <span>{glyph}</span>
@@ -313,9 +332,10 @@ function AddTile({ id, label, title, accept, glyph, off, onFiles, picking, onPic
              onChange={(e) => {
                const files = [...(e.target.files ?? [])]
                e.target.value = ''
-               if (picking && files.length) onFiles(files)
+               if (picking && files.length) give(files)
                onDone()
              }} />
+      <Refusal text={refused} anchor={self} />
     </button>
   )
 }

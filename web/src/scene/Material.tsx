@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 
 import { useStore } from '../store'
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { intake, mediaOf } from './pool'
 import { slotFor, type CastMember, type PoolFile } from './model'
 
@@ -38,6 +39,10 @@ export function Material({ member }: { member: CastMember }) {
   const s = useStore()
   const input = useRef<HTMLInputElement>(null)
   const [hot, setHot] = useState(false)
+  // Said over the well it was dropped on — the card floats, so an anchored sentence is
+  // placed against the page rather than clipped by the card's edge.
+  const [self, setSelf] = useState<HTMLDivElement | null>(null)
+  const [refused, refuse] = useRefusal()
 
   const held = member.refs
     .map((r) => ({ ref: r, file: s.pool[r.fileId] as PoolFile | undefined }))
@@ -47,9 +52,10 @@ export function Material({ member }: { member: CastMember }) {
     const got = await intake(f)
     if (!got) {
       // Named, and with a way out — the browser is what failed, so the fix is a
-      // format it decodes. Same courtesy `SourceRow` extends.
-      alert(`The browser could not read ${f.name || 'that file'} — try a PNG, a`
-            + ' JPEG, an MP4 or a WAV.')
+      // format it decodes. Every channel a member holds, because this well takes all
+      // three.
+      refuse(`The browser could not read ${f.name || 'that file'} — try a PNG, a`
+             + ' JPEG, an MP4 or a WAV.')
       return
     }
     const slot = slotFor(member.kind, got.kind)
@@ -66,7 +72,8 @@ export function Material({ member }: { member: CastMember }) {
     })
 
   return (
-    <div className="tmat">
+    <div className="tmat" ref={setSelf}>
+      <Refusal text={refused} anchor={self} />
       {held.map(({ ref, file }) => (
         <div key={ref.fileId} className="tref">
           {file!.kind === 'image'

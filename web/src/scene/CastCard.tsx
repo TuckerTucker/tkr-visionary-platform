@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { useSettled } from '../ui/gesture'
 import { useStore } from '../store'
 import { ErrorNote } from '../ui/ErrorNote'
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { save } from './arsenal'
 import { Material } from './Material'
 import { RETENTION, RETENTION_LABEL, handleOf, type CastMember } from './model'
@@ -35,6 +36,8 @@ export function CastCard({ member }: { member: CastMember }) {
   // network write; a button that gives no sign it worked teaches people to
   // press it three times.
   const [kept, setKept] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [saveEl, setSaveEl] = useState<HTMLButtonElement | null>(null)
+  const [refused, refuse] = useRefusal()
   const s = useStore()
   const box = useRef<HTMLDivElement>(null)
   const name = useRef<HTMLInputElement>(null)
@@ -164,17 +167,20 @@ export function CastCard({ member }: { member: CastMember }) {
           something attached: a character with no files is a name, and a name
           is already in your head. */}
       {handleOf(member.name) !== '' && member.refs.length > 0 && (
-        <button type="button" className="tkeep" disabled={kept !== 'idle'}
+        <button type="button" className="tkeep" disabled={kept !== 'idle'} ref={setSaveEl}
                 title={`Save @${member.name} to the arsenal — recall them by typing @${member.name} in any session. Saving again replaces.`}
                 onClick={() => {
                   setKept('saving')
                   void save(member).then((err) => {
-                    if (err) { alert(err); setKept('idle'); return }
+                    // Said above the button that asked, not in a modal: the card stays
+                    // open, and the sentence is about the save you just pressed.
+                    if (err) { refuse(err); setKept('idle'); return }
                     setKept('saved')
                     window.setTimeout(() => { setKept('idle') }, 1600)
                   })
                 }}>
           {kept === 'saving' ? 'Saving…' : kept === 'saved' ? 'Saved ✓' : 'Save to arsenal'}
+          <Refusal text={refused} anchor={saveEl} />
         </button>
       )}
 

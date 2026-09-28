@@ -25,7 +25,7 @@ import { Viewer } from './gallery/Viewer'
 import type { Session } from './api/types'
 import type { GalleryItem } from './gallery/types'
 import { IconBack, IconCube, IconPanel, IconPhoto, IconStack, IconTrain } from './icons'
-import { fileToB64, toB64 } from './media/files'
+import { fileToB64, toB64, unreadable } from './media/files'
 import { Settings } from './settings/Settings'
 import { warmDatasets } from './datasets/useDatasets'
 import { Train } from './train/Train'
@@ -412,35 +412,31 @@ export function App() {
    * streamed `<img src>`, so the base64 the video side needs does not exist client-side.
    */
   const handoff = useCallback(
-    async (jobId: string, file: string, as: 'first' | 'reference' | 'refvideo') => {
+    async (jobId: string, file: string,
+           as: 'first' | 'reference' | 'refvideo'): Promise<string | null> => {
+      // Each refusal is *returned*, never shown here: the press came from the canvas or
+      // from the gallery, and the sentence belongs on whichever one it was — the gallery
+      // stays open on a refusal, so saying it on the canvas behind it would be saying it
+      // to nobody. Silence would read as a dead button.
       const b64 = await fileToB64(fileUrl(jobId, file))
-      if (!b64) {
-        // A modal, still: this is the whole of what the press was for, so it has
-        // nothing to fall through to and silence would read as a dead button. What
-        // changed is that it names the one thing that can be retried — the bytes are
-        // the server's own file, so the failure is the fetch rather than the file.
-        alert('Could not read that render back off the server — reload the page and'
-              + ' try again.')
-        return
-      }
+      // Names the one thing that can be retried — the bytes are the server's own file, so
+      // the failure is the fetch rather than the file.
+      if (!b64) return 'Could not read that render back off the server — reload the page and try again.'
       const st = useStore.getState()
       if (as === 'first') {
         st.setKeyframe('first', b64)
       } else {
         if (!supports(st).references) {
           const m = st.state?.video_models.find((x) => x.supports.references && x.ready)
-          if (!m) {
-            alert('References need MiniMax-H3 — download it under Settings.')
-            return
-          }
+          if (!m) return 'References need MiniMax-H3 — download it under Settings.'
           st.setVid({ model: m.key })
         }
         const img = as === 'reference'
         const max = img ? (st.state?.max_refs ?? 9) : (st.state?.max_ref_videos ?? 3)
         const bucket = img ? st.refs : st.refVids
         if (bucket.length >= max) {
-          alert(`${max} references is the model's limit.`)
-          return
+          return `${max} ${img ? 'image' : 'video'} references is the model’s limit — `
+            + 'remove one from the video side to add this.'
         }
         if (img) st.setRefs([...bucket, b64])
         else st.setRefVids([...bucket, b64])
@@ -449,6 +445,7 @@ export function App() {
       setGalleryOpen(false)
       setShown(null)
       requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('#prompt')?.focus())
+      return null
     },
     [],
   )
@@ -625,17 +622,14 @@ export function App() {
                 onOpenVideo={(src) => lightbox(src, 'video')}
                 onChain={() => void vid.chain()}
                 chaining={vid.linking}
-                onHandoff={(jobId, file, as) => void handoff(jobId, file, as)}
+                onHandoff={handoff}
                 onFirstFrame={async (f) => {
                   const b64 = await toB64(f)
-                  if (b64) useStore.getState().setKeyframe('first', b64)
-                  // A file the browser cannot decode is worth interrupting for — the
-                  // drop is over, the canvas took nothing, and there is no quieter
-                  // place on this surface to say so. It names the file and a format
-                  // that works, which is the half "Could not read that image." was
-                  // missing: same words, no next step.
-                  else alert(`The browser could not read ${f.name || 'that image'} —`
-                             + ' save it as a PNG or JPEG and drop it again.')
+                  if (b64) {
+                    useStore.getState().setKeyframe('first', b64)
+                    return null
+                  }
+                  return unreadable(f)
                 }}
                 onClear={clearCanvas}
                 blank={
@@ -670,7 +664,7 @@ export function App() {
               onMore={more}
               onDropped={drop}
               onMeta={setMeta}
-              onHandoff={(it, as) => void handoff(it.job_id, it.files[0] ?? '', as)}
+              onHandoff={(it, as) => handoff(it.job_id, it.files[0] ?? '', as)}
             />
           </div>
         )}

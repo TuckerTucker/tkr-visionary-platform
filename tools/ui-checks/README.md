@@ -100,6 +100,11 @@ it still holds.
   A target that does not cancel never receives the drop at all, which is how the
   reference tray shipped dead — and how the React port's video canvas shipped
   without its first-frame drop, which this is what caught.
+- `check_refusals.py` — the other half of a drop: when a target *refuses* one,
+  the sentence is on that target and no dialog opens. A tile in the console says
+  it above itself, unclipped; an unreadable file is named with the format that
+  fixes it; a drop past the reference cap says how many it left out; the next
+  gesture clears it.
 
 - `check_regions.py` — the boxes and the card that opens out of them: a drag
   draws one, a release inside the threshold lands on the landmark and the same

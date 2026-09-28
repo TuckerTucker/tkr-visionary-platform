@@ -1,7 +1,7 @@
 import { IconOutfit, IconScene } from '../icons'
 import { NumInput } from '../ui/NumInput'
 import { DropTile } from '../media/DropTile'
-import { dataUrl, shrinkB64 } from '../media/files'
+import { dataUrl, shrinkB64, unreadable } from '../media/files'
 import { NEED_EDIT_LORA } from '../lora/note'
 import { useStore } from '../store'
 import { attached } from '../store'
@@ -67,7 +67,8 @@ export function PlateRow() {
                   title={s.state?.edit_lora ? PLATE_TITLE[slot] : NEED_EDIT_LORA}
                   onFile={async (f) => {
                     const b64 = await shrinkB64(f)
-                    if (b64) s.attach('frame', slot, b64)
+                    if (!b64) return unreadable(f)
+                    s.attach('frame', slot, b64)
                   }}
                   onClear={() => s.attach('frame', slot, null)} />
       ))}
@@ -99,7 +100,8 @@ export function PlateRow() {
                     : NEED_EDIT_LORA}
                   onFile={async (f) => {
                     const b64 = await shrinkB64(f)
-                    if (b64) s.attach('frame', free, b64)
+                    if (!b64) return unreadable(f)
+                    s.attach('frame', free, b64)
                   }}
                   onClear={() => {}} />
       )}
@@ -115,7 +117,8 @@ export function PlateRow() {
                   + 'region boxes.'}
                 onFile={async (f) => {
                   const b64 = await shrinkB64(f)
-                  if (b64) s.attach('frame', STYLE_ROLE, b64)
+                  if (!b64) return unreadable(f)
+                  s.attach('frame', STYLE_ROLE, b64)
                 }}
                 onClear={() => s.attach('frame', STYLE_ROLE, null)} />
       {/* Shown only while a reference is attached — the region LoRA strength's

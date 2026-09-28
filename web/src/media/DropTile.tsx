@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { dataUrl } from './files'
 
 /**
@@ -45,7 +46,9 @@ export function DropTile({
   title: string
   value: string | null
   glyph: React.ReactNode
-  onFile: (f: File) => void
+  /** May answer with a refusal — a picture the browser could not decode, a cap — which
+   *  the tile then says above itself. */
+  onFile: (f: File) => void | string | null | Promise<void | string | null>
   onClear: () => void
   off?: boolean
   locked?: boolean
@@ -55,9 +58,16 @@ export function DropTile({
   const input = useRef<HTMLInputElement>(null)
   const [hot, setHot] = useState(false)
   const dead = !!locked || !!off
+  // Said above the tile, because the tile is 32px and lives in the console, which clips
+  // anything of its own that floats — see `Refusal`'s anchor.
+  const [self, setSelf] = useState<HTMLButtonElement | null>(null)
+  const [refused, refuse] = useRefusal()
+  const take = (f: File) => {
+    void Promise.resolve(onFile(f)).then((r) => { if (r) refuse(r) })
+  }
 
   return (
-    <button id={id} type="button" data-lb={label} title={title}
+    <button id={id} ref={setSelf} type="button" data-lb={label} title={title}
             className={['drop', 'mini', 'can-drop', value ? 'set' : '', hot ? 'hot' : '',
                         off ? 'off' : '', locked ? 'locked' : ''].filter(Boolean).join(' ')}
             data-drop={label}
@@ -88,10 +98,10 @@ export function DropTile({
               // Said, not swallowed. A file of the wrong kind landing on a tile that
               // just lit up for it has to say why nothing happened.
               if (!f) {
-                alert(`That tile takes ${accept === 'image/' ? 'an image' : 'a video'}.`)
+                refuse(`That tile takes ${accept === 'image/' ? 'an image' : 'a video'}.`)
                 return
               }
-              onFile(f)
+              take(f)
             }}>
       {/* The lead label comes from `data-lb` via CSS in the vanilla page; here it
           is a real element for the same reason every other one is — a label
@@ -102,8 +112,9 @@ export function DropTile({
              onChange={(e) => {
                const f = e.target.files?.[0]
                e.target.value = ''
-               if (f) onFile(f)
+               if (f) take(f)
              }} />
+      <Refusal text={refused} anchor={self} />
     </button>
   )
 }

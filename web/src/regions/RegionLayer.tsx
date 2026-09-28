@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { segmentAt } from '../api/routes'
 import { failed } from '../api/client'
 import { IconRegions } from '../icons'
-import { dataUrl, shrinkB64 } from '../media/files'
+import { dataUrl, shrinkB64, unreadable } from '../media/files'
 import { loraIndex } from '../lora/tokens'
 import { NEED_EDIT_LORA } from '../lora/note'
 import { Refusal, useRefusal } from '../ui/Refusal'
@@ -572,7 +572,7 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
       return
     }
     const b64 = await shrinkB64(f)
-    if (!b64) return
+    if (!b64) return setRefused(unreadable(f))
     if (hit >= 0) {
       attach(hit, 'identity', b64)
       select(hit)

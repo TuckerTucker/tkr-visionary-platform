@@ -85,3 +85,15 @@ export async function fileToB64(url: string): Promise<string | null> {
     return null
   }
 }
+
+/**
+ * The refusal for a file the browser would not decode, in one wording everywhere.
+ *
+ * It names the file and a format that works — the half "Could not read that image." was
+ * missing: same words, no next step. The browser is the thing that failed, so the fix is
+ * a format it does decode.
+ */
+export const unreadable = (f: File, kind: 'image' | 'video' = 'image'): string =>
+  kind === 'image'
+    ? `The browser could not read ${f.name || 'that image'} — save it as a PNG or JPEG and drop it again.`
+    : `The browser could not read ${f.name || 'that video'} — an MP4 works everywhere; convert it and drop it again.`

@@ -274,7 +274,8 @@ export function Gallery({
   onMore: () => void
   onDropped: (jobIds: string[]) => void
   onMeta: (it: GalleryItem) => void
-  onHandoff: (it: GalleryItem, as: 'first' | 'reference' | 'refvideo') => void
+  /** Resolves to a refusal, or null once the picture is on the video side. */
+  onHandoff: (it: GalleryItem, as: 'first' | 'reference' | 'refvideo') => Promise<string | null>
 }) {
   const [filter, setFilter] = useState<Filter>('all')
   const [viewing, setViewing] = useState<{ rows: GalleryItem[]; i: number } | null>(null)
@@ -286,6 +287,13 @@ export function Gallery({
   // outlives the menu it was started from — the menu closes on the click — so there is no
   // card-shaped thing left to hang the failure on by the time it arrives.
   const [err, setErr] = useState<ApiError | string | null>(null)
+
+  // A refused hand-off leaves the gallery open, so the sentence goes where the delete
+  // failure goes — the menu that asked has already closed on the click.
+  const handoff = (it: GalleryItem, as: 'first' | 'reference' | 'refvideo') => {
+    setErr(null)
+    void onHandoff(it, as).then((r) => { if (r) setErr(r) })
+  }
 
   const shown = useMemo(
     () => (filter === 'all' ? items : items.filter((i) => i.kind === filter)),
@@ -363,9 +371,9 @@ export function Gallery({
   const menuItems = (it: GalleryItem): MenuItem[] => [
     { label: 'Reuse prompt & settings', run: () => reuse(it) },
     ...(it.kind === 'image'
-      ? [{ label: 'Animate from this frame', run: () => onHandoff(it, 'first' as const) },
-         { label: 'Use as reference', run: () => onHandoff(it, 'reference' as const) }]
-      : [{ label: 'Use as video reference', run: () => onHandoff(it, 'refvideo' as const) }]),
+      ? [{ label: 'Animate from this frame', run: () => handoff(it, 'first') },
+         { label: 'Use as reference', run: () => handoff(it, 'reference') }]
+      : [{ label: 'Use as video reference', run: () => handoff(it, 'refvideo') }]),
     { sep: true },
     { label: 'View metadata', run: () => onMeta(it) },
     { label: it.files.length > 1 ? `Download ${it.files.length} files` : 'Download',

@@ -5,6 +5,7 @@ import type { GalleryItem } from '../gallery/types'
 import { intake } from '../scene/pool'
 import { handleOf } from '../scene/model'
 import { useStore } from '../store'
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { drawSheet, SHEET_H, SHEET_SLOTS, SHEET_W, type SlotId } from './render'
 
 /**
@@ -44,6 +45,10 @@ export function SheetBuilder() {
   const [held, setHeld] = useState<Partial<Record<SlotId, Held>>>({})
   const [hot, setHot] = useState<SlotId | null>(null)
   const [recent, setRecent] = useState<GalleryItem[]>([])
+  // Said above the row of wells a picture was dropped on — the sentence is about a
+  // slot, and the wells are where the attention is when one refuses.
+  const [wells, setWells] = useState<HTMLDivElement | null>(null)
+  const [refused, refuse] = useRefusal()
 
   // The recent generations, images only — a clip has no still to put in a
   // panel. Fetched once on entry; the surface is not a gallery and does not
@@ -80,15 +85,17 @@ export function SheetBuilder() {
         return { ...h, [slot]: { url, img, own } }
       })
     } catch {
-      alert('That image could not be decoded — a PNG or JPEG works.')
+      refuse('That image could not be decoded — save it as a PNG or JPEG and drop it again.')
       if (own) URL.revokeObjectURL(url)
     }
-  }, [])
+  }, [refuse])
 
   const takeFile = useCallback((slot: SlotId, f: File) => {
-    if (!f.type.startsWith('image/')) return
+    // Said rather than ignored: the well lit for the drag, so a silent refusal reads
+    // as a drop the page never received.
+    if (!f.type.startsWith('image/')) { refuse('A sheet panel takes an image.'); return }
     void place(slot, URL.createObjectURL(f), true)
-  }, [place])
+  }, [place, refuse])
 
   /** A dropped URL, fetched into a blob before it touches the canvas.
    *
@@ -105,10 +112,10 @@ export function SheetBuilder() {
       if (!b.type.startsWith('image/')) throw new Error(b.type)
       void place(slot, URL.createObjectURL(b), true)
     } catch {
-      alert('That image could not be fetched — drag it from the strip below, '
-            + 'or save it as a file and drop that.')
+      refuse('That image could not be fetched — drag it from the strip below, '
+             + 'or save it as a file and drop that.')
     }
-  }, [place])
+  }, [place, refuse])
 
   const clear = (slot: SlotId) => {
     setHeld((h) => {
@@ -205,7 +212,8 @@ export function SheetBuilder() {
       {/* The wells are the slots. On the row rather than on the canvas,
           because the canvas shows only what the PNG will hold — an empty slot
           is an invitation, and invitations do not export. */}
-      <div className="sheet-wells">
+      <div className="sheet-wells" ref={setWells}>
+        <Refusal text={refused} anchor={wells} />
         {SHEET_SLOTS.map((sl) => {
           const h = held[sl.id]
           return (
