@@ -619,6 +619,15 @@ caption_image = (
           "TOKENIZERS_PARALLELISM": "false"})
 )
 
+# Segmentation: SAM 2 on the captioning base. Click-point masks on rendered
+# images — the first half of Phase 6's touch-to-select. Not on PyPI; installed
+# from GitHub at a pinned commit so a force-push upstream does not change the
+# build under us.
+segment_image = caption_image.run_commands(
+    "pip install git+https://github.com/facebookresearch/sam2.git"
+    "@2b90b9f5ceec907a1c18123530e92e794ad901a4",
+)
+
 
 # Inference: ComfyUI on a CUDA 13 torch wheel. Images and video both.
 #
@@ -2822,6 +2831,62 @@ def caption_job(
     }
     _publish(job_id, **res)
     return res
+
+
+# --------------------------------------------------------------------------
+# Segmentation
+# --------------------------------------------------------------------------
+# Click-point segmentation via SAM 2. A click on a rendered image sends
+# normalised coordinates to the Segmenter, which returns a binary mask for
+# whatever object sits under the pointer. The mask is a grayscale PNG —
+# white where the object is — and the page uses it as a CSS mask-image.
+#
+# Synchronous: ~100ms on a warm T4, so no job/poll contract. The route
+# reads the rendered file off the volume and forwards the bytes; the
+# Segmenter never touches the volume itself.
+
+@app.cls(
+    image=segment_image, gpu="T4", cpu=1.0, timeout=60,
+    volumes={str(HF_CACHE): hf_cache},
+    max_containers=1,
+)
+class Segmenter:
+    @modal.enter()
+    def load(self):
+        import torch
+        from sam2.build_sam import build_sam2_hf
+        from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+        self.predictor = SAM2ImagePredictor(
+            build_sam2_hf("facebook/sam2.1-hiera-small", device="cuda")
+        )
+
+    @modal.method()
+    def segment(self, image_bytes: bytes, x: float, y: float) -> dict[str, Any]:
+        from PIL import Image
+        import io
+        import base64
+        import numpy as np
+
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        arr = np.array(img)
+        self.predictor.set_image(arr)
+        point = np.array([[x * arr.shape[1], y * arr.shape[0]]])
+        label = np.array([1])
+        masks, scores, _ = self.predictor.predict(
+            point_coords=point, point_labels=label, multimask_output=True,
+        )
+        best = int(np.argmax(scores))
+        mask = masks[best]
+        mask_img = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
+        buf = io.BytesIO()
+        mask_img.save(buf, format="PNG")
+        return {
+            "mask": base64.b64encode(buf.getvalue()).decode(),
+            "score": float(scores[best]),
+            "w": arr.shape[1],
+            "h": arr.shape[0],
+        }
 
 
 # --------------------------------------------------------------------------
@@ -13266,6 +13331,24 @@ def web():
         })
         _log_spawn("image", job_id, payload, t_route)
         return {"ok": True, "job_id": job_id}
+
+    @api.post("/api/segment")
+    def segment_click(payload: dict) -> dict[str, Any]:
+        job_id = str(payload.get("job_id") or "").strip()
+        file = str(payload.get("file") or "").strip()
+        try:
+            x, y = float(payload.get("x", 0)), float(payload.get("y", 0))
+        except (TypeError, ValueError):
+            return {"error": "x and y must be numbers."}
+        if not job_id or not file:
+            return {"error": "job_id and file are required."}
+        if not (0 <= x <= 1 and 0 <= y <= 1):
+            return {"error": "x and y must be between 0 and 1."}
+        image_bytes = _volume_bytes(f"outputs/{job_id}/{file}")
+        if not image_bytes:
+            return {"error": f"File not found: {job_id}/{file}"}
+        result = Segmenter().segment.remote(image_bytes, x, y)
+        return {"ok": True, **result}
 
     @api.post("/api/video")
     def video(payload: dict) -> dict[str, Any]:

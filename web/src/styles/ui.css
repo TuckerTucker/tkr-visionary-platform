@@ -2463,6 +2463,8 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
 /* Where the frame's own card sits. Bottom-left, and capped short of the button
    in the opposite corner so the two never overlap on a narrow frame. */
 .rins.frame-card{left:8px;bottom:8px;max-width:calc(100% - 52px)}
+.sam-overlay{position:absolute;inset:0;background:rgba(59,130,246,.35);
+  mask-size:100% 100%;-webkit-mask-size:100% 100%;pointer-events:none}
 /* A refused drop, said on the canvas. It replaced an `alert()`: a modal that
    stops the app to deliver one sentence is the wrong weight for it, and the
    sentence is about a control that is visible and dimmed an inch away. Amber,

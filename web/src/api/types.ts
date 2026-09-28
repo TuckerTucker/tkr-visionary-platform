@@ -452,3 +452,13 @@ export type SceneMediaSaved = {
   kind: 'video' | 'image' | 'audio'
   bytes: number
 }
+
+/** What `POST /api/segment` answers: a binary mask for the object at the
+ *  click point, encoded as a grayscale PNG (white = object). */
+export type SegmentResult = {
+  ok: true
+  mask: string
+  score: number
+  w: number
+  h: number
+}

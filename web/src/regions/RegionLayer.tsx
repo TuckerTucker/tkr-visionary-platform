@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { segmentAt } from '../api/routes'
+import { failed } from '../api/client'
 import { IconRegions } from '../icons'
 import { dataUrl, shrinkB64 } from '../media/files'
 import { loraIndex } from '../lora/tokens'
@@ -52,7 +54,11 @@ const CLICK_SLOP = 8
  * prompt — survivable while this was a decoration over the canvas, and not while it is
  * the surface the feature lives on.
  */
-export function RegionLayer({ over = 'frame' }: { over?: 'frame' | 'render' }) {
+export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
+  over?: 'frame' | 'render'
+  renderJobId?: string | null
+  renderFile?: string
+}) {
   // No flag anywhere: regions are on when a box exists. Both hosts mount this with
   // zero boxes too — the frame for the invite, the render because this layer is also
   // the surface ⌘-drag draws the *first* box on. What is left here is what to draw.
@@ -112,6 +118,8 @@ export function RegionLayer({ over = 'frame' }: { over?: 'frame' | 'render' }) {
     underRef.current = i
     setUnder(i)
   }
+  const [samMask, setSamMask] = useState<string | null>(null)
+  useEffect(() => { setSamMask(null) }, [renderJobId, renderFile])
   const index = loraIndex(state)
 
   // **A press that is not on the card closes the card.** The rule is stated as one
@@ -165,6 +173,13 @@ export function RegionLayer({ over = 'frame' }: { over?: 'frame' | 'render' }) {
     const b = rectOf()
     if (!b) return [0, 0]
     return [clamp01((e.clientX - b.left) / b.width), clamp01((e.clientY - b.top) / b.height)]
+  }
+
+  async function segmentClick(jobId: string, file: string, x: number, y: number): Promise<void> {
+    setSamMask(null)
+    const r = await segmentAt({ job_id: jobId, file, x, y })
+    if (failed(r)) return
+    setSamMask(`data:image/png;base64,${r.mask}`)
   }
 
   /** Every part of this layer under a point, topmost first. The stack rather than the
@@ -341,7 +356,13 @@ export function RegionLayer({ over = 'frame' }: { over?: 'frame' | 'render' }) {
         }
         const done = () => {
           cancel()
-          if (held || i < 0) return
+          if (held || i < 0) {
+            if (i < 0 && over === 'render' && renderJobId && renderFile) {
+              const [px, py] = frameXY(e)
+              segmentClick(renderJobId, renderFile, px, py)
+            }
+            return
+          }
           // The card opens with its caret in the sentence, because opening it is only
           // half the instruction and the other half is that you can start typing —
           // which is the whole edit-and-regenerate loop.
@@ -747,6 +768,11 @@ export function RegionLayer({ over = 'frame' }: { over?: 'frame' | 'render' }) {
                 }}>
           <IconRegions />
         </button>
+      )}
+
+      {samMask && (
+        <div className="sam-overlay"
+             style={{ maskImage: `url(${samMask})`, WebkitMaskImage: `url(${samMask})` }} />
       )}
 
       {refused && <p className="rins-refusal">{refused}</p>}

@@ -14,7 +14,7 @@
 import { api, post, type Res } from './client'
 import type {
   AppState, CompileResult, DupeReport, ExportMeta, Insight, JobStatus, OutputSaved,
-  SceneIntent, SceneMediaSaved, SceneRecord, SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, Session, ShotPill,
+  SceneIntent, SceneMediaSaved, SceneRecord, SceneProject, SceneProjectSaved, SceneSaved, SceneSummary, SegmentResult, Session, ShotPill,
 } from './types'
 
 const seg = encodeURIComponent
@@ -331,7 +331,13 @@ export const deleteOutput = (jobId: string, body?: unknown) =>
 export const purgeOutputs = (body?: unknown) =>
   post<Record<string, unknown>>('/api/outputs/purge', body)
 
-/* ---- upload ---------------------------------------------------------- */
+/* ---- segmentation ------------------------------------------------------ */
+
+export const segmentAt = (body: {
+  job_id: string; file: string; x: number; y: number
+}): Promise<Res<SegmentResult>> => post<SegmentResult>('/api/segment', body)
+
+/* ---- upload ------------------------------------------------------------ */
 
 /**
  * The one route that is not JSON. It streams multipart, so it takes a FormData

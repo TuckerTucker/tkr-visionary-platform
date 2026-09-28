@@ -305,7 +305,9 @@ export function Canvas({
                       this element deletable by an innerHTML write. On the shown frame
                       only: one set of boxes applies to the whole batch, and mounting a
                       layer per frame would be four cards claiming the same regions. */}
-                  {boxesOnShot && i === at && <RegionLayer over="render" />}
+                  {boxesOnShot && i === at && (
+                    <RegionLayer over="render" renderJobId={run.jobId} renderFile={run.files[at]} />
+                  )}
                 </figure>
               </div>
             ))}
