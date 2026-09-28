@@ -1,0 +1,28 @@
+id: work-UvrttALb
+title: Inpaint pastes a whole-frame render instead of sampling from the source
+kind: follow-up
+severity: medium
+status: open
+capabilityId: platform
+anchors:
+  - app.py
+  - tools/smoke_graphs.py
+createdAt: 2026-09-28T02:10:43.952Z
+updatedAt: 2026-09-28T02:10:43.952Z
+remedy: "The inpaint path samples a fresh frame from an empty latent and pastes
+  only the SAM-masked area back onto the source, so the model never sees what
+  surrounds the edit and light and colour can disagree across the seam. Fix it
+  in _krea2_graph with core ComfyUI nodes only: LoadImage the source ->
+  VAEEncode in place of EmptyHunyuanLatentVideo (RepeatLatentBatch for a batch);
+  LoadImageMask -> GrowMask -> SetLatentNoiseMask on that latent; keep the
+  post-decode pixel paste so unmasked pixels stay exact through the VAE round
+  trip. Stage the source and mask with _comfy.stage. In the route, refuse
+  inpaint alongside scene/outfit/object plates (krea2edit regenerates the whole
+  frame) and alongside style refs (style builds on the empty latent via
+  target_latent). No web/ changes; the request body is unchanged. Verify first,
+  in this order: (1) at the pinned COMFY_SHA, does SetLatentNoiseMask resize the
+  mask to Krea 2's 5-D Wan21 latent [B,16,1,H/8,W/8]? (2) does VAEEncode on this
+  VAE give the one-frame shape? (3) does one real render show V12 regional
+  working with the noise mask? (4) is it better than the paste on Turbo's 8
+  steps? Measure with does_it_help.py plus judge_renders.py rather than by eye.
+  Add an inpaint graph case to tools/smoke_graphs.py."

@@ -76,6 +76,21 @@ export type Region = {
   attachments: Attachment[]
 }
 
+/** See `Store.inpaint`. */
+export type Inpaint = {
+  jobId: string
+  file: string
+  /** Base64 PNG, no `data:` prefix — the shape `/api/segment` returns it in. */
+  mask: string
+  regionId: string
+  w: number
+  h: number
+}
+
+/** The inpaint the next run carries, or null once its region is gone. */
+export const inpaintOf = (s: Pick<Store, 'inpaint' | 'regions'>): Inpaint | null =>
+  s.inpaint && s.regions.some((r) => r.id === s.inpaint!.regionId) ? s.inpaint : null
+
 let regionSeq = 0
 export const newRegion = (r: Partial<Region> = {}): Region => ({
   id: `r${++regionSeq}`,
@@ -404,6 +419,22 @@ export type Store = {
    * and "move this one" when it travels.
    */
   cardOpen: boolean
+  /**
+   * A SAM mask promoted to a region: the render it was made on, the mask, and the
+   * region it became. Generate reads it to composite only the masked area back onto
+   * that render.
+   *
+   * **It belongs to the region, and `inpaintOf` is the only reader.** Held on its own
+   * it outlived the box it was for — delete the region, and the next Generate still
+   * pasted a mask nobody could see onto a render that was no longer on screen. So it
+   * is live only while `regionId` is still in `regions`, which covers every way a box
+   * goes (⌫, Reset, Reuse) without each of them having to know this exists.
+   *
+   * `w`/`h` are the source's pixels, off the segment reply. The composite is a
+   * pixel-for-pixel paste, so the run is asked at that size rather than the size box's.
+   */
+  inpaint: Inpaint | null
+  setInpaint: (ctx: Inpaint | null) => void
   /** A file is somewhere over the window. The one moment "you can drop a photo
    *  on a box" needs saying — and the only way anyone finds that gesture — so
    *  it brings the boxes back even over a finished render. `body.dragging`
@@ -691,6 +722,8 @@ export const useStore = create<Store>((set, get) => ({
   setEdit: (edit) => set({ edit }),
   setBoxDrag: (boxDrag) => set({ boxDrag }),
   setCardOpen: (cardOpen) => set({ cardOpen }),
+  inpaint: null,
+  setInpaint: (inpaint) => set({ inpaint }),
   setFileOver: (fileOver) => set({ fileOver }),
 
   scene: FIRST,

@@ -6489,6 +6489,54 @@ def _validate_style_refs(raw: Any) -> list[str]:
     return list(raw)
 
 
+# Where an inpaint's mask is kept, beside the result it shaped. Dot-prefixed so
+# `_keep_entry` never lists it as a result: it is a PNG, and without the dot the
+# gallery would offer the mask as a render to make a cover of.
+INPAINT_MASK = ".inpaint-mask.png"
+# The seam, in pixels of the original. A hard-edged composite of a re-render
+# onto its source shows the mask's staircase as a visible line wherever the
+# two disagree about light, which is everywhere — the rest of the frame was
+# sampled fresh.
+INPAINT_FEATHER_PX = 5
+
+
+def _validate_inpaint(job_id: Any, file: Any, mask: Any) -> dict[str, str] | None:
+    """
+    The render an inpaint composites onto, and the SAM mask saying where.
+
+    All three or none. A partial set used to fall through to a whole-frame
+    render reported as a success — the same picture you would get with no mask
+    at all, with nothing saying the mask was dropped — so a partial set is a
+    form error that names what is missing.
+
+    The ids are shape-checked because they become a path on the volume: a
+    `file` carrying a slash would composite onto whatever it pointed at.
+    Stdlib only, like the other validators, so a tool can import it without
+    Modal; the pixel checks need PIL and live in the route.
+    """
+    given = {"inpaint_job_id": str(job_id or "").strip(),
+             "inpaint_file": str(file or "").strip(),
+             "inpaint_mask": str(mask or "").strip()}
+    if not any(given.values()):
+        return None
+    missing = [k for k, v in given.items() if not v]
+    if missing:
+        raise ValueError(f"An inpaint needs its source render, file and mask "
+                         f"together — {', '.join(missing)} was empty.")
+    src, name, raw = given.values()
+    if not re.fullmatch(r"gen[0-9a-z]+", src):
+        raise ValueError(f"Not an image job id: {src!r}")
+    if not re.fullmatch(r"[\w-]+\.png", name):
+        raise ValueError(f"Not a render filename: {name!r}")
+    if raw.startswith("data:"):
+        raw = raw.split(",", 1)[-1]
+    try:
+        base64.b64decode(raw, validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"The inpaint mask is not base64 ({exc}).") from exc
+    return {"job_id": src, "file": name, "mask": raw}
+
+
 def _armed_regions(regions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     The rows the edit path will actually arm: a LoRA or a reference photo.
@@ -7139,6 +7187,42 @@ class ImageGenerator:
                 for name in style_refs:
                     _fit_reference(COMFY / "input" / name,
                                    REGION_REF_MAX_SIDE, "image")
+
+            # Loaded before the render rather than after it. The route checked
+            # the source, so reaching the raise means it went between the check
+            # and here — and finding that out after sampling spent the render,
+            # then saved it whole under a success, which is the one outcome
+            # indistinguishable from the mask having worked on a large object.
+            raw_ip = params.get("inpaint") or {}
+            inpaint = _validate_inpaint(raw_ip.get("job_id"), raw_ip.get("file"),
+                                        raw_ip.get("mask"))
+            inpaint_src = inpaint_alpha = None
+            if inpaint:
+                from PIL import Image, ImageFilter
+
+                src_path = OUTPUTS / inpaint["job_id"] / inpaint["file"]
+                if not src_path.is_file():
+                    there = sorted(p.name for p in src_path.parent.iterdir()) \
+                        if src_path.parent.is_dir() else []
+                    raise FileNotFoundError(
+                        f"The render this inpaint edits is not on volume "
+                        f"{VOLUME_NAME!r} (wanted {src_path}); its folder holds "
+                        + (", ".join(there) if there else "nothing — the "
+                           "generation was deleted")
+                        + ". Remove the region made from its mask to render "
+                          "the whole frame instead.")
+                with Image.open(src_path) as im:
+                    inpaint_src = im.convert("RGB")
+                mask_img = Image.open(
+                    io.BytesIO(base64.b64decode(inpaint["mask"]))).convert("L")
+                if mask_img.size != inpaint_src.size:
+                    raise ValueError(
+                        f"The inpaint mask is {mask_img.size[0]}x"
+                        f"{mask_img.size[1]} and {inpaint['file']} is "
+                        f"{inpaint_src.size[0]}x{inpaint_src.size[1]} — click "
+                        f"the render again for a fresh mask.")
+                inpaint_alpha = mask_img.filter(
+                    ImageFilter.GaussianBlur(radius=INPAINT_FEATHER_PX))
             plates = {}
             # Objects are plates too — the same sockets, the same engine, and
             # therefore the same gates. The loop reads slot names so its
@@ -7233,6 +7317,14 @@ class ImageGenerator:
                         else KREA2_DEFAULTS[model]["cfg"])
             batch = max(1, min(4, int(params.get("num_images") or 1)))
             width, height = int(params.get("width") or 1024), int(params.get("height") or 1024)
+            # The route's check, repeated because a job is reachable without
+            # it. Resizing the render onto the source instead would stretch
+            # whatever the mask selects.
+            if inpaint_src and (width, height) != inpaint_src.size:
+                raise ValueError(
+                    f"An inpaint renders at its source's size, "
+                    f"{inpaint_src.size[0]}x{inpaint_src.size[1]}; this asked "
+                    f"for {width}x{height}.")
 
             # What the encoder reads is not what was typed once there are
             # boxes: each one contributes a clause saying where its subject
@@ -7276,6 +7368,12 @@ class ImageGenerator:
 
         out_dir = OUTPUTS / job_id
         out_dir.mkdir(parents=True, exist_ok=True)
+        if inpaint:
+            # The mask is what you pointed at, and it is the one input to this
+            # picture that no field records — SAM would not return the same one
+            # from a click on a different render. Kept as a plain PNG beside the
+            # result so the edit stays legible without this app.
+            (out_dir / INPAINT_MASK).write_bytes(base64.b64decode(inpaint["mask"]))
         stamp = time.strftime("%H%M%S")
         report = {
             "sampler": sampler, "scheduler": scheduler,
@@ -7303,8 +7401,15 @@ class ImageGenerator:
             **({"caption": caption} if caption != typed else {}),
             # Which engine ran, because the three are not the same picture and
             # the numbers beside them do not say which one produced it.
-            "mode": ("krea2edit" if plates or objects else "regional")
-            if regions else ("style" if style_refs else "plain"),
+            "mode": ("inpaint" if inpaint else
+                     ("krea2edit" if plates or objects else "regional")
+                     if regions else ("style" if style_refs else "plain")),
+            # Which picture was edited, and where the mask went — the names,
+            # never the mask's bytes, because this dict is the polled record.
+            # Without the source an inpaint reads as a render that happens to
+            # match another one outside a region.
+            **({"inpaint": {"from": inpaint["job_id"], "file": inpaint["file"],
+                            "mask": INPAINT_MASK}} if inpaint else {}),
             # A count, not the photos — same rule as the region `ref` bool.
             # Which pictures carried the style is not reconstructible from a
             # count, and that is the plate lesson accepted rather than fixed:
@@ -7331,6 +7436,13 @@ class ImageGenerator:
             # which is the thing every existing tool — PNG Info tabs, ComfyUI,
             # the gallery — reads a file to avoid.
             with Image.open(COMFY / "output" / src) as im:
+                # Only the masked area is the new render; every other pixel is
+                # the source's, byte for byte. The whole frame was sampled
+                # fresh, so without this an edit to one hand also re-rolled the
+                # face you were keeping.
+                out = (Image.composite(im.convert("RGB"), inpaint_src,
+                                       inpaint_alpha)
+                       if inpaint else im)
                 png = PngImagePlugin.PngInfo()
                 png.add_text("parameters", _infotext(
                     prompt=str(params.get("prompt") or ""),
@@ -7343,7 +7455,7 @@ class ImageGenerator:
                     seed=seed + i,
                     report=report,
                 ))
-                im.save(out_dir / name, pnginfo=png)
+                out.save(out_dir / name, pnginfo=png)
             names.append(name)
 
         _write_output_meta(
@@ -13267,8 +13379,49 @@ def web():
             objects = _validate_objects(payload.get("objects"))
             style_refs = _validate_style_refs(payload.get("style_refs"))
             shot = _validate_shot(payload.get("shot"))
+            inpaint = _validate_inpaint(payload.get("inpaint_job_id"),
+                                        payload.get("inpaint_file"),
+                                        payload.get("inpaint_mask"))
         except ValueError as exc:
             return {"error": str(exc)}
+
+        # The source is checked here, on CPU, because the job only reaches it
+        # after a cold load and a full render. Sizes are checked for the same
+        # reason: the composite is a pixel-for-pixel paste, so a render at
+        # another aspect would be stretched onto the original — a picture that
+        # looks like a bad inpaint rather than a refused one.
+        if inpaint:
+            from PIL import Image
+
+            rel = f"outputs/{inpaint['job_id']}/{inpaint['file']}"
+            data = _volume_bytes(rel)
+            if data is None:
+                try:
+                    there = sorted(e.path.rsplit("/", 1)[-1] for e in
+                                   volume.listdir(f"/outputs/{inpaint['job_id']}"))
+                except Exception:  # noqa: BLE001 — absent folder is the answer
+                    there = []
+                return {"error":
+                        f"The render this inpaint edits is not on volume "
+                        f"{VOLUME_NAME!r} (wanted {rel}); its folder holds "
+                        + (", ".join(there) if there else "nothing — the "
+                           "generation was deleted")
+                        + ". Remove the region made from its mask to render "
+                          "the whole frame instead."}
+            with Image.open(io.BytesIO(data)) as im:
+                orig_size = im.size
+            with Image.open(io.BytesIO(base64.b64decode(inpaint["mask"]))) as m:
+                mask_size = m.size
+            asked = (num("width", 1024, int), num("height", 1024, int))
+            if mask_size != orig_size:
+                return {"error": f"The inpaint mask is {mask_size[0]}x"
+                                 f"{mask_size[1]} and the render it edits is "
+                                 f"{orig_size[0]}x{orig_size[1]} — click the "
+                                 f"render again for a fresh mask."}
+            if asked != orig_size:
+                return {"error": f"An inpaint renders at its source's size, "
+                                 f"{orig_size[0]}x{orig_size[1]}; this asked "
+                                 f"for {asked[0]}x{asked[1]}."}
 
         # The job refuses this too; here it is a form error while both
         # attachments are on screen.
@@ -13335,6 +13488,7 @@ def web():
                              or (STYLE_DEFAULTS if style_refs
                                  else IMAGE_DEFAULTS)["scheduler"]),
             "shift": num("shift", 1.15, float),
+            "inpaint": inpaint,
         })
         _log_spawn("image", job_id, payload, t_route)
         return {"ok": True, "job_id": job_id}

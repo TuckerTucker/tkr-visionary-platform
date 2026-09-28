@@ -6,7 +6,9 @@ import type { JobStatus } from '../api/types'
 import type { GalleryItem } from '../gallery/types'
 import { loraIndex, readChips, stripLoras } from '../lora/tokens'
 import { readRegions } from '../regions/geometry'
-import { attached, negAllowed, readShot, regionsLive, useStore, type Store } from '../store'
+import {
+  attached, inpaintOf, negAllowed, readShot, regionsLive, useStore, type Inpaint, type Store,
+} from '../store'
 import { readSize } from '../console/size'
 
 /**
@@ -105,7 +107,10 @@ const IDLE: RunState = {
  */
 export function imageBody(s: Store): Record<string, unknown> {
   const index = loraIndex(s.state)
-  const [width, height] = readSize(s.img)
+  const inpaint = inpaintOf(s)
+  // An inpaint is a paste onto its source, so it renders at the source's size — the
+  // route refuses any other, since the paste would stretch.
+  const [width, height] = inpaint ? [inpaint.w, inpaint.h] : readSize(s.img)
   const regions = readRegions(index, s.regions, regionsLive(s))
   const prompt = stripLoras(s.prompt)
   return {
@@ -144,6 +149,11 @@ export function imageBody(s: Store): Record<string, unknown> {
     cfg_scale: s.img.cfg,
     shift: s.img.shift,
     gpu: s.gpu.image,
+    ...(inpaint ? {
+      inpaint_job_id: inpaint.jobId,
+      inpaint_file: inpaint.file,
+      inpaint_mask: inpaint.mask,
+    } : {}),
   }
 }
 
@@ -152,7 +162,7 @@ export function useGenerate(onLanded: (it: GalleryItem) => void) {
   /** The size the in-flight run was asked for, waiting for `finish` to promote it
    *  alongside that run's files. A ref rather than state: nothing paints from it until
    *  it lands, so a render for it would be a render for nothing. */
-  const asked = useRef<{ w: number; h: number } | null>(null)
+  const asked = useRef<{ w: number; h: number; inpaint: Inpaint | null } | null>(null)
 
   const finish = useCallback((s: JobStatus, jobId: string) => {
     const files = (s.files as string[] | undefined) ?? []
@@ -200,6 +210,17 @@ export function useGenerate(onLanded: (it: GalleryItem) => void) {
     // below win — the record is the run's report, and these are what the card draws.
     onLanded({ ...(s as Partial<GalleryItem>), job_id: jobId, kind: 'image', files,
                created: Date.now() / 1000 })
+    // The edit carries on from the render that just replaced its source, so the next
+    // Generate is another try at the same area of the picture now on screen rather
+    // than a paste onto one that has gone. Everything outside the mask is the
+    // source's pixels, so the mask still fits. Only when this run *was* that edit: a
+    // mask made while another run was in flight belongs to the render it was drawn on,
+    // and that run landing is not an answer to it.
+    const st = useStore.getState()
+    const sent = asked.current?.inpaint
+    if (sent && st.inpaint === sent && files[0]) {
+      st.setInpaint({ ...sent, jobId, file: files[0] })
+    }
   }, [onLanded])
 
   const start = useCallback(async () => {
@@ -208,7 +229,8 @@ export function useGenerate(onLanded: (it: GalleryItem) => void) {
     if (!body.prompt && !(body.regions as unknown[]).length) return
     // Read off the body rather than the store, so it is the size actually being asked
     // for — the two differ, because `readSize` floors and clamps what the box holds.
-    asked.current = { w: Number(body.width) || 0, h: Number(body.height) || 0 }
+    asked.current = { w: Number(body.width) || 0, h: Number(body.height) || 0,
+                      inpaint: inpaintOf(s) }
     // Keep the previous render (jobId/files/meta) on screen and only overlay a
     // progress state on it — see the `jobId` note above. A cold first run has no
     // previous render, so this shows the full placeholder; an iteration keeps the

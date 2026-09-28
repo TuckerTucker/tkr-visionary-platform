@@ -118,8 +118,10 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     underRef.current = i
     setUnder(i)
   }
+  /** `mask` is the base64 the route sent, which is what an inpaint carries; the
+   *  overlay wraps it in a data URL at paint time. `w`/`h` are the render's pixels. */
   const [samHit, setSamHit] = useState<{
-    mask: string; bbox: [number, number, number, number]
+    mask: string; w: number; h: number; bbox: [number, number, number, number]
   } | null>(null)
   useEffect(() => { setSamHit(null) }, [renderJobId, renderFile])
   const index = loraIndex(state)
@@ -181,7 +183,7 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     setSamHit(null)
     const r = await segmentAt({ job_id: jobId, file, x, y })
     if (failed(r)) return
-    setSamHit({ mask: `data:image/png;base64,${r.mask}`, bbox: r.bbox })
+    setSamHit({ mask: r.mask, w: r.w, h: r.h, bbox: r.bbox })
   }
 
   function promoteSegment(): void {
@@ -194,6 +196,12 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
       w: clamp01(x2 - x1), h: clamp01(y2 - y1),
     })
     useStore.setState({ regions: [...st.regions, r], rsel: st.regions.length })
+    // Replaces any earlier one: an inpaint is one mask onto one render, and a second
+    // promote is a new answer to "which part of this picture".
+    if (renderJobId && renderFile) {
+      st.setInpaint({ jobId: renderJobId, file: renderFile, mask: samHit.mask,
+                      regionId: r.id, w: samHit.w, h: samHit.h })
+    }
     st.setEdit('content')
     st.setCardOpen(true)
     setSamHit(null)
@@ -789,7 +797,8 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
 
       {samHit && <>
         <div className="sam-overlay"
-             style={{ maskImage: `url(${samHit.mask})`, WebkitMaskImage: `url(${samHit.mask})` }} />
+             style={{ maskImage: `url(data:image/png;base64,${samHit.mask})`,
+                      WebkitMaskImage: `url(data:image/png;base64,${samHit.mask})` }} />
         <button className="sam-promote" type="button"
                 style={{ left: `${samHit.bbox[0] * 100}%`, top: `${Math.max(0, samHit.bbox[1] * 100 - 4)}%` }}
                 onPointerDown={(e) => e.stopPropagation()}
