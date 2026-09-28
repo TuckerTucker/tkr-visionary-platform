@@ -2,13 +2,13 @@ id: work-UvrttALb
 title: Inpaint pastes a whole-frame render instead of sampling from the source
 kind: follow-up
 severity: medium
-status: open
+status: closed
 capabilityId: platform
 anchors:
   - app.py
   - tools/smoke_graphs.py
 createdAt: 2026-09-28T02:10:43.952Z
-updatedAt: 2026-09-28T02:10:43.952Z
+updatedAt: 2026-09-28T23:30:00.000Z
 remedy: "The inpaint path samples a fresh frame from an empty latent and pastes
   only the SAM-masked area back onto the source, so the model never sees what
   surrounds the edit and light and colour can disagree across the seam. Fix it
@@ -40,4 +40,25 @@ findings:
     IMAGE would become frames of one video rather than a batch, so the source is
     encoded at batch 1 and RepeatLatentBatch makes the batch - which the remedy
     already says."
-  - "(3) and (4) are not answered. They need a real render on a GPU."
+  - "(3) Answered yes, 2026-09-28, on an H100 with tools/ab_inpaint.py. Four
+    regional inpaints through V12 with the noise mask, one of them at batch 2,
+    all rendered with no error, and the batch gave two distinct takes."
+  - "(4) Answered yes, same run: SAM masks on three Turbo renders, same seed and
+    caption per pair, both arms pasted through the job's 5px feather. Seam
+    excess over the source along the mask edge, mean of five pictures - paste
+    edge +1.133 light +0.691, sampled edge +0.083 light -0.057; sampled lower
+    on edge in 5 of 5 and on light in 4 of 5 (street, +0.091 against -0.029).
+    Read by eye as well, because a render that changed nothing would also
+    score a clean seam: every sampled edit is the asked-for thing lit like its
+    room, where the paste left a ghost vase, a window-light patch on a chair,
+    a slab of mismatched background behind a glass, and a haloed coat.
+    judge_renders.py was not run: its rubric scores a picture against a brief,
+    and the question here was the seam, which the numbers and the pairs
+    answer."
+evidence:
+  kind: manual
+  ref: "tools/ab_inpaint.py on 2026-09-28 against the working tree that became
+    this commit; findings (3) and (4) above hold the numbers. tools/smoke_graphs.py
+    passes with the 'krea2 inpaint' variant. Not yet deployed: the live app
+    predates this and SAM, so the change reaches the page on the next modal
+    deploy."

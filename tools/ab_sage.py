@@ -36,6 +36,7 @@ from app import (  # noqa: E402
     _Comfy,
     _krea2_graph,
     comfy_image,
+    models_volume,
     volume,
 )
 
@@ -74,8 +75,10 @@ def _sage_variant(graph: dict) -> dict:
     return out
 
 
+# Both volumes, as ImageGenerator mounts them. The weights moved to
+# models_volume after this was written, and without it every loader is empty.
 @ab.function(image=ab_image, gpu="H100", timeout=30 * 60,
-             volumes={"/workspace": volume})
+             volumes={"/workspace": volume, "/models": models_volume})
 def compare(prompts: list[str], seed: int) -> dict:
     comfy = _Comfy("image")
     comfy.start()

@@ -351,6 +351,14 @@ def _variants() -> list[tuple[str, dict]]:
         ("krea2 style reference", _krea2_graph(
             **krea, loras=[], regions=[], style_refs=["style.jpg"],
             style_strength=0.8)),
+        # An inpaint swaps the empty latent for the source, encoded and noised
+        # inside the mask — five core nodes no other branch names. Regional,
+        # because that is the only way the page sends one, and at a batch of
+        # two so RepeatLatentBatch is built too.
+        ("krea2 inpaint", _krea2_graph(
+            **{**krea, "batch_size": 2}, loras=[], regions=boxes[:1],
+            inpaint_image="gen1-inpaint-source.png",
+            inpaint_mask="gen1-inpaint-mask.png")),
     ]
 
     # ── MiniMax-H3 ────────────────────────────────────────────────────────

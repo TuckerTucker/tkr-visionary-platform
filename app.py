@@ -6500,9 +6500,14 @@ def _validate_style_refs(raw: Any) -> list[str]:
 INPAINT_MASK = ".inpaint-mask.png"
 # The seam, in pixels of the original. A hard-edged composite of a re-render
 # onto its source shows the mask's staircase as a visible line wherever the
-# two disagree about light, which is everywhere — the rest of the frame was
-# sampled fresh.
+# two disagree, and after a VAE round trip they disagree a little everywhere.
 INPAINT_FEATHER_PX = 5
+# How far past the mask the sampler may repaint, in pixels of the original. The
+# latent is an eighth of the frame, so the mask reaches it averaged down and a
+# cell on its edge is only partly noised — half-repainted. Two cells of margin
+# put the feathered paste above wholly repainted pixels rather than on that
+# half-way band. A starting value, set by that arithmetic and not yet measured.
+INPAINT_GROW_PX = 16
 
 
 def _validate_inpaint(job_id: Any, file: Any, mask: Any) -> dict[str, str] | None:
@@ -6731,6 +6736,8 @@ def _krea2_graph(
     style_refs: list[str] | None = None,
     style_strength: float = 1.0,
     region_weight: float = 1.0,
+    inpaint_image: str | None = None,
+    inpaint_mask: str | None = None,
 ) -> dict[str, Any]:
     """
     Build ComfyUI's API-format graph for one Krea 2 render.
@@ -6756,6 +6763,10 @@ def _krea2_graph(
     The middle one is the feature this backend was swapped for. It needs no
     reference image and no edit LoRA: V12 falls through to V9's likeness engine,
     which masks each LoRA's activation delta to its rectangle and samples once.
+
+    An inpaint changes where sampling starts rather than which shape runs:
+    `inpaint_image` and `inpaint_mask` are staged filenames, and with them the
+    latent is the source encoded, noised only inside the mask.
     """
     dit = MODEL_CATALOGUE["turbo" if model == "turbo" else "raw"]["dest"].name
     te = MODEL_CATALOGUE["text_encoder"]["dest"].name
@@ -6788,6 +6799,48 @@ def _krea2_graph(
                    "inputs": {"width": width, "height": height,
                               "length": 1, "batch_size": batch_size}},
     }
+
+    if inpaint_image or inpaint_mask:
+        if not (inpaint_image and inpaint_mask):
+            raise ValueError("An inpaint needs its staged source and mask together.")
+        # Both of these start from a frame the source is not in: krea2edit
+        # regenerates the whole picture around its plates, and the style engine
+        # reads its target size off the empty latent. Either would discard the
+        # source this path exists to keep.
+        if scene or outfit or objects:
+            raise ValueError("An inpaint cannot carry a scene, outfit or object "
+                             "plate — those regenerate the whole frame.")
+        if style_refs:
+            raise ValueError("An inpaint cannot carry a style reference — style "
+                             "renders from an empty frame.")
+        # Sampling from the source rather than from nothing is what lets the
+        # model see what surrounds the edit. The paste after decode used to be
+        # the only link to the original, so light and colour disagreed across
+        # the seam: the region was drawn for a frame that was never shown to it.
+        graph["source"] = {"class_type": "LoadImage",
+                           "inputs": {"image": inpaint_image}}
+        # Encoded once and repeated, not encoded as a batch: this VAE reads a
+        # batch of images as the frames of one video (sd.py `not_video` is False
+        # for Wan 2.1), which would hand the sampler one latent four frames long.
+        graph["encode"] = {"class_type": "VAEEncode",
+                           "inputs": {"pixels": ["source", 0], "vae": ["vae", 0]}}
+        source_latent = ["encode", 0]
+        if batch_size > 1:
+            graph["repeat"] = {"class_type": "RepeatLatentBatch",
+                               "inputs": {"samples": source_latent,
+                                          "amount": batch_size}}
+            source_latent = ["repeat", 0]
+        # The SAM mask is an L PNG, 255 inside; LoadImage converts it to RGB, so
+        # red is the mask itself. Not alpha: LoadImage inverts that channel.
+        graph["mask"] = {"class_type": "LoadImageMask",
+                         "inputs": {"image": inpaint_mask, "channel": "red"}}
+        graph["grow"] = {"class_type": "GrowMask",
+                         "inputs": {"mask": ["mask", 0], "expand": INPAINT_GROW_PX,
+                                    "tapered_corners": True}}
+        # Replaces the empty latent under the same key, so the sampler and
+        # anything else reading ["latent", 0] start from the source.
+        graph["latent"] = {"class_type": "SetLatentNoiseMask",
+                           "inputs": {"samples": source_latent, "mask": ["grow", 0]}}
 
     # Krea 2 renders on PyTorch attention, against the process-wide SageAttention.
     #
@@ -7228,6 +7281,17 @@ class ImageGenerator:
                         f"the render again for a fresh mask.")
                 inpaint_alpha = mask_img.filter(
                     ImageFilter.GaussianBlur(radius=INPAINT_FEATHER_PX))
+                # Through the stager like every other LoadImage input, so the
+                # source and mask get a job-scoped name like every other input.
+                inpaint_staged = {
+                    "inpaint_image": self._comfy.stage(
+                        job_id, base64.b64encode(src_path.read_bytes()).decode(),
+                        "inpaint-source"),
+                    "inpaint_mask": self._comfy.stage(
+                        job_id, inpaint["mask"], "inpaint-mask"),
+                }
+            else:
+                inpaint_staged = {}
             plates = {}
             # Objects are plates too — the same sockets, the same engine, and
             # therefore the same gates. The loop reads slot names so its
@@ -7350,7 +7414,7 @@ class ImageGenerator:
                 loras=loras, regions=regions, region_weight=region_weight,
                 objects=objects, style_refs=style_refs,
                 style_strength=style_strength,
-                **plates,
+                **plates, **inpaint_staged,
             )
 
             info = {"width": width, "height": height, "seed": seed, "steps": steps}
@@ -7442,9 +7506,9 @@ class ImageGenerator:
             # the gallery — reads a file to avoid.
             with Image.open(COMFY / "output" / src) as im:
                 # Only the masked area is the new render; every other pixel is
-                # the source's, byte for byte. The whole frame was sampled
-                # fresh, so without this an edit to one hand also re-rolled the
-                # face you were keeping.
+                # the source's, byte for byte. Sampling already kept the rest of
+                # the frame, but through a VAE round trip, so without this the
+                # face you were keeping would come back a decode away from itself.
                 out = (Image.composite(im.convert("RGB"), inpaint_src,
                                        inpaint_alpha)
                        if inpaint else im)
@@ -13454,6 +13518,19 @@ def web():
                                  "identity — a LoRA or a photo. Boxes with "
                                  "only a description cannot anchor the "
                                  "compose."}
+
+        # An inpaint samples from its source; both of these sample from an
+        # empty frame. The graph builder refuses the pair too, but only after a
+        # container is up — here it is said while both are on screen.
+        if inpaint and plated:
+            return {"error": f"An inpaint keeps the picture around its mask, and "
+                             f"a {plated[0]} reference regenerates the whole "
+                             f"frame — remove the reference, or the region "
+                             f"made from the mask."}
+        if inpaint and style_refs:
+            return {"error": "An inpaint keeps the picture around its mask, and "
+                             "a style reference renders from an empty frame — "
+                             "remove one."}
 
         job_id = f"gen{time.strftime('%Y%m%d%H%M%S')}{os.urandom(2).hex()}"
         runner = _on_gpu(ImageGenerator, payload.get("gpu"), IMAGE_GPUS, GPU)
