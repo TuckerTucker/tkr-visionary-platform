@@ -118,8 +118,10 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     underRef.current = i
     setUnder(i)
   }
-  const [samMask, setSamMask] = useState<string | null>(null)
-  useEffect(() => { setSamMask(null) }, [renderJobId, renderFile])
+  const [samHit, setSamHit] = useState<{
+    mask: string; bbox: [number, number, number, number]
+  } | null>(null)
+  useEffect(() => { setSamHit(null) }, [renderJobId, renderFile])
   const index = loraIndex(state)
 
   // **A press that is not on the card closes the card.** The rule is stated as one
@@ -176,10 +178,25 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
   }
 
   async function segmentClick(jobId: string, file: string, x: number, y: number): Promise<void> {
-    setSamMask(null)
+    setSamHit(null)
     const r = await segmentAt({ job_id: jobId, file, x, y })
     if (failed(r)) return
-    setSamMask(`data:image/png;base64,${r.mask}`)
+    setSamHit({ mask: `data:image/png;base64,${r.mask}`, bbox: r.bbox })
+  }
+
+  function promoteSegment(): void {
+    if (!samHit) return
+    const [x1, y1, x2, y2] = samHit.bbox
+    const st = useStore.getState()
+    if (st.regions.length >= (st.state?.max_regions ?? 8)) return
+    const r = newRegion({
+      x: clamp01(x1), y: clamp01(y1),
+      w: clamp01(x2 - x1), h: clamp01(y2 - y1),
+    })
+    useStore.setState({ regions: [...st.regions, r], rsel: st.regions.length })
+    st.setEdit('content')
+    st.setCardOpen(true)
+    setSamHit(null)
   }
 
   /** Every part of this layer under a point, topmost first. The stack rather than the
@@ -770,10 +787,16 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
         </button>
       )}
 
-      {samMask && (
+      {samHit && <>
         <div className="sam-overlay"
-             style={{ maskImage: `url(${samMask})`, WebkitMaskImage: `url(${samMask})` }} />
-      )}
+             style={{ maskImage: `url(${samHit.mask})`, WebkitMaskImage: `url(${samHit.mask})` }} />
+        <button className="sam-promote" type="button"
+                style={{ left: `${samHit.bbox[0] * 100}%`, top: `${Math.max(0, samHit.bbox[1] * 100 - 4)}%` }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={promoteSegment}>
+          + Region
+        </button>
+      </>}
 
       {refused && <p className="rins-refusal">{refused}</p>}
     </div>

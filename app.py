@@ -2881,11 +2881,18 @@ class Segmenter:
         mask_img = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
         buf = io.BytesIO()
         mask_img.save(buf, format="PNG")
+        # Tight bounding box in normalised 0–1 coordinates, so the page can
+        # place a region without decoding the PNG.
+        ys, xs = np.where(mask)
+        h, w = arr.shape[:2]
+        bbox = [float(xs.min() / w), float(ys.min() / h),
+                float(xs.max() / w), float(ys.max() / h)] if len(xs) else [0, 0, 1, 1]
         return {
             "mask": base64.b64encode(buf.getvalue()).decode(),
             "score": float(scores[best]),
-            "w": arr.shape[1],
-            "h": arr.shape[0],
+            "w": w,
+            "h": h,
+            "bbox": bbox,
         }
 
 

@@ -461,4 +461,6 @@ export type SegmentResult = {
   score: number
   w: number
   h: number
+  /** Tight bounding box [x1, y1, x2, y2] in normalised 0–1 coordinates. */
+  bbox: [number, number, number, number]
 }

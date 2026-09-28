@@ -2465,6 +2465,11 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
 .rins.frame-card{left:8px;bottom:8px;max-width:calc(100% - 52px)}
 .sam-overlay{position:absolute;inset:0;background:rgba(59,130,246,.35);
   mask-size:100% 100%;-webkit-mask-size:100% 100%;pointer-events:none}
+.sam-promote{position:absolute;z-index:5;display:flex;align-items:center;gap:6px;
+  padding:5px 10px;border:0;border-radius:var(--r-inner);
+  background:rgba(0,0,0,.82);color:#fff;font-size:12px;line-height:1;
+  cursor:pointer;pointer-events:auto;white-space:nowrap}
+.sam-promote:hover{background:rgba(59,130,246,.9)}
 /* A refused drop, said on the canvas. It replaced an `alert()`: a modal that
    stops the app to deliver one sentence is the wrong weight for it, and the
    sentence is about a control that is visible and dimmed an inch away. Amber,
