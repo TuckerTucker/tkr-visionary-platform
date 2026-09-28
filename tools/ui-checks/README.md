@@ -105,6 +105,16 @@ it still holds.
   empty canvas takes a drop (the slot that used to carry the handler was hidden
   until a clip landed), only the hovered zone is captioned, and a zone out of
   play says why before the drop and refuses it in words after.
+- `check_plate_zones.py` — the image frame's band: Scene, Outfit, Object and
+  Style along its bottom edge, drawn while a file is over the frame, taking the
+  drop ahead of two full-height boxes under it while a box above the band stays
+  the character. An object lands with its note focused; without the edit LoRA
+  the plate zones say so before the drop and refuse after it, and Style still
+  takes one.
+- `check_recall.py` — a saved character as a region's likeness: the card's
+  character menu lists the saved cast, picking one fills the box's Photo and
+  reaches `/api/generate` as the region's `ref`, and a lost photograph is said
+  on the card by name.
 - `check_refusals.py` — the other half of a drop: when a target *refuses* one,
   the sentence is on that target and no dialog opens. A tile in the console says
   it above itself, unclipped; an unreadable file is named with the format that

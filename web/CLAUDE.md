@@ -607,6 +607,23 @@ and two domains, and the page follows the domains.
   regenerates the whole frame and is several times slower, and no arrangement of
   rectangles shows that.
 
+- **The frame takes its plates by where you let go, along its bottom edge.** A
+  photo on a box is that character and a photo on bare frame is the scene, and
+  that was the whole of it: the outfit, both objects and the style came in only
+  through `PlateRow`'s tiles. Worse, the region mode seeds two full-height
+  columns, so in the commonest arrangement there is no bare frame and the scene
+  was a tile too. So while a file is over the window a band along the bottom
+  fifth of the frame is drawn as four zones — Scene, Outfit, Object, Style — on
+  `VideoDrops`' rules: every zone outlines itself, only the one under the
+  cursor is captioned, and one out of play (the plates without the edit LoRA,
+  Object with both sockets full) says why before the drop and refuses in words
+  after it. **The band takes the drop ahead of the boxes under it** — that is
+  what it is for, and a box under it lighting up as "This character" would be a
+  caption that lies. Above it nothing changed. An object lands with its note
+  focused, because an unreferenced plate does close to nothing.
+  `canvas/drop/plates` holds the rules, so a zone and a tile cannot disagree,
+  and `PlateRow`'s tiles are taps now for the reason `SourceRow`'s are, below.
+
 - **The map went with the row.** A 52px SVG of the boxes lived beside the
   inspector because the boxes come off the picture the moment a render lands,
   and something had to lead back to them. Two things did, and it was the lesser:

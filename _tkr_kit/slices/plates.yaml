@@ -1,0 +1,45 @@
+capability: plates
+slices:
+  - number: 1
+    feature: frame-drops
+    delivers: "The band: ImageDrops draws four zones along the frame's bottom edge
+      while a file is over the window, RegionLayer's dragover and drop read the
+      band before the boxes, and plates.ts holds which zone is out of play and
+      why, so the band and the tiles cannot disagree. Objects land in the free
+      socket with their note focused. PlateRow's tiles stop taking drops."
+    paths:
+      - web/src/canvas/drop/ImageDrops.tsx
+      - web/src/canvas/drop/plates.ts
+      - web/src/regions/RegionLayer.tsx
+      - web/src/regions/PlateRow.tsx
+      - web/src/styles/ui.css
+      - tools/ui-checks/check_plate_zones.py
+    depends_on: []
+    story_ids:
+      - give-a-picture-its-plates-by-dropping-them
+    title: Drop zones on the image frame
+    layer: ui
+    status: done
+    evidence:
+      kind: commit
+      ref: "76c61f0: check_plate_zones passes with and without the edit LoRA;
+        check_drop, check_regions, check_refusals, check_region_slot,
+        check_video_zones, check_recall, check_stage and the baseline pass"
+  - number: 2
+    feature: frame-drops
+    delivers: web/CLAUDE.md says what replaced the tiles as drop targets, and the
+      roadmap's Phase 6 line says the first tier is done.
+    paths:
+      - web/CLAUDE.md
+      - docs/roadmap.md
+    depends_on:
+      - 1
+    story_ids:
+      - give-a-picture-its-plates-by-dropping-them
+    title: The docs say where a plate lands
+    layer: ui
+    status: done
+    evidence:
+      kind: commit
+      ref: "the commit after 76c61f0: web/CLAUDE.md, the ui-checks README and the
+        roadmap say where a plate lands"

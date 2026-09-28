@@ -1,0 +1,36 @@
+capability: plates
+features:
+  - name: frame-drops
+    status: done
+    user_story: As someone composing a picture around characters, I want to drop a
+      scene, an outfit, an object or a style on the frame and have where I let go
+      say which, so that every picture the image model takes is one gesture on the
+      canvas rather than a hunt for a tile.
+    description: "RegionLayer's drop has two answers today: a box is the character
+      and bare frame is the scene. Everything else is PlateRow's DropTiles. The
+      band gives the frame's four roles a place of their own along its bottom
+      edge, drawn while a file is over the window the way the video zones are,
+      and ahead of the boxes because the seeded columns cover the frame. Above
+      the band nothing changes."
+    acceptance_criteria:
+      - Dropping an image on the band's Scene, Outfit, Object or Style zone
+        attaches it as that plate, whatever box lies under the band.
+      - A drop on an Object zone focuses that object's note.
+      - Without the identity-edit LoRA the three plate zones say so before the
+        drop and refuse in words after it; Style still takes it.
+      - PlateRow's tiles are taps, and the empty frame's invitation names the
+        band.
+    references:
+      - docs/roadmap.md
+      - web/CLAUDE.md
+    wiring_assignment:
+      territory:
+        - web/src/canvas/drop
+        - web/src/regions
+        - web/src/styles
+        - tools/ui-checks
+        - web/CLAUDE.md
+    evidence:
+      kind: commit
+      ref: "76c61f0: check_plate_zones drives every acceptance criterion on the
+        preview. Not run against a deployed app or on a touch device."

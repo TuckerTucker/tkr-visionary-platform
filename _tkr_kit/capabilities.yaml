@@ -653,3 +653,51 @@ capabilities:
       ref: "208c997..e5c0125: five slices, two features; check_video_zones,
         check_refusals, check_drop pass on the preview. Not run against a
         deployed app or on a touch device."
+  - name: plates
+    layer: ui
+    status: done
+    depends_on:
+      - web
+      - inference
+      - canvas
+    provides_to:
+      - web
+    paths:
+      - web/src/canvas/drop/ImageDrops.tsx
+      - web/src/canvas/drop/plates.ts
+    description: "The rest of Phase 6's first tier, on the image side. A photo on a
+      box is that character and a photo on bare frame is the scene, but the
+      outfit, the two object plates and the style reference come in only
+      through PlateRow's tiles — and bare frame does not exist under the two
+      full-height columns the mode seeds, so the scene is a tile too in the
+      commonest arrangement. The video side answered the same question with
+      zones (the canvas capability); this is that answer on the frame."
+    scope_in:
+      - A band along the frame's bottom edge, drawn only while a file is over
+        the window, split into Scene, Outfit, Object and Style, each captioned
+        only while it is under the cursor, taking the drop ahead of any box
+        beneath it.
+      - A zone out of play says so before the drop and refuses in words after
+        it — the plates without the identity-edit LoRA, Object with both
+        sockets full.
+      - An object dropped arrives with its note field focused, because a plate
+        the prompt never refers to does close to nothing.
+      - PlateRow's tiles become taps, as SourceRow's did, so there is one place
+        a picture lands by drag.
+    scope_out:
+      - A menu after the drop, or any panel, list or tray of attachments — the
+        veto list in web/CLAUDE.md, unchanged.
+      - Changing what the plates do on the backend. The request body is the
+        one PlateRow already sends.
+    acceptance_criteria:
+      - Every plate /api/generate accepts can be attached by dropping it on the
+        canvas, with full-height boxes covering the whole frame.
+      - While a file is over the window the band is drawn and only the zone
+        under the cursor is captioned; a box above the band still says This
+        character.
+      - PlateRow's tiles do not outline themselves under a drag.
+    evidence:
+      kind: commit
+      ref: "76c61f0 and the docs commit after it: both slices; check_plate_zones
+        holds the acceptance criteria. Not run against a deployed app or on a
+        touch device."

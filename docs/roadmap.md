@@ -21,15 +21,16 @@ because a veto that is not in context when someone adds a panel is not a veto.
    - Scene and outfit transfer, when the identity-edit LoRA is downloaded
 5. Video LoRA training — **not started, and the trainer is not musubi.** H3
    trains under AI Toolkit; see below.
-6. **The Dynamic Canvas** — in progress. On the image side the first tier is
-   mostly there: regions on the canvas, drops onto a box or the frame, SAM
+6. **The Dynamic Canvas** — the first tier is done; tiers two and three wait
+   on models (below). On the image side: regions on the canvas, drops onto a
+   box, the frame, or the band along its bottom edge for the four plates, SAM
    turning a click into a region, and an inpaint that samples from the source
    with the mask as its noise mask — measured against the old whole-frame paste
    in `tools/ab_inpaint.py` and better on every pair (`work-UvrttALb`). The
    video side takes its pictures by where they are dropped on the canvas —
    first frame, reference, last frame — and says every refusal on the surface
-   it landed on (the `canvas` capability, done). What is left of the first
-   tier is the image plates, which are still tiles
+   it landed on (the `canvas` capability, done). The image plates take the
+   same gesture — the `plates` capability, done
 7. **Editing** — done. Takes become a scene you can cut, on OpenVideo — the
    `editing` capability; see below
 

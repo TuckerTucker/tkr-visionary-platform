@@ -1,0 +1,28 @@
+capability: plates
+stories:
+  - name: give a picture its plates by dropping them
+    status: done
+    actor: Director
+    intent: attach a scene, an outfit, an object or a style without finding a tile
+    trigger_action: drags a photo from the Finder over the image canvas
+    preconditions:
+      - The composer is on images
+    steps:
+      - Drag a photo over the canvas
+      - Read the band along the bottom edge
+      - Let go on Outfit
+      - Drag a second photo to Object and write what it is
+    acceptance_criteria:
+      - given: two full-height boxes and a photo over the band's Scene zone
+        when: it is let go
+        then: it is the scene plate, not either character
+      - given: a photo over the Object zone
+        when: it is let go
+        then: it is an object plate and its note has the caret
+      - given: no identity-edit LoRA on the volume
+        when: a photo is dragged over Outfit
+        then: the zone says what is missing before the drop
+    evidence:
+      kind: commit
+      ref: "76c61f0: check_plate_zones drives every acceptance criterion on the
+        preview. Not run against a deployed app or on a touch device."
