@@ -18,6 +18,9 @@ console's tiles. Now the canvas is three zones read as a strip of time (see
 - **A zone out of play says so before the drop** — "references win" while
   references are attached — **and refuses the drop in words** if you let go
   anyway, leaving what was attached alone.
+- **In a composed scene a reference is somebody:** the drop makes one cast
+  member holding every file in it, named from the file when that reads like a
+  name, because the run sends the cast's files and never the flat tray.
 - **No dialog, ever.**
 
 Driven with real DataTransfer and real `dragover`s aimed at a point, because the
@@ -35,6 +38,11 @@ fails: list[str] = []
 
 PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR4nGP8"
        "z8Dwn4GBgYEJTAAAHAcCAKvHBh4AAAAASUVORK5CYII=")
+
+# A second, different picture: the pool is keyed by content, so two copies of one
+# PNG are one reference by design.
+PNG1 = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQ"
+        "DwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 # Hover a file over a point on the canvas, as a fraction of its width, and report
 # what the page says there. `release` also lets go.
@@ -57,6 +65,27 @@ AT = """
   target.dispatchEvent(over);
   if (release) fire('drop');
   return {accepted: over.defaultPrevented};
+}
+"""
+
+# The same hover-and-release, several named files at once, at the middle.
+DROP_NAMED = """
+(files) => {
+  const c = document.querySelector('#canvas');
+  const r = c.getBoundingClientRect();
+  const x = r.left + r.width / 2, y = r.top + r.height / 2;
+  const dt = new DataTransfer();
+  for (const [n, b64] of files) {
+    const bin = atob(b64);
+    const buf = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+    dt.items.add(new File([buf], n, {type: 'image/png'}));
+  }
+  const target = document.elementFromPoint(x, y) || c;
+  for (const type of ['dragenter', 'dragover', 'drop'])
+    target.dispatchEvent(new DragEvent(type,
+      {bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y}));
+  return true;
 }
 """
 
@@ -166,6 +195,34 @@ with sync_playwright() as pw:
     check("and refuses a reference in words", "keyframe is set" in said(), said())
     check("adding none", refs() == 0, refs())
     clear_all()
+
+    # ---- a composed scene: a reference is somebody --------------------------------------
+    # One named member makes the scene live, and from then on the run sends the cast's
+    # files and never the flat tray — so a reference dropped here has to become someone.
+    clear_all()
+    pg.click("#v-cast")
+    pg.wait_for_selector(".tcard .tname")
+    pg.fill(".tcard .tname", "ava")
+    pg.mouse.click(700, 60)
+    pg.wait_for_timeout(300)
+    chips = pg.locator(".chip[data-cast]").count()
+    check("a named member composes the scene", chips >= 1, chips)
+    pg.evaluate(DROP_NAMED, [["maya.png", PNG], ["maya-side.png", PNG1]])
+    pg.wait_for_timeout(800)
+    after = pg.locator(".chip[data-cast]").count()
+    check("a reference dropped into a composed scene makes one cast member", after == chips + 1,
+          f"{chips} -> {after}")
+    check("and nothing lands in the flat tray the run would not send", refs() == 0, refs())
+    rows = pg.locator(".tcard .tref").count()
+    check("the new member holds every file in the drop, its card open", rows == 2, rows)
+    handle = pg.locator(".tcard .tname").input_value() if pg.locator(".tcard .tname").count() else ""
+    check("named from the file, so it travels", handle == "maya", handle)
+    pg.evaluate(DROP_NAMED, [["IMG_2034.png", PNG]])
+    pg.wait_for_timeout(800)
+    handle = pg.locator(".tcard .tname").input_value() if pg.locator(".tcard .tname").count() else ""
+    check("a camera filename is not a name — an honest placeholder instead",
+          handle.startswith("subject"), handle)
+    pg.mouse.click(700, 60)
 
     # ---- over the stage ---------------------------------------------------------------
     # A scene with takes draws the stage in the same slot; the zones are the canvas's,

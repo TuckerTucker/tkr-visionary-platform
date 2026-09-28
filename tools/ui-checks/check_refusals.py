@@ -83,6 +83,9 @@ def check(label, ok, detail=""):
 with sync_playwright() as pw:
     b = pw.chromium.launch(channel="chrome")
     pg = b.new_page(viewport={"width": 1400, "height": 950}, color_scheme="dark")
+    # No saved scene: the preview keeps the scenes other checks compose, and with a cast
+    # a reference drop makes a member rather than filling the tray measured below.
+    pg.route("**/api/scenes", lambda r: r.fulfill(json={"scenes": []}))
     dialogs: list[str] = []
     pg.on("dialog", lambda d: (dialogs.append(d.message), d.dismiss()))
     errors: list[str] = []

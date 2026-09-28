@@ -1,4 +1,5 @@
 import { supports, type Store } from '../../store'
+import { refBudget } from '../../video/refBudget'
 import { outOfPlay, type Role } from './attach'
 
 /**
@@ -67,7 +68,8 @@ export function VideoDrops({ s, hot }: { s: Store; hot: Role | null }) {
  *  is said on the canvas if the file is let go anyway. */
 function short(role: Role, s: Store): string {
   if (role === 'reference') return supports(s).references ? 'a keyframe is set' : 'not on this model'
-  if (s.refs.length || s.refVids.length) return 'references win'
+  const b = refBudget(s)
+  if (b.images + b.videos > 0) return 'references win'
   if (s.continueFrom) return 'continuing the last take'
   return 'not on this model'
 }
