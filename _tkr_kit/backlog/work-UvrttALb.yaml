@@ -26,3 +26,18 @@ remedy: "The inpaint path samples a fresh frame from an empty latent and pastes
   working with the noise mask? (4) is it better than the paste on Turbo's 8
   steps? Measure with does_it_help.py plus judge_renders.py rather than by eye.
   Add an inpaint graph case to tools/smoke_graphs.py."
+findings:
+  - "(1) Answered yes, on CPU, 2026-09-28, against ComfyUI 924743a. SetLatentNoiseMask
+    stores [N,1,H,W] (nodes.py:1557); the sampler reshapes it with
+    comfy.utils.reshape_mask (samplers.py:1308 -> utils.py:1348), whose dims == 3
+    branch folds it to [1,1,T,H,W], interpolates trilinear to the latent's
+    [T,H/8,W/8], repeats channels to 16 and repeats to batch. That body run on a
+    1024x1536 mask gave (1,16,1,128,192) and (4,16,1,128,192) with coverage equal
+    to the pixel mask's (0.1526), so RepeatLatentBatch needs no mask of its own."
+  - "(2) Answered yes, by reading only. Krea 2's VAE takes the Wan 2.1 branch
+    (sd.py:829), which leaves not_video False, so VAE.encode (sd.py:1358) turns
+    one [1,H,W,3] image into [1,3,1,H,W] -> [1,16,1,H/8,W/8]. Caveat: a batched
+    IMAGE would become frames of one video rather than a batch, so the source is
+    encoded at batch 1 and RepeatLatentBatch makes the batch - which the remedy
+    already says."
+  - "(3) and (4) are not answered. They need a real render on a GPU."
