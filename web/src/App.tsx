@@ -25,7 +25,7 @@ import { Viewer } from './gallery/Viewer'
 import type { Session } from './api/types'
 import type { GalleryItem } from './gallery/types'
 import { IconBack, IconCube, IconPanel, IconPhoto, IconStack, IconTrain } from './icons'
-import { fileToB64, toB64, unreadable } from './media/files'
+import { fileToB64 } from './media/files'
 import { Settings } from './settings/Settings'
 import { warmDatasets } from './datasets/useDatasets'
 import { Train } from './train/Train'
@@ -623,14 +623,6 @@ export function App() {
                 onChain={() => void vid.chain()}
                 chaining={vid.linking}
                 onHandoff={handoff}
-                onFirstFrame={async (f) => {
-                  const b64 = await toB64(f)
-                  if (b64) {
-                    useStore.getState().setKeyframe('first', b64)
-                    return null
-                  }
-                  return unreadable(f)
-                }}
                 onClear={clearCanvas}
                 blank={
                   s.stateError ? <ErrorNote err={s.stateError} />

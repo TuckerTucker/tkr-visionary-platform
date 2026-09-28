@@ -113,9 +113,10 @@ with sync_playwright() as pw:
         pg.wait_for_timeout(500)
 
     # ---- the video canvas ------------------------------------------------------
-    drop("#vid-out", [[TEXT, "text/plain", "notes.txt"]])
+    # The middle of the canvas is the reference zone — see check_video_zones.py.
+    drop("#canvas", [[TEXT, "text/plain", "notes.txt"]])
     text = said("#canvas .refusal")
-    check("canvas: a text file is refused on the canvas", "takes an image" in text, text)
+    check("canvas: a text file is refused on the canvas", "is an image or a video" in text, text)
     pg.mouse.click(700, 60)
     pg.wait_for_timeout(200)
     check("canvas: the next press clears it", said("#canvas .refusal") == "", said())

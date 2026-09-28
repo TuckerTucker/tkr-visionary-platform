@@ -19,8 +19,10 @@ What it holds, and the failure each one is for:
   mounted, so `‹ n / N ›` across all four issues no image request at all.
 - **With time, the stage *is* the canvas.** It mounts inside `#vid-out` — not a
   96px monitor beside the timeline, and not a `<video>` — and it is the largest
-  thing on screen. The slot keeps its first-frame drop target, the canvas keeps
-  its actions and its receipt line.
+  thing on screen. The slot stays shown, and the canvas keeps its actions and
+  its receipt line. A picture dropped over the stage lands by where it is let
+  go, the same as on the empty canvas — that is the canvas's, not the slot's,
+  and `check_video_zones.py` holds it.
 - **A render is replaced when the next lands.** After a second take, the stage
   has moved the playhead to that take's start, held there, and Play runs the
   cut from it at once.
@@ -200,8 +202,7 @@ with sync_playwright() as pw:
     check("the stage is inside #vid-out", d["inSlot"], str(d))
     check("and not beside the timeline", not d["inEdit"])
     check("and there is no <video> in the slot", d["video"] == 0, str(d["video"]))
-    check("the slot keeps its first-frame drop target", not d["hidden"] and d["drop"] == "First frame",
-          f"hidden={d['hidden']} drop={d['drop']!r}")
+    check("the slot stays shown", not d["hidden"], f"hidden={d['hidden']}")
     check("the canvas keeps full screen, Continue and Clear",
           {"canvas-full", "canvas-chain", "canvas-clear"} <= set(d["acts"]), str(d["acts"]))
     check("and its receipt line", d["meta"])

@@ -2567,6 +2567,24 @@ body.dragging #ds-sheet.hot::after{position:fixed;top:auto;bottom:104px;
    "nothing in this one yet" and illegible as "this is the one you are about to
    drop on". */
 body.dragging .rbox.drop-hit{opacity:1;border-color:#fff}
+/* The video canvas's drop zones — `canvas/drop/VideoDrops`. Paint only, over the whole
+   canvas: the canvas reads the drag, so the clip's controls are never covered, and a
+   zone is decided by the pointer rather than by what the clip drew on top. The same
+   two levels as every other target: each zone outlines itself, and only the one under
+   the cursor is captioned. An out-of-play zone stays drawn, dimmer, and its caption
+   carries the reason in amber — the ink every refusal here uses. */
+#vid-drops{position:absolute;inset:0;z-index:7;pointer-events:none;display:block}
+#vid-drops .vzone{position:absolute;top:10px;bottom:10px;margin:0 5px;
+  border-radius:var(--r-card);outline:1px dashed var(--line-2);outline-offset:-4px}
+#vid-drops .vzone.off{opacity:.55}
+#vid-drops .vzone.hot{outline-color:rgba(255,255,255,.6);background:rgba(255,255,255,.04)}
+#vid-drops .vzone.hot::after{content:attr(data-drop);position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);padding:5px 11px;border-radius:var(--r-pill);
+  background:rgba(0,0,0,.74);backdrop-filter:blur(8px);color:var(--fg);
+  font-weight:500;font-size:12px;line-height:1;white-space:nowrap;
+  max-width:calc(100% - 12px);overflow:hidden;text-overflow:ellipsis}
+#vid-drops .vzone.off.hot{opacity:1}
+#vid-drops .vzone.off.hot::after{color:#f3c07a}
 /* The empty frame's one sentence — see RegionLayer. Dim and dead to the
    pointer, because it is a caption on a surface whose gestures it must not
    eat; gone the moment a box exists. */

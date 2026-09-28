@@ -685,6 +685,19 @@ and two domains, and the page follows the domains.
   nothing except that the page lost it. References win when both are attached,
   because that is what the run does, so they are the half that stays live.
 
+  **The video canvas takes the same pictures by where you let go.** The left
+  edge is the first frame, the right edge the last, the middle a reference — the
+  clip read as a strip of time, the one layout of the three nobody has to be
+  taught. A menu after the drop was refused: it turns one gesture into two and
+  puts a question on the canvas. The zones are drawn only while a file is over
+  the window, only the one under the cursor is captioned, and one out of play
+  stays drawn and names why ("references win") before the drop, then refuses it
+  in words if you let go anyway. They hang off `.canvas` rather than `#vid-out`,
+  because the slot is `display:none` until a clip lands and the empty canvas —
+  where a first frame is most wanted — took no drop at all. `canvas/drop/attach`
+  holds the rules, so a zone and a tile cannot disagree about what a take can
+  use.
+
   The note under the field says "keyframes are ignored" only when there is a
   keyframe to ignore. It said it unconditionally, which made the page's one
   mention of keyframes a warning about something you did not have, pointing at

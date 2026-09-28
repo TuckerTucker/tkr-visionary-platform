@@ -100,6 +100,11 @@ it still holds.
   A target that does not cancel never receives the drop at all, which is how the
   reference tray shipped dead — and how the React port's video canvas shipped
   without its first-frame drop, which this is what caught.
+- `check_video_zones.py` — the video canvas read as a strip of time: the left
+  edge is the first frame, the middle a reference, the right edge the last. The
+  empty canvas takes a drop (the slot that used to carry the handler was hidden
+  until a clip landed), only the hovered zone is captioned, and a zone out of
+  play says why before the drop and refuses it in words after.
 - `check_refusals.py` — the other half of a drop: when a target *refuses* one,
   the sentence is on that target and no dialog opens. A tile in the console says
   it above itself, unclipped; an unreadable file is named with the format that

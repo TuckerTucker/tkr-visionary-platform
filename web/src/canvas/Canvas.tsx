@@ -7,6 +7,8 @@ import { Frame } from '../regions/Frame'
 import { RegionLayer } from '../regions/RegionLayer'
 import { StageRegions } from '../regions/StageRegions'
 import { Refusal, useRefusal } from '../ui/Refusal'
+import { addReferences, outOfPlay, setFrame, type Role } from './drop/attach'
+import { VideoDrops, zoneAt, zonesFor } from './drop/VideoDrops'
 import { attached, regionsLive, useStore } from '../store'
 import { fullScreenStage, Stage } from '../edit/Stage'
 import { useEdit } from '../edit/useEdit'
@@ -53,7 +55,6 @@ export function Canvas({
   onOpen,
   onOpenVideo,
   onHandoff,
-  onFirstFrame,
   onClear,
   onChain,
   chaining,
@@ -65,9 +66,6 @@ export function Canvas({
   onOpenVideo: (src: string) => void
   /** Resolves to a refusal, or null once the picture is on the video side. */
   onHandoff: (jobId: string, file: string, as: 'first' | 'reference') => Promise<string | null>
-  /** A picture dropped on the video canvas is the frame the clip starts on. Resolves to
-   *  a refusal when the browser cannot decode it. */
-  onFirstFrame: (f: File) => Promise<string | null>
   onClear: () => void
   /** The next generation of the same scene — see `useVideo.chain`. */
   onChain: () => void
@@ -80,6 +78,8 @@ export function Canvas({
   // two hand-off buttons on a still, and a drop on the video slot.
   const [refused, refuse] = useRefusal()
   const tell = (p: Promise<string | null>) => { void p.then((r) => { if (r) refuse(r) }) }
+  // Which drop zone the file under the cursor is over — see `drop/VideoDrops`.
+  const [zoneHot, setZoneHot] = useState<Role | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
   const capRef = useRef<HTMLParagraphElement>(null)
   const navRef = useRef<HTMLDivElement>(null)
@@ -166,8 +166,44 @@ export function Canvas({
     return () => window.removeEventListener('keydown', key)
   }, [n])
 
+  /** Which zone a drag event is over, off the pointer rather than the target: the zones
+   *  are paint, and the element under the cursor is whatever the clip drew on top. */
+  const zoneOf = (e: React.DragEvent) => {
+    const r = canvasRef.current?.getBoundingClientRect()
+    if (!r) return null
+    return zoneAt(zonesFor(s), (e.clientX - r.left) / r.width)
+  }
+  // On the canvas itself rather than on `#vid-out`, which is `display:none` until a clip
+  // lands — so the empty video canvas, the one moment a first frame is most wanted, took
+  // no drop at all. The canvas is there whenever the video side is.
+  const videoDrop = image ? {} : {
+    onDragOver: (e: React.DragEvent) => {
+      if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return
+      e.preventDefault()
+      setZoneHot(zoneOf(e)?.role ?? null)
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) setZoneHot(null)
+    },
+    onDrop: (e: React.DragEvent) => {
+      if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return
+      e.preventDefault()
+      setZoneHot(null)
+      const z = zoneOf(e)
+      if (!z) return
+      // Said with the whole sentence, not dropped: the zone's caption already named
+      // the reason in a few words, and letting go anyway is asking what it meant.
+      const off = outOfPlay(useStore.getState(), z.role)
+      if (off) { refuse(off); return }
+      const files = [...(e.dataTransfer?.files ?? [])]
+      if (z.role === 'reference') { tell(addReferences(files)); return }
+      const f = files.find((x) => x.type.startsWith('image/')) ?? files[0]
+      if (f) tell(setFrame(z.role, f))
+    },
+  }
+
   return (
-    <div className="canvas" id="canvas" ref={canvasRef}>
+    <div className="canvas" id="canvas" ref={canvasRef} {...videoDrop}>
       {/* No copy beyond the one line the caller passes. An empty frame above a focused
           prompt field is already the whole instruction, and a sentence telling you to
           type is a sentence that will be read on every visit forever to be useful once.
@@ -370,41 +406,14 @@ export function Canvas({
         </p>
       )}
 
-      {/* On the video side a dropped picture is the frame the clip starts on, which is
-          the one reading that needs no mode: it is what the tile two rows down would
-          have done, done on the largest target on screen.
-
-          Rendered whenever the video side is showing rather than only when there is a
-          clip, because the element *is* the handler — `check_drop.py` found this
-          missing, and what was missing was not a class on a div, it was the gesture. */}
+      {/* The clip's slot. It used to be the drop target too, and it is hidden until a
+          clip lands — so the empty video canvas took no picture. A drop is the
+          canvas's now, read by where on it you let go: see `drop/VideoDrops`. */}
       {!image && (
         <div id="vid-out"
-             className={`can-drop${shown ? '' : ' hide'}${surface === 'stage' ? ' staged' : ''}`}
-             data-drop="First frame"
-             onDragOver={(e) => {
-               if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return
-               e.preventDefault()
-               e.currentTarget.classList.add('hot')
-             }}
-             onDragLeave={(e) => {
-               if (!e.currentTarget.contains(e.relatedTarget as Node))
-                 e.currentTarget.classList.remove('hot')
-             }}
-             onDrop={(e) => {
-               e.preventDefault()
-               e.currentTarget.classList.remove('hot')
-               const f = [...(e.dataTransfer?.files ?? [])].find((x) => x.type.startsWith('image/'))
-               // Said, not swallowed: a file of the wrong kind landing on a target that
-               // just lit up for it has to say why nothing happened.
-               if (!f) {
-                 refuse('The canvas takes an image — it becomes the first frame.')
-                 return
-               }
-               tell(onFirstFrame(f))
-             }}>
-          {/* The stage, once the scene has time. The dropped-file handler above stays
-              on the slot rather than moving onto the stage, so a first frame lands
-              the same way whichever layer is drawing. */}
+             className={`${shown ? '' : 'hide'}${surface === 'stage' ? ' staged' : ''}`}>
+          {/* The stage, once the scene has time. Drops are the canvas's, not this
+              slot's, so a picture lands the same way whichever layer is drawing. */}
           {surface === 'stage' && (
             <Stage landed={vidRun.jobId} onShowing={setStaged}>
               {/* First, and a direct child: it listens on the stage box itself so
@@ -445,6 +454,7 @@ export function Canvas({
             : vidRun.meta.join(' · ')}
         </p>
       )}
+      {!image && s.fileOver && <VideoDrops s={s} hot={zoneHot} />}
       <Refusal text={refused} />
     </div>
   )
