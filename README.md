@@ -262,6 +262,13 @@ Being honest about coverage, since "it deploys" is not "it works":
   `non_diegetic_music: N/A` actually silences the soundtrack.
 - **The scene composer** — driven and read, never measured against a render.
   `tools/prompt_ab.py` is the measurement that is not a proxy and has not run.
+- **Krea 2, SAM and regional inpaint** — run on an H100 by `tools/ab_inpaint.py`
+  (2026-09-28): plain Turbo renders, SAM 2 masks from a click, and regional
+  inpaints through V12 with the source as a noise-masked latent, at batch 1 and
+  2, measured against the old whole-frame paste and better on every pair. That
+  drives the graphs and the SAM checkpoint directly, not `/api/segment` or
+  `/api/generate` — the page's path to them has run only against
+  `preview_ui.py`'s stubs.
 
 ---
 
