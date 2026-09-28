@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+
+import { Refusal, useRefusal } from '../ui/Refusal'
 
 /**
  * Why a box cannot be drawn on a take. One sentence, because it is said on the
@@ -50,7 +52,10 @@ const CLICK_SLOP = 8
  */
 export function StageRegions() {
   const el = useRef<HTMLDivElement>(null)
-  const [said, setSaid] = useState(false)
+  // Cleared by the next gesture anywhere, before the host's own handler below runs —
+  // which is what lets one press both clear the sentence and say it again. See
+  // `ui/Refusal`.
+  const [said, setSaid] = useRefusal()
 
   useEffect(() => {
     const host = el.current?.parentElement
@@ -60,13 +65,7 @@ export function StageRegions() {
     // screen.
     const theirs = (t: EventTarget | null) =>
       !!(t as HTMLElement | null)?.closest?.('video,button,a,input,select,textarea,.err-box')
-    const say = () => setSaid(true)
-
-    // Capture on the document, so it runs before the host's own handler below: a
-    // press is "the next thing you did" first, and a region gesture second — which is
-    // what lets one press both clear the sentence and say it again.
-    const clear = () => setSaid(false)
-    document.addEventListener('pointerdown', clear, true)
+    const say = () => setSaid(NO_REGIONS_ON_A_TAKE)
 
     const down = (e: PointerEvent) => {
       if (e.button !== 0 || theirs(e.target)) return
@@ -96,14 +95,13 @@ export function StageRegions() {
     host.addEventListener('pointermove', hover)
     host.addEventListener('pointerleave', leave)
     return () => {
-      document.removeEventListener('pointerdown', clear, true)
       host.removeEventListener('pointerdown', down)
       host.removeEventListener('dblclick', dbl)
       host.removeEventListener('pointermove', hover)
       host.removeEventListener('pointerleave', leave)
       host.style.cursor = ''
     }
-  }, [])
+  }, [setSaid])
 
   return (
     // `aria-disabled` and the reason as its description: the tool is here and
@@ -111,10 +109,7 @@ export function StageRegions() {
     <div id="stage-regions" ref={el} aria-disabled="true" aria-label="Regions"
          aria-description={NO_REGIONS_ON_A_TAKE} data-reason={NO_REGIONS_ON_A_TAKE}
          style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-      {/* `aria-live` on the sentence's slot, so saying it is announced. */}
-      <div aria-live="polite">
-        {said && <p className="rins-refusal" role="status">{NO_REGIONS_ON_A_TAKE}</p>}
-      </div>
+      <Refusal text={said} />
     </div>
   )
 }

@@ -58,7 +58,7 @@ ON_STAGE = """
       && !document.querySelector('#vid-out video')
 """
 
-SAID = "() => document.querySelector('#stage-regions .rins-refusal')?.textContent || ''"
+SAID = "() => document.querySelector('#stage-regions .refusal')?.textContent || ''"
 BOXES = "() => document.querySelectorAll('#region-layer .rbox').length"
 
 
@@ -135,7 +135,7 @@ with sync_playwright() as pw:
         disabled: t?.getAttribute('aria-disabled') || '',
         reason: t?.getAttribute('aria-description') || '',
         layer: document.querySelectorAll('#vid-out #region-layer').length,
-        painted: document.querySelectorAll('#stage-regions .rins-refusal').length,
+        painted: document.querySelectorAll('#stage-regions .refusal').length,
       };
     }""")
     check("take: the region tool is on the stage", d["tool"], str(d))
@@ -161,7 +161,7 @@ with sync_playwright() as pw:
     said = pg.evaluate(SAID)
     check("take: a drag says why, on the stage", "/api/video" in said and "H3" in said, repr(said))
     inside = pg.evaluate("""() => {
-      const p = document.querySelector('#stage-regions .rins-refusal')?.getBoundingClientRect();
+      const p = document.querySelector('#stage-regions .refusal')?.getBoundingClientRect();
       const s = document.querySelector('#edit-stage').getBoundingClientRect();
       return !!p && p.width > 0 && p.left >= s.left && p.right <= s.right
              && p.top >= s.top && p.bottom <= s.bottom;

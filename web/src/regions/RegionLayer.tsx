@@ -6,6 +6,7 @@ import { IconRegions } from '../icons'
 import { dataUrl, shrinkB64 } from '../media/files'
 import { loraIndex } from '../lora/tokens'
 import { NEED_EDIT_LORA } from '../lora/note'
+import { Refusal, useRefusal } from '../ui/Refusal'
 import { attached, newRegion, useStore, type EditMode, type Region } from '../store'
 import { askResumeFocus } from './focus'
 import { Inspector } from './Inspector'
@@ -100,11 +101,9 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     (e: React.SyntheticEvent) => !!layer.current?.contains(e.target as Node), [])
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] })
   const [dropHit, setDropHit] = useState<number | null>(null)
-  /** Said on the layer rather than through `alert()`. A modal that stops the app to
-   *  deliver one sentence is the wrong weight for it, and the sentence is about a
-   *  control that is visible and dimmed an inch away. Cleared by the next thing you do,
-   *  so there is no timer to get wrong and nothing to dismiss. */
-  const [refused, setRefused] = useState<string | null>(null)
+  /** Said on the layer rather than through `alert()` — see `ui/Refusal`. The sentence
+   *  is about a control that is visible and dimmed an inch away. */
+  const [refused, setRefused] = useRefusal()
   /** Which box the pointer is over, decided by `hitAt` rather than by `:hover`. It has
    *  to be ours: CSS hover follows paint order, so the hairline that says "this is what
    *  you would be touching" would name a different box than the click opens — and that
@@ -314,7 +313,6 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     // click on a numeric field or on the corner button would start drawing a rectangle
     // underneath it.
     if (target.closest('.rins,.rframe-btn')) return
-    setRefused(null)
     const st = useStore.getState()
     // ⌘ means "a new one, here" and skips the hit test on purpose. Once a few
     // performers are placed there is often no bare canvas left to start a drag on, and
@@ -573,7 +571,6 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
       setRefused(NEED_EDIT_LORA)
       return
     }
-    setRefused(null)
     const b64 = await shrinkB64(f)
     if (!b64) return
     if (hit >= 0) {
@@ -807,7 +804,7 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
         </button>
       </>}
 
-      {refused && <p className="rins-refusal">{refused}</p>}
+      <Refusal text={refused} />
     </div>
   )
 }

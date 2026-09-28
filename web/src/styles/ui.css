@@ -2470,11 +2470,13 @@ button.b.danger:hover:not(:disabled){background:var(--crit)}
   background:rgba(0,0,0,.82);color:#fff;font-size:12px;line-height:1;
   cursor:pointer;pointer-events:auto;white-space:nowrap}
 .sam-promote:hover{background:rgba(59,130,246,.9)}
-/* A refused drop, said on the canvas. It replaced an `alert()`: a modal that
-   stops the app to deliver one sentence is the wrong weight for it, and the
-   sentence is about a control that is visible and dimmed an inch away. Amber,
-   the same ink the LoRA note uses for a name that resolves to no file. */
-.rins-refusal{position:absolute;left:8px;right:44px;bottom:8px;z-index:9;margin:0;
+/* A refused gesture, said on the surface it landed on — see `ui/Refusal.tsx`. It
+   replaced an `alert()`: a modal that stops the app to deliver one sentence is the
+   wrong weight for it, and the sentence is about a control that is visible and
+   dimmed an inch away. Amber, the same ink the LoRA note uses for a name that
+   resolves to no file. `right:44px` keeps it clear of `.rframe-btn`, which owns the
+   bottom-right corner of the region layer. */
+.refusal{position:absolute;left:8px;right:44px;bottom:8px;z-index:9;margin:0;
   padding:7px 10px;border-radius:var(--r-inner);background:rgba(0,0,0,.86);
   color:#f3c07a;font-size:12px;line-height:1.35}
 /* The coordinates, while the card that holds them is at opacity 0. The gesture is
