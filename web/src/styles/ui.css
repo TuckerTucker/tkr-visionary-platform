@@ -2584,6 +2584,23 @@ body.dragging .rbox.drop-hit{opacity:1;border-color:#fff}
   font-weight:500;font-size:12px;line-height:1;white-space:nowrap;
   max-width:calc(100% - 12px);overflow:hidden;text-overflow:ellipsis}
 #vid-drops .vzone.off.hot{opacity:1}
+/* The image frame's plate band — `canvas/drop/ImageDrops`. `#vid-drops`' two levels
+   along the frame's bottom edge, over the boxes because the band takes the drop where
+   it is drawn: a box under it lit as "This character" would be a caption that lies.
+   Paint only; the layer reads the drag. */
+#img-drops{position:absolute;left:0;right:0;bottom:0;z-index:7;pointer-events:none;
+  display:flex}
+#img-drops .pzone{position:relative;flex:1;margin:0 4px 6px;border-radius:var(--r-card);
+  outline:1px dashed var(--line-2);outline-offset:-4px;background:rgba(0,0,0,.28)}
+#img-drops .pzone.off{opacity:.55}
+#img-drops .pzone.hot{outline-color:rgba(255,255,255,.6);background:rgba(0,0,0,.4)}
+#img-drops .pzone.hot::after{content:attr(data-drop);position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);padding:5px 11px;border-radius:var(--r-pill);
+  background:rgba(0,0,0,.74);backdrop-filter:blur(8px);color:var(--fg);
+  font-weight:500;font-size:12px;line-height:1;white-space:nowrap;
+  max-width:calc(100% - 12px);overflow:hidden;text-overflow:ellipsis}
+#img-drops .pzone.off.hot{opacity:1}
+#img-drops .pzone.off.hot::after{color:#f3c07a}
 /* The empty video canvas's one sentence — the image side's `.rl-invite`, under the
    glyph rather than over a frame, because the video side has no frame until a clip. */
 .vid-invite{margin:10px auto 0;max-width:420px;color:var(--dim);font-size:13px;

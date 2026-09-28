@@ -5,8 +5,9 @@ import { failed } from '../api/client'
 import { IconRegions } from '../icons'
 import { dataUrl, shrinkB64, unreadable } from '../media/files'
 import { loraIndex } from '../lora/tokens'
-import { NEED_EDIT_LORA } from '../lora/note'
 import { Refusal, useRefusal } from '../ui/Refusal'
+import { ImageDrops } from '../canvas/drop/ImageDrops'
+import { dropPlate, plateAt, type Plate } from '../canvas/drop/plates'
 import { attached, newRegion, useStore, type EditMode, type Region } from '../store'
 import { askResumeFocus } from './focus'
 import { Inspector } from './Inspector'
@@ -74,6 +75,7 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
   const setRegions = useStore((z) => z.setRegions)
   const patchRegion = useStore((z) => z.patchRegion)
   const attach = useStore((z) => z.attach)
+  const frame = useStore((z) => z.frame)
 
   const layer = useRef<HTMLDivElement>(null)
 
@@ -101,6 +103,9 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     (e: React.SyntheticEvent) => !!layer.current?.contains(e.target as Node), [])
   const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] })
   const [dropHit, setDropHit] = useState<number | null>(null)
+  /** Which of the frame's plates a drop here would be — the band's zone under the
+   *  cursor, or the scene over bare frame. Null over a box. */
+  const [plateHot, setPlateHot] = useState<Plate | null>(null)
   /** Said on the layer rather than through `alert()` — see `ui/Refusal`. The sentence
    *  is about a control that is visible and dimmed an inch away. */
   const [refused, setRefused] = useRefusal()
@@ -555,38 +560,39 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     el?.addEventListener('pointercancel', up)
   }, [])
 
-  /* Dropping onto a box is the gesture the box exists for; dropping onto bare canvas is
-     the scene, which is a different thing entirely and gated on a weight that may not
-     be downloaded. One handler, because the target decides. */
+  /* The band along the bottom edge is the frame's four plates and takes the drop ahead
+     of any box under it — see `canvas/drop/plates`. Above it a box is the character
+     and bare canvas is the scene. One handler, because the target decides. */
   const onDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     setDropHit(null)
+    setPlateHot(null)
     const f = e.dataTransfer.files[0]
-    if (!f?.type.startsWith('image/')) return
-    const hit = boxAt(stackAt(e.clientX, e.clientY))
-    // Said, not swallowed. Without the edit LoRA this used to return in silence, which
-    // is indistinguishable from a drop the page never received — and the target is
-    // visibly lit, so refusing quietly is a promise made and broken.
-    if (hit < 0 && !state?.edit_lora) {
-      setRefused(NEED_EDIT_LORA)
+    if (!f) return
+    const [fx, fy] = frameXY(e)
+    const zone = plateAt(fx, fy)
+    const hit = zone ? -1 : boxAt(stackAt(e.clientX, e.clientY))
+    if (hit < 0) {
+      // Said, not swallowed — a plate refused for a weight that is not downloaded, a
+      // full socket, a file the browser cannot read. The zone was lit, so refusing
+      // quietly would be a promise made and broken.
+      const plate = zone ?? 'scene'
+      const said = await dropPlate(plate, f)
+      if (said) return setRefused(said)
+      if (plate === 'style') return
+      // And show the frame's card, because a plate just moved the run onto the
+      // krea2edit compose — a different engine that regenerates the whole frame and is
+      // several times slower. No arrangement of rectangles shows what it costs, and
+      // the sentence that does lives in that card.
+      useStore.getState().setCardOpen(true)
+      select(-1)
       return
     }
+    if (!f.type.startsWith('image/')) return
     const b64 = await shrinkB64(f)
     if (!b64) return setRefused(unreadable(f))
-    if (hit >= 0) {
-      attach(hit, 'identity', b64)
-      select(hit)
-    } else {
-      attach('frame', 'scene', b64)
-      useStore.getState().setCardOpen(true)
-      // And show the frame's card, because this drop just moved the run onto the
-      // krea2edit compose — a different engine that regenerates the whole frame and
-      // is several times slower. The plate itself becomes visible behind the boxes,
-      // but no arrangement of rectangles shows what it costs, and the sentence that
-      // does lives in that card. Attaching a plate from inside the card is already
-      // self-explaining; this is the path that was not.
-      select(-1)
-    }
+    attach(hit, 'identity', b64)
+    select(hit)
   }
 
   // The even split, from the cold canvas. Two rectangles appearing is the whole
@@ -664,11 +670,19 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
            // the picture this time. Which box that is comes off `boxAt`, so a photo
            // lands on the one the caption named — over a small box inside a large one
            // the two used to disagree, and a drop is not a gesture you can take back.
-           const hit = boxAt(stackAt(e.clientX, e.clientY))
+           //
+           // The band first: where it is drawn it takes the drop, so a box under it
+           // must not light up and claim a picture it will not get.
+           const [fx, fy] = frameXY(e)
+           const zone = plateAt(fx, fy)
+           const hit = zone ? -1 : boxAt(stackAt(e.clientX, e.clientY))
            setDropHit(hit < 0 ? null : hit)
+           setPlateHot(zone ?? (hit < 0 ? 'scene' : null))
          }}
          onDragLeave={(e) => {
-           if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropHit(null)
+           if (e.currentTarget.contains(e.relatedTarget as Node)) return
+           setDropHit(null)
+           setPlateHot(null)
          }}
          onDrop={(e) => { if (onLayer(e)) void onDrop(e) }}
          onKeyDown={(e) => {
@@ -732,9 +746,11 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
           `PlateRow` is on screen below it. */}
       {over === 'frame' && !regions.length && !fileOver && (
         <div className="rl-invite" aria-hidden="true">
-          Double-click to place a character. Scene, outfit and style drop onto the tiles below.
+          Double-click to place a character. Drop a scene, an outfit, an object or a style
+          on the frame’s lower edge.
         </div>
       )}
+      {fileOver && <ImageDrops s={{ state, frame }} hot={plateHot} />}
       {regions.map((r, i) => {
         const tag = regionTag(index, r)
         const face = attached(r, 'identity')

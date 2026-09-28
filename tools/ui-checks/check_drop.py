@@ -195,10 +195,18 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(600)
     report("region layer", "#region-layer")
     report("a region box", "#region-layer .rbox")
-    pg.click(".rframe-btn")
-    pg.wait_for_timeout(300)
-    report("scene plate", "#g-drop-scene")
-    report("outfit plate", "#g-drop-outfit")
+    # The plate tiles are taps now, the video tiles' rule: the frame takes every plate
+    # by drag in the band along its bottom edge (check_plate_zones.py), and a tile
+    # that also cancelled a dragover would light up for a picture it has handed on.
+    for label, sel in (("scene plate", "#g-drop-scene"), ("outfit plate", "#g-drop-outfit"),
+                       ("object plate", "#g-drop-object"), ("style plate", "#g-drop-style1")):
+        if not pg.locator(sel).count():
+            continue
+        r = pg.evaluate(DROP_HERE, [sel, PNG, "image/png", "x.png"])
+        ok = not r["tileAccepts"]
+        if not ok:
+            fails.append(f"{label} (still a drop target)")
+        print(f"  {'ok  ' if ok else 'FAIL'} {label:22} {sel:22} is a tap, not a drop target")
     # `#canvas .frame` is deliberately not tested. The drop is listened for on
     # #region-layer, which covers the frame and paints `hot` onto the frame as
     # its *host* — so a real drag is cancelled on the layer and the frame never

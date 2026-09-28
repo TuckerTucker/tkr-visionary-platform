@@ -5,6 +5,7 @@ import { dataUrl, shrinkB64, unreadable } from '../media/files'
 import { NEED_EDIT_LORA } from '../lora/note'
 import { useStore } from '../store'
 import { attached } from '../store'
+import { OBJECT_ROLES, STYLE_ROLE } from '../canvas/drop/plates'
 
 export const PLATE_TITLE = {
   scene: 'Scene photo. The picture is generated inside it — lighting, perspective '
@@ -12,13 +13,6 @@ export const PLATE_TITLE = {
   outfit: 'Outfit or object photo. Transferred onto the subjects rather than pasted '
     + 'into the frame.',
 } as const
-
-/** V12's free-role sockets, in the order the graph wires them. */
-const OBJECT_ROLES = ['object1', 'object2'] as const
-/** One style socket. The K/V engine's tested no-leakage route is
- *  single-reference — its two-ref node is an experiment — so the row offers
- *  exactly what the backend accepts. */
-const STYLE_ROLE = 'style1' as const
 
 /**
  * Every picture the image run can be given, at rest — the image side's SourceRow.
@@ -50,6 +44,14 @@ const STYLE_ROLE = 'style1' as const
  * object the prompt never refers to does close to nothing, which is why the
  * backend refuses a note-less plate and the placeholder writes the sentence's
  * shape out.
+ *
+ * **The tiles are taps, not drop targets** — the video side's `SourceRow` rule,
+ * arrived on this side. The frame takes every plate by drag now, in the band
+ * along its bottom edge (`canvas/drop/ImageDrops`), so a tile that also lit up
+ * under a file would be two targets for one picture. They stay because on glass
+ * there is nothing to drag from and the tap that opens the file picker is the
+ * whole of attaching there — and because this is where you see what is attached
+ * and clear it.
  */
 export function PlateRow() {
   const s = useStore()
@@ -61,7 +63,7 @@ export function PlateRow() {
   return (
     <div className="opts" id="g-plate-sec">
       {(['scene', 'outfit'] as const).map((slot) => (
-        <DropTile key={slot} id={`g-drop-${slot}`} label={slot === 'scene' ? 'Scene' : 'Outfit'}
+        <DropTile drop={false} key={slot} id={`g-drop-${slot}`} label={slot === 'scene' ? 'Scene' : 'Outfit'}
                   value={attached(s.frame, slot)} locked={!s.state?.edit_lora}
                   glyph={slot === 'scene' ? <IconScene /> : <IconOutfit />}
                   title={s.state?.edit_lora ? PLATE_TITLE[slot] : NEED_EDIT_LORA}
@@ -91,7 +93,7 @@ export function PlateRow() {
           are full — the well pattern, sized to a two-socket node rather than a
           growing tray. */}
       {free && (
-        <DropTile id="g-drop-object" label="Object"
+        <DropTile drop={false} id="g-drop-object" label="Object"
                   value={null} locked={!s.state?.edit_lora}
                   glyph={<span className="tplus">＋</span>}
                   title={s.state?.edit_lora
@@ -109,7 +111,7 @@ export function PlateRow() {
       {/* Style by reference — a different engine from the plates: whole-frame,
           no boxes, training-free K/V injection. Never locked, because it needs
           no weight: the one tile on this row that works on a bare install. */}
-      <DropTile id={`g-drop-${STYLE_ROLE}`} label="Style"
+      <DropTile drop={false} id={`g-drop-${STYLE_ROLE}`} label="Style"
                 value={attached(s.frame, STYLE_ROLE)}
                 glyph={<span className="tplus">◐</span>}
                 title={'A photo whose look the render should carry — style, not '
