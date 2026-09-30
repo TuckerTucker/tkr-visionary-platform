@@ -81,5 +81,7 @@ evidence:
     `segment: true` beside its mask; check_regions.py (62 ok) and
     check_recall.py pass; web builds. Deployed 2026-09-30 at dd42233 and
     driven on the live app: a SAM tap on white milk, + Region, 'chocolate
-    milk', rendered as asked with no figure beside it. The metadata sheet's
-    Region segments line was not checked."
+    milk', rendered as asked with no figure beside it. Its job record
+    (gen202609300458354e97, read from /api/gallery) carries segment: true
+    and the caption 'In the middle center, A glass of Chocolate milk.' with
+    no framing clause — the request reached the fix, not just the page."
