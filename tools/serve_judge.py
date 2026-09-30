@@ -23,6 +23,8 @@ So what survives is the serving, and the two things worth serving:
   --pairs   pictures. `judge_renders.py` scores rendered pairs blind, both
             orders, a win counted only when both agree. **The only measurement
             here that is not a proxy**, and what `prompt_ab.py` drives.
+            `--rubric scene` is the same for clips, read as contact sheets
+            with a labelled cast sheet ahead of them — see `ab_scene.py`.
 
 Every line of the vLLM recipe below was settled by running it, and each carries
 the failure that put it there — the `devel` CUDA base, the unpinned vLLM, the
@@ -96,7 +98,7 @@ exit $rc
 """
 
 
-def _serve_extra(pairs: str) -> str:
+def _serve_extra(pairs: str, rubric: str = "still") -> str:
     """Extra `vllm serve` flags, which only the vision run needs.
 
     Two images is not a small ask: Qwen3-VL tiles an image into patches and a
@@ -108,10 +110,19 @@ def _serve_extra(pairs: str) -> str:
     `--limit-mm-per-prompt` is the declaration that two pictures per request is
     the contract; vLLM allocates multimodal cache from it, so leaving it at the
     default of one is the other half of the same crash.
+
+    A scene is three: the cast sheet goes in ahead of the two clips, so the
+    same declaration has to say so or the pictured scenes die the same way.
     """
     if not pairs:
         return ""
-    return "--limit-mm-per-prompt '{\"image\":2}' --max-num-seqs 4"
+    images = 3 if rubric == "scene" else 2
+    return f"--limit-mm-per-prompt '{{\"image\":{images}}}' --max-num-seqs 4"
+
+
+def _briefs_at(briefs: str) -> str:
+    """Where the briefs land in the Sandbox: one name, the caller's suffix."""
+    return "/work/briefs" + Path(briefs).suffix
 
 
 def _entry(args, model: str) -> str:
@@ -123,9 +134,12 @@ def _entry(args, model: str) -> str:
     then runs a command with `{extra}` in it.
     """
     if args.pairs:
+        # The briefs keep their suffix on the way in, because it is what tells
+        # `judge_renders.briefs_from` a JSON map from an `--enrich` dump.
         return (f"python tools/judge_renders.py --pairs /work/pairs "
-                f"--backend http://localhost:8000/v1 --model {model}"
-                + (" --briefs /work/dump.log" if args.briefs else ""))
+                f"--backend http://localhost:8000/v1 --model {model} "
+                f"--rubric {args.rubric}"
+                + (f" --briefs {_briefs_at(args.briefs)}" if args.briefs else ""))
     return (f"python tools/judge_prompts.py /work/dump.log "
             f"--at http://localhost:8000/v1 --model {model}"
             + (f" --subject-model {args.subject_model}" if args.subject_model else ""))
@@ -149,9 +163,12 @@ def main() -> int:
                          "<name>_rich.png, which is what does_it_help.py "
                          "writes. Wants a *vision* model.")
     ap.add_argument("--briefs", default=None, metavar="JSONL",
-                    help="With --pairs, the dump the renders came from, so the "
-                         "judge reads the person's sentence rather than a "
-                         "filename.")
+                    help="With --pairs, the dump the renders came from — or a "
+                         "JSON map of name to brief — so the judge reads the "
+                         "person's sentence rather than a filename.")
+    ap.add_argument("--rubric", choices=("still", "scene"), default="still",
+                    help="With --pairs, `scene` when the pictures are contact "
+                         "sheets of clips, as ab_scene.py writes them.")
     ap.add_argument("--subject-model", default="",
                     help="With --dump, the weights that wrote the rewrites.")
     args = ap.parse_args()
@@ -167,7 +184,7 @@ def main() -> int:
         # megabytes and the judge wants them side by side.
         img = img.add_local_dir(args.pairs, "/work/pairs")
         if args.briefs:
-            img = img.add_local_file(args.briefs, "/work/dump.log")
+            img = img.add_local_file(args.briefs, _briefs_at(args.briefs))
     else:
         # The dump rides in as a file rather than an argument: it is thousands
         # of characters of JSON per row and a command line is the wrong place
@@ -178,7 +195,7 @@ def main() -> int:
     sb = modal.Sandbox.create(
         "bash", "-lc", SCRIPT.format(
             model=args.model, entry=_entry(args, args.model),
-            serve_extra=_serve_extra(args.pairs)),
+            serve_extra=_serve_extra(args.pairs, args.rubric)),
         app=app, image=img, gpu=args.gpu, timeout=args.timeout,
         volumes={"/cache": cache},
     )

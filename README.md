@@ -260,8 +260,21 @@ Being honest about coverage, since "it deploys" is not "it works":
   is checked against the published format by `smoke_prompt.py` and scored 1.00
   against MiniMax's own format grader. Still unverified by ear: whether
   `non_diegetic_music: N/A` actually silences the soundtrack.
-- **The scene composer** — driven and read, never measured against a render.
-  `tools/prompt_ab.py` is the measurement that is not a proxy and has not run.
+- **The scene composer** — measured against renders on an H100 by
+  `tools/prompt_ab.py --scene` (2026-09-29). Five scenes, a cast of one or two,
+  two shots each, were rendered twice at each of two seeds. One arm was the
+  composer's compiled document. The other was the same words typed into one box
+  with the same pictures attached. A vision judge read contact sheets blind in
+  both orders and scored **composer 4, prose 0, tie 6**. All six ties were the
+  judge picking a position rather than a clip, so they decide nothing. By eye,
+  the composer cut on the shot boundary in 10 of 10 clips and the prose in about
+  4 of 10. The composer read better in 6 pairs and worse in 1. Its one repeated
+  fault is a duplicated person, a second face or a second rider, in 3 of 10
+  clips. The claim that "the document renders the scene better" holds as a
+  direction without a loss, not as a decisive win. Still unmeasured: sound and
+  dialogue (the judge only sees frames), anything past one generation (Continue
+  chaining is `chain_ab.py`'s subject), pills and blocking (no scene here set
+  either), and whether the duplicate-subject fault survives a larger n.
 - **Krea 2, SAM and regional inpaint** — run on an H100 by `tools/ab_inpaint.py`
   (2026-09-29): plain Turbo renders, SAM 2 masks from a click, and regional
   inpaints through V12 from a soft noise mask over the source, at batch 1 and

@@ -203,12 +203,14 @@ slices:
     layer: integration
     feature: ab-harnesses
     status: in_progress
-  - delivers: The measurement that is not a proxy, and has not run. The composer has
-      been driven and read; until this runs, its claim is asserted rather than
-      measured.
+  - delivers: The measurement that is not a proxy, run. The composer's document
+      and the same words in one box, rendered on H3 and judged blind from contact
+      sheets, so its claim is measured rather than asserted.
     paths:
       - tools/prompt_ab.py
-      - docs/assurance
+      - tools/ab_scene.py
+      - tools/judge_renders.py
+      - tools/serve_judge.py
     depends_on:
       - 11
       - 12
@@ -219,7 +221,21 @@ slices:
     number: 13
     layer: integration
     feature: ab-harnesses
-    status: draft
+    status: done
+    evidence:
+      kind: manual
+      ref: "2026-09-29: prompt_ab.py --scene (tools/ab_scene.py) on H100, 5
+        scenes x 2 arms x 2 seeds (774411, 991733), 8 s H3 takes at 1344x768,
+        20 steps, prose-typed-in-one-box vs the composer's compiled document,
+        same pictures and seed. Judged by Qwen3-VL-4B in both orders from
+        6-frame contact sheets: composer 4, prose 0, tie 6 (2-0-3 per seed).
+        All 6 ties were the judge picking the same position both times, so
+        they are undecided, not close. The pre-written bar (composer >= 3/5,
+        ties < 3) was not met by the judge on either seed. By eye over all 20
+        sheets: a cut at the 4 s shot boundary in 10/10 composer clips and
+        ~4/10 prose; composer better 6, close 1, mixed 2, worse 1. Its failure
+        was a duplicated subject in 3/10 (0/10 prose), a candidate at this n.
+        Sound not judged."
   - delivers: "The one claim in the coverage ledger that no cheap check can settle:
       the field is emitted and the format grader scores it, but nobody has
       listened to a render made with it."

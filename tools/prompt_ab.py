@@ -8,20 +8,34 @@ happened: the semantic layer scored as maximum restraint and lost 0-4 to doing
 nothing. This renders both and has a vision model say which one answered the
 brief.
 
+    python3.11 tools/prompt_ab.py --scene                     # the scene composer
     python3.11 tools/prompt_ab.py --url https://…modal.run --from enrich.jsonl
 
 Three stages, and the two halves already existed — this is the one command that
 runs them in order, which is the whole of what it adds:
 
-  1. `does_it_help.py` renders each fragment twice against the deployed app,
-     bare and rewritten, at one seed with the sentence as the only variable.
+  1. A renderer writes `<name>_bare.png` beside `<name>_rich.png`.
   2. `serve_judge.py --pairs` serves a vision model in a throwaway Sandbox.
   3. `judge_renders.py` scores the pairs inside it.
 
-`--from` takes a JSONL of `{name, prose, compiled}`, so the
-rewritten half is what a model actually wrote rather than what somebody hoped it
-would write. That distinction is not academic: hand-written replacements won
-their pairs and every model-written one lost.
+**Two subjects, and the renderer is what differs.**
+
+`--scene` measures the scene composer, which is the claim this command was
+written for: `ab_scene.py` renders each scene twice on H3 — the composer's
+compiled document, and the same words typed into one box — and writes a contact
+sheet per clip, which the judge reads under `--rubric scene`. It runs inside
+Modal against the app's own compiler and graph, so it needs no deployment and
+no password. First run 2026-09-29; the result is in the README's coverage
+ledger.
+
+Without `--scene` it is the older experiment: `does_it_help.py` renders a Krea 2
+fragment bare and rewritten against a deployed app. `--from` takes a JSONL of
+`{name, prose, compiled}`, so the rewritten half is what a model actually wrote
+rather than what somebody hoped it would write. That distinction is not
+academic: hand-written replacements won their pairs and every model-written one
+lost. **That path sends no cookie**, and every route on a deployment is behind
+the password now, so against a live URL it is refused at the gate — it predates
+the gate.
 
 ## Reading the result
 
@@ -56,28 +70,52 @@ def run(cmd: list[str]) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Render a prompt pair and judge which picture answered the brief.")
-    ap.add_argument("--url", required=True, help="The deployed web URL")
+    ap.add_argument("--url", default=None,
+                    help="The deployed web URL. Not used by --scene.")
+    ap.add_argument("--scene", action="store_true",
+                    help="Measure the scene composer: ab_scene.py renders each "
+                         "scene as prose and as the composer's document, and "
+                         "the judge reads contact sheets of the clips.")
     ap.add_argument("--from", dest="dump", default=None,
                     help="An --enrich / rewrite JSONL. Omit for the built-in pairs.")
-    ap.add_argument("--out", default="tools/ab-pairs",
-                    help="Where the renders land, and what the judge reads.")
+    ap.add_argument("--out", default=None,
+                    help="Where the renders land, and what the judge reads. "
+                         "tools/ab-pairs, or out/scene-ab with --scene.")
     ap.add_argument("--limit", type=int, default=10)
     ap.add_argument("--seed", type=int, default=774411)
+    ap.add_argument("--only", default="",
+                    help="With --scene, a comma list of scene names to render.")
     ap.add_argument("--judge-model", default="Qwen/Qwen3-VL-4B-Instruct",
                     help="A *vision* model, and deliberately not the one being judged.")
     ap.add_argument("--gpu", default="L4")
     ap.add_argument("--render-only", action="store_true",
                     help="Stop after the pictures — useful when you want to look "
                          "before spending a Sandbox on the judge.")
+    ap.add_argument("--judge-only", action="store_true",
+                    help="Judge what is already in --out, without rendering — "
+                         "for a second look by a different judge, or after "
+                         "--render-only.")
     args = ap.parse_args()
+    if not args.scene and not args.url:
+        ap.error("--url is required unless --scene")
 
-    out = Path(args.out)
-    render = [sys.executable, str(ROOT / "tools" / "does_it_help.py"),
-              "--url", args.url, "--out", str(out),
-              "--limit", str(args.limit), "--seed", str(args.seed)]
-    if args.dump:
-        render += ["--from", args.dump]
-    if (code := run(render)):
+    out = Path(args.out or ("out/scene-ab" if args.scene else "tools/ab-pairs"))
+    if args.scene:
+        # `modal run`, not a request to the deployment: the composer's
+        # documents are compiled and rendered by the app's own functions inside
+        # Modal, which is what lets this run without the password.
+        render = ["modal", "run", str(ROOT / "tools" / "ab_scene.py"),
+                  "--stage", "render", "--out", str(out),
+                  "--seed", str(args.seed)]
+        if args.only:
+            render += ["--only", args.only]
+    else:
+        render = [sys.executable, str(ROOT / "tools" / "does_it_help.py"),
+                  "--url", args.url, "--out", str(out),
+                  "--limit", str(args.limit), "--seed", str(args.seed)]
+        if args.dump:
+            render += ["--from", args.dump]
+    if not args.judge_only and (code := run(render)):
         print("render failed; not judging half a set", file=sys.stderr)
         return code
 
@@ -91,7 +129,9 @@ def main() -> int:
 
     judge = [sys.executable, str(ROOT / "tools" / "serve_judge.py"),
              "--pairs", str(out), "--model", args.judge_model, "--gpu", args.gpu]
-    if args.dump:
+    if args.scene:
+        judge += ["--rubric", "scene", "--briefs", str(out / "briefs.json")]
+    elif args.dump:
         judge += ["--briefs", args.dump]
     return run(judge)
 

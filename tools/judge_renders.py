@@ -14,6 +14,23 @@ person asked for.
 
     python3.11 tools/judge_renders.py --pairs out/            # local vLLM
     python3.11 tools/judge_renders.py --pairs out/ --backend http://…/v1
+    python3.11 tools/judge_renders.py --pairs out/scene-ab --rubric scene \\
+        --briefs out/scene-ab/briefs.json
+
+**A clip is judged as a contact sheet.** `ab_scene.py` writes each clip as six
+frames in time order, and `--rubric scene` tells the judge so and asks the
+question a still rubric has no words for — are the shots there, in order, with
+the same people in them. Where a scene has pictures, `<name>_cast.png` goes in
+ahead of both sheets, identical in both orders, because likeness cannot be
+judged without the likeness. What it cannot do is listen: nothing about a
+clip's sound reaches this judge.
+
+**The ties were the instrument, not the pairs.** On the first scene run
+(2026-09-29, 10 pairs) all six ties were the 4B answering "A" in both orders.
+It never split on a close pair; it went to position whenever the sheets did not
+settle it. So on sheets, a tie from this judge means *undecided* rather than
+*close*. That is what the both-orders rule exists to catch, and it is why the
+scene result was also read by eye.
 
 **The VLM variant of the same family**, which is the cheap part of this and the
 reason it is worth doing at all: `docs/vendor-parse-model.md` already pins
@@ -75,6 +92,46 @@ the winning image decided it>", "against": "<one sentence naming what the other
 image got wrong or missed>"}}
 """
 
+# The same judge for a video clip, which it cannot watch. Each of A and B is a
+# contact sheet — six frames sampled evenly through one clip — so what it can
+# still see is the axis a scene is about: which shot is on screen when, and who
+# is in it. Criterion 1 is the one a still rubric has no words for, which is
+# the reason this is a second rubric rather than a sentence added to the first.
+SCENE_RUBRIC = """\
+You are shown two short video clips, A and B, made from the same brief by
+different means. You cannot watch them: each is a contact sheet of six frames
+sampled evenly through the clip, numbered 1 to 6 in time order, left to right
+and top to bottom. {cast}Decide which clip better realises the brief.
+
+THE BRIEF: {brief}
+
+Judge only these, in this order:
+1. Does the clip show each shot the brief asks for, in the order it gives them?
+   Where the brief has two shots, the early frames should show the first and
+   the late frames the second.
+2. Are the named people there, and are they recognisably the same people from
+   frame to frame? Where cast photographs are given, does each named person
+   look like their own photograph and not like somebody else's?
+3. Do the people and things stand in the arrangement the brief describes — who
+   is doing what, with or to whom?
+4. Are the literal, specific facts of the brief present and correct?
+
+Ignore which clip looks more elaborate or more polished. If neither is clearly
+better, say "tie" — that is a real answer and is preferred to a guess.
+
+Return JSON: {{"winner": "A"|"B"|"tie", "because": "<one sentence naming what in
+the winning clip's frames decided it>", "against": "<one sentence naming what
+the other clip got wrong or missed>"}}
+"""
+
+CAST_NOTE = ("Before the clips you are shown the cast: one photograph per named "
+             "person, labelled with their name. ")
+
+RUBRICS = {"still": RUBRIC, "scene": SCENE_RUBRIC}
+# What `_rich` and `_bare` are called in the tally, per rubric — the files are
+# named for the harness that wrote them, and the reader wants the arms.
+ARMS = {"still": ("replacement", "bare"), "scene": ("composer", "prose")}
+
 
 # Long edge in pixels before the image is sent. Qwen3-VL tiles an image into
 # patches, so a 1152x864 render is thousands of vision tokens and *two* of them
@@ -108,17 +165,29 @@ def data_uri(path: Path) -> str:
 
 
 def ask(base_url: str, model: str, brief: str, first: Path, second: Path,
-        timeout: float = 300.0) -> dict:
-    """One verdict. `first` is shown as A and `second` as B — the caller decides."""
+        timeout: float = 300.0, rubric: str = "still",
+        cast: Path | None = None) -> dict:
+    """One verdict. `first` is shown as A and `second` as B — the caller decides.
+
+    `cast`, when there is one, goes in ahead of both and is the same file in
+    both orders, so it can inform the verdict and cannot bias it.
+    """
+    text = (RUBRIC.format(brief=brief) if rubric == "still" else
+            RUBRICS[rubric].format(brief=brief, cast=CAST_NOTE if cast else ""))
+    content: list[dict] = [{"type": "text", "text": text}]
+    if cast:
+        content += [{"type": "text", "text": "The cast:"},
+                    {"type": "image_url", "image_url": {"url": data_uri(cast)}}]
+    noun = "Image" if rubric == "still" else "Clip"
+    content += [
+        {"type": "text", "text": f"{noun} A:"},
+        {"type": "image_url", "image_url": {"url": data_uri(first)}},
+        {"type": "text", "text": f"{noun} B:"},
+        {"type": "image_url", "image_url": {"url": data_uri(second)}},
+    ]
     body = {
         "model": model,
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": RUBRIC.format(brief=brief)},
-            {"type": "text", "text": "Image A:"},
-            {"type": "image_url", "image_url": {"url": data_uri(first)}},
-            {"type": "text", "text": "Image B:"},
-            {"type": "image_url", "image_url": {"url": data_uri(second)}},
-        ]}],
+        "messages": [{"role": "user", "content": content}],
         "max_tokens": 400,
         "temperature": 0.0,
     }
@@ -150,9 +219,17 @@ def pairs_in(folder: Path) -> list[tuple[str, Path, Path]]:
 
 
 def briefs_from(dump: Path | None) -> dict[str, str]:
-    """The person's own fragment, keyed the way `does_it_help.py` names its files."""
+    """The person's own fragment, keyed the way the harness named its files.
+
+    Two shapes: an `--enrich` dump, keyed the way `does_it_help.py` derives a
+    name from the prose, or a JSON object of name to brief, which is what
+    `ab_scene.py` and `ab_inpaint.py` write — they name their own pairs, so
+    there is nothing to derive.
+    """
     if not dump:
         return {}
+    if dump.suffix == ".json":
+        return {str(k): str(v) for k, v in json.loads(dump.read_text()).items()}
     out = {}
     for line in dump.read_text().splitlines():
         if not line.startswith("ENRICH "):
@@ -173,6 +250,10 @@ def main() -> int:
                          "a filename.")
     ap.add_argument("--backend", default="http://localhost:8000/v1")
     ap.add_argument("--model", default="Qwen/Qwen3-VL-4B-Instruct")
+    ap.add_argument("--rubric", choices=sorted(RUBRICS), default="still",
+                    help="`scene` when each image is a contact sheet of a clip, "
+                         "as `ab_scene.py` writes them; a `<name>_cast.png` "
+                         "beside a pair is then shown to the judge first.")
     args = ap.parse_args()
 
     found = pairs_in(args.pairs)
@@ -185,17 +266,22 @@ def main() -> int:
     print("  Each pair judged twice with the order swapped. A win counts only")
     print("  when both orders agree; disagreement is a tie, not a tiebreak.\n")
 
+    rich_arm, bare_arm = ARMS[args.rubric]
     wins = {"rich": 0, "bare": 0, "tie": 0}
     for name, bare, rich in found:
         brief = briefs.get(name) or name.replace("_", " ")
+        cast = bare.with_name(f"{name}_cast.png")
+        cast = cast if args.rubric == "scene" and cast.exists() else None
         # The order is fixed per pair rather than random, so a re-run of this
         # harness on the same folder gives the same answer — the property
         # `--judge` is kept for and the one reading by hand never had.
         rich_first = int(hashlib.sha1(name.encode()).hexdigest(), 16) % 2 == 0
         a, b = (rich, bare) if rich_first else (bare, rich)
 
-        first = ask(args.backend.rstrip("/"), args.model, brief, a, b)
-        second = ask(args.backend.rstrip("/"), args.model, brief, b, a)
+        first = ask(args.backend.rstrip("/"), args.model, brief, a, b,
+                    rubric=args.rubric, cast=cast)
+        second = ask(args.backend.rstrip("/"), args.model, brief, b, a,
+                     rubric=args.rubric, cast=cast)
 
         def side(v: dict, flipped: bool) -> str:
             w = str(v.get("winner", "tie")).strip().upper()
@@ -207,18 +293,25 @@ def main() -> int:
         one, two = side(first, False), side(second, True)
         verdict = one if one == two else "tie"
         wins[verdict] += 1
-        mark = {"rich": "REPLACED", "bare": "bare    ", "tie": "tie     "}[verdict]
-        print(f"  {mark}  {brief[:52]}")
-        if verdict != "tie":
-            because = (first if one == verdict else second).get("because", "")
-            print(f"            {because[:96]}")
-        elif one != two:
-            print(f"            (order-dependent: {one} then {two} — the pair is close)")
+        mark = {"rich": rich_arm.upper(), "bare": bare_arm,
+                "tie": "tie"}[verdict].ljust(11)
+        print(f"  {mark} {name}: {brief[:52]}")
+        # Both verdicts, whole, whatever the outcome: a scene is judged on four
+        # criteria at once and a one-line reason for a tie is the part a person
+        # spot-checking the sheets needs most.
+        for order, v in (("A/B", first), ("B/A", second)):
+            print(f"      {order} {v.get('winner', '?')}: because "
+                  f"{v.get('because', '')[:160]} | against "
+                  f"{v.get('against', '')[:160]}"
+                  + (f" | raw {v['raw']}" if v.get("raw") else ""))
+        if verdict == "tie" and one != two:
+            print(f"      (order-dependent: {one} then {two} — the pair is close)")
 
     n = len(found)
-    print(f"\n  replacement wins  {wins['rich']}/{n}")
-    print(f"  bare wins         {wins['bare']}/{n}")
-    print(f"  tie               {wins['tie']}/{n}")
+    print()
+    for key, label in (("rich", f"{rich_arm} wins"), ("bare", f"{bare_arm} wins"),
+                       ("tie", "tie")):
+        print(f"  {label:<18}{wins[key]}/{n}")
     print("\n  Read this as the only measurement here that is not a proxy — and")
     print("  read a tie as a tie. A pair the judge flips on is two pictures that")
     print("  are genuinely close, which is a result about the feature rather")
