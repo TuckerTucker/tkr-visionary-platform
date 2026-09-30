@@ -10,7 +10,7 @@ anchors:
   - tools/smoke_graphs.py
   - web/src/regions/RegionLayer.tsx
 createdAt: 2026-09-29T01:30:00.000Z
-updatedAt: 2026-09-29T06:00:00.000Z
+updatedAt: 2026-09-30T05:00:00.000Z
 remedy: "In tools/ab_inpaint.py's lamp case — a mug on a desk asked to become 'a
   short glass of red wine' — every arm that sampled from the source painted a
   small cartoon figure at the mug's handle, inside the SAM box. The mask is not
@@ -79,4 +79,7 @@ evidence:
     against HEAD's composer, and the graph half passes on Modal.
     tools/ui-checks/check_sam.py passes, including the request carrying
     `segment: true` beside its mask; check_regions.py (62 ok) and
-    check_recall.py pass; web builds. Not deployed."
+    check_recall.py pass; web builds. Deployed 2026-09-30 at dd42233 and
+    driven on the live app: a SAM tap on white milk, + Region, 'chocolate
+    milk', rendered as asked with no figure beside it. The metadata sheet's
+    Region segments line was not checked."

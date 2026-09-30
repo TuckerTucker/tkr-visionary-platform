@@ -286,7 +286,8 @@ Being honest about coverage, since "it deploys" is not "it works":
   for a slightly softer rim on garment edits. On the deployed app
   (2026-09-28) the whole gesture ran from the page: a tap on a render, SAM's
   mask, `+ Region`, a sentence and a render, which is how the halo the hard mask
-  left was found. Not run: a saved character recalled onto a box, because the
+  left was found; on 2026-09-30 the same gesture turned white milk into
+  chocolate milk with no figure beside it. Not run: a saved character recalled onto a box, because the
   volume holds none.
 
 ---
