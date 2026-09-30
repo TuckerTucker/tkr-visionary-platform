@@ -1,0 +1,21 @@
+id: work-c8hgzwuH
+title: A hand-drawn box described as an object is still framed as a distant figure
+kind: follow-up
+severity: low
+status: open
+capabilityId: platform
+continues: work-Z8uVo1Bo
+anchors:
+  - app.py
+createdAt: 2026-09-30T04:00:00.000Z
+updatedAt: 2026-09-30T04:00:00.000Z
+remedy: "work-Z8uVo1Bo stopped _compose_caption framing a SAM-cut box as 'a
+  small distant background figure far from the camera, whole body', which had
+  painted a man beside a wine glass. A box drawn by hand and described as a
+  thing ('a lamp') on a fresh render still gets that clause whenever it is
+  under a quarter of the frame's height, and nothing measures whether it
+  paints a figure there too. Verify first with a fresh Turbo render of a
+  small hand-drawn object box at two seeds, before and after dropping the
+  clause for it. The fix must not be a mode or a noun classifier on the
+  sentence: find what the box already knows (no LoRA, no likeness) and let
+  that decide, the way segment did."

@@ -1,0 +1,20 @@
+id: work-m4Qd7Rtx
+title: A shot after the first compiles to "the shot cuts to <Subject 2> laughs"
+kind: bug
+severity: low
+status: open
+capabilityId: platform
+anchors:
+  - app.py
+createdAt: 2026-09-30T04:00:00.000Z
+updatedAt: 2026-09-30T04:00:00.000Z
+provenance:
+  source: tools/ab_scene.py documents.json
+  ref: "assurance slice 13, 2026-09-29"
+remedy: "_compile_h3_scene writes 'At 0:04, the shot cuts to' and appends the
+  shot body, which is a clause with its own verb, so the sentence reads 'cuts
+  to <Subject 2> laughs'. 'the shot cuts to' is kept on purpose — one of the
+  guide's five listed cut verbs — so the fix is in how the body joins it (a
+  noun phrase, or a second sentence), not in the verb. The composer was just
+  measured on documents that carry this, so re-run prompt_ab.py --scene after
+  changing it rather than assuming grammar helps."

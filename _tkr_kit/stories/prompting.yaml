@@ -144,5 +144,6 @@ stories:
       kind: commit
       ref: "5b77208: tools/smoke_scene.py passes, including the missing-file and
         reference-budget checks; tools/smoke_prompt.py passes; web typecheck and
-        vite build pass. Not measured against a render — that is
-        assurance/slice/13, which this no longer gates."
+        vite build pass. Measured against a render 2026-09-29 by
+        assurance/slice/13 (prompt_ab.py --scene): composer 4, prose 0, tie 6
+        — a direction without a loss, not a decisive win."

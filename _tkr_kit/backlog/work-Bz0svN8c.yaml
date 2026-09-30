@@ -1,0 +1,23 @@
+id: work-Bz0svN8c
+title: The scene composer can put the same person in a take twice
+kind: bug
+severity: medium
+status: open
+capabilityId: platform
+anchors:
+  - app.py
+  - tools/ab_scene.py
+createdAt: 2026-09-30T04:00:00.000Z
+updatedAt: 2026-09-30T04:00:00.000Z
+provenance:
+  source: tools/prompt_ab.py --scene
+  ref: "assurance slice 13, 2026-09-29, seeds 774411 and 991733"
+remedy: "In the first scene A/B, 3 of 10 composer takes duplicated a subject —
+  Lee twice in the diner's first shot, a second Nia on the rooftop bicycle, a
+  second cook in the market — against 0 of 10 for the same words in one box.
+  At n=10 this is a candidate, not a finding. Verify first: rerun those three
+  scenes at two more seeds with tools/ab_scene.py and count by eye; if it
+  holds, compare the compiled documents in documents.json for what the prose
+  arm lacks that could license a second copy (the retention line, a
+  <Subject N> named in more than one shot, the style lead). Keep the fix in
+  _compile_h3_scene; a validator cannot see a duplicate."

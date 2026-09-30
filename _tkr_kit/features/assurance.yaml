@@ -52,8 +52,8 @@ features:
       judge_renders.
     acceptance_criteria:
       - A harness answers with a measurement, not an impression.
-      - tools/prompt_ab.py is the measurement for the scene composer that is not
-        a proxy — and it has not run.
+      - tools/prompt_ab.py --scene is the measurement for the scene composer that
+        is not a proxy — first run 2026-09-29 (assurance slice 13).
       - A change that cannot be measured by one of these is a change whose claim
         stays unmade.
     references:
