@@ -266,7 +266,11 @@ Being honest about coverage, since "it deploys" is not "it works":
   (2026-09-29): plain Turbo renders, SAM 2 masks from a click, and regional
   inpaints through V12 from a soft noise mask over the source, at batch 1 and
   2, against the old whole-frame paste and the first hard-masked fix — better
-  than both on every case by eye and on the seam numbers. On the deployed app
+  than both on every case by eye and on the seam numbers. Every sampled arm
+  also painted a small figure beside the lamp case's new glass, which the same
+  harness traced to the caption framing SAM's box as a distant performer; a
+  promoted box is now placed without it, and the figure is gone at three seeds
+  for a slightly softer rim on garment edits. On the deployed app
   (2026-09-28) the whole gesture ran from the page: a tap on a render, SAM's
   mask, `+ Region`, a sentence and a render, which is how the halo the hard mask
   left was found. Not run: a saved character recalled onto a box, because the

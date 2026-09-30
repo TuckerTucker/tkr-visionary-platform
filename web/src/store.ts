@@ -74,6 +74,12 @@ export type Region = {
   lora: LoraChip | null
   /** Carried as a bool in the job record, never the bytes — it is polled. */
   attachments: Attachment[]
+  /** SAM cut this box around something already in the picture, so its words say
+   *  what that becomes rather than who to place at what distance. Without it the
+   *  caption framed a mug's box as "a small distant background figure … whole
+   *  body", and the inpaint painted a little man beside the wine glass. Set once,
+   *  at promote — nothing on the card offers it, because nothing needs deciding. */
+  segment?: boolean
 }
 
 /** See `Store.inpaint`. */

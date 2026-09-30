@@ -247,6 +247,52 @@ def _out_point_checks() -> list[str]:
     return bad
 
 
+def _caption_checks() -> list[str]:
+    """What an inpaint's box says in the caption the graph encodes.
+
+    Here because the caption is the one input to the regional graph that no
+    node validates: a box composed as a performer on an inpaint of a mug put
+    "a small distant background figure ... whole body" in the prompt, every
+    node took it, and the render came back with a little man beside the glass
+    of wine. tools/ab_inpaint.py is the measurement; this is the rule.
+    """
+    from _from_app import pull
+
+    ns = pull({"_box_horizontal", "_box_vertical", "_box_framing",
+               "_ONE_SUBJECT_RE", "_COUNT_WORDS", "_compose_caption"})
+    compose = ns["_compose_caption"]
+    bad: list[str] = []
+
+    def expect(label: str, cond: bool, detail: str = "") -> None:
+        print(f"  {' ok ' if cond else 'FAIL'}  {label}"
+              + (f"  ({detail})" if detail and not cond else ""), flush=True)
+        if not cond:
+            bad.append(f"{label} {detail}".rstrip())
+
+    mug = {"x": 0.663, "y": 0.46, "width": 0.166, "height": 0.17,
+           "prompt": "a short glass of red wine", "lora": "None"}
+    typed = "a cluttered writing desk at night lit by one green banker's lamp"
+    cut = compose(typed, [{**mug, "segment": True}])
+    expect("a segment is placed where SAM found it",
+           "In the middle right side, a short glass of red wine." in cut, cut)
+    expect("and is not framed as a figure to stand in the frame",
+           "figure" not in cut and "whole body" not in cut, cut)
+    drawn = compose(typed, [mug])
+    expect("a drawn box keeps its framing, byte for byte",
+           drawn.endswith("as a small distant background figure far from the "
+                          "camera, whole body occupying only a small part of "
+                          "the frame."), drawn)
+    her = {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.7,
+           "prompt": "a woman reading", "lora": "None"}
+    him = {**her, "x": 0.5, "prompt": "a man standing"}
+    both = compose(typed, [her, {**mug, "segment": True}, him])
+    expect("a segment is not counted among the subjects",
+           "Exactly two distinct subjects" in both, both)
+    expect("and comes after the count, so 'described above' names only them",
+           -1 < both.find("Exactly two") < both.find("a short glass"), both)
+    return bad
+
+
 if __name__ == "__main__":
     # See the note at the bottom of the file for why the graph half cannot run
     # here. This half can, and a check that only ran inside a container would
@@ -256,6 +302,10 @@ if __name__ == "__main__":
     problems = _out_point_checks()
     if problems:
         raise SystemExit(f"\n{len(problems)} problem(s) in the out-point cut.")
+    print("[smoke] an inpaint's box in the caption (local)", flush=True)
+    problems = _caption_checks()
+    if problems:
+        raise SystemExit(f"\n{len(problems)} problem(s) in the caption.")
     print("\nThe out-point cut lands on the pack's grid. The graph half is a "
           "Modal function:\n\n    modal run tools/smoke_graphs.py\n", flush=True)
     raise SystemExit(0)

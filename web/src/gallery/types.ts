@@ -59,7 +59,9 @@ export type GalleryItem = {
   /** As `_validate_regions` writes them *back*: `lora`/`strength` rather than the
    *  `loras` stack the page sends, and the box as a four-tuple. Reuse reads this shape,
    *  not the one it posted. */
-  regions?: { prompt?: string; lora?: string; strength?: number; box?: number[] }[]
+  regions?: {
+    prompt?: string; lora?: string; strength?: number; box?: number[]; segment?: boolean
+  }[]
   references?: number
   ref_videos?: number
   ref_roles?: string[]

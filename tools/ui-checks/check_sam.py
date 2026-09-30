@@ -13,7 +13,7 @@ showed nothing for all of them, which read as a tap that missed. This holds:
 - **Words once it is slow**, saying why it is waiting.
 - **The mask and `+ Region` when it answers**, and the ring gone.
 - **A failed answer said on the layer**, not dropped.
-- **`+ Region` makes the box.**
+- **`+ Region` makes the box**, and the run it sends marks that box a segment.
 
 The segment reply is held by the route and released by hand, so "slow" is a
 state this check puts the page in rather than a race it hopes to win.
@@ -123,6 +123,25 @@ with sync_playwright() as pw:
     pg.wait_for_timeout(400)
     r = pg.evaluate(READ)
     check("+ Region makes the box", r["boxes"] == 1, r["boxes"])
+
+    # The box is SAM's cut of something already there, and the request has to
+    # say so: composed as a performer's box, a mug asked to become a glass of
+    # wine came back with a small man standing beside it.
+    seen: dict = {}
+
+    def grab(route, request):
+        seen["body"] = request.post_data_json
+        route.fulfill(json={"ok": True, "job_id": "gen000"})
+
+    pg.fill("#r-prompt", "a short glass of red wine")
+    pg.route("**/api/generate", grab)
+    pg.click("#go-gen")
+    pg.wait_for_timeout(400)
+    pg.unroute("**/api/generate")
+    sent = (seen.get("body") or {}).get("regions") or [{}]
+    check("and the run carries it as a segment, beside its mask",
+          sent[0].get("segment") is True
+          and bool((seen.get("body") or {}).get("inpaint_mask")), sent)
 
     check("no dialog", not dialogs, dialogs)
     check("no page error", not errors, errors)

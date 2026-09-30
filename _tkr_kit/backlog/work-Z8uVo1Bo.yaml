@@ -2,13 +2,15 @@ id: work-Z8uVo1Bo
 title: A regional inpaint of an object can paint a small figure beside it
 kind: bug
 severity: low
-status: open
+status: closed
 capabilityId: platform
 anchors:
   - app.py
   - tools/ab_inpaint.py
+  - tools/smoke_graphs.py
+  - web/src/regions/RegionLayer.tsx
 createdAt: 2026-09-29T01:30:00.000Z
-updatedAt: 2026-09-29T01:30:00.000Z
+updatedAt: 2026-09-29T06:00:00.000Z
 remedy: "In tools/ab_inpaint.py's lamp case — a mug on a desk asked to become 'a
   short glass of red wine' — every arm that sampled from the source painted a
   small cartoon figure at the mug's handle, inside the SAM box. The mask is not
@@ -20,3 +22,61 @@ remedy: "In tools/ab_inpaint.py's lamp case — a mug on a desk asked to become 
   and with the region's box but no regional node, and see which one loses the
   figure. The fix should not add a mode: what a SAM region holds is already
   known to be a thing rather than a performer at the moment it is promoted."
+findings:
+  - "Half the suspect was wrong. V12 is not involved: tools/ab_inpaint.py's
+    `unrouted` arm (the same caption, no regional node) is bit-identical to the
+    control in all twelve pictures at seeds 42 and 7, because a row with no LoRA
+    and no photo arms nothing and the node passes through — the log says
+    `[V9/V2] no active regions; passthrough.` and V9's `_apply_v2_likeness`
+    encodes the prompt exactly as CLIPTextEncode does. The control at seed 42 is
+    bit-identical to the recorded lamp_rich.png, so the fault reproduced."
+  - "The cause is the framing tail of the caption, not the subject clause. Every
+    box under 0.25 of the frame's height was 'as a small distant background
+    figure far from the camera, whole body occupying only a small part of the
+    frame' — the mug's box is 0.17. By eye: the control painted a small man in a
+    grey suit (seed 42) and a small hooded statuette-like figure (seed 7) where
+    the handle had been, beside the glass. The `plain` arm (typed prompt plus
+    the edit, no clause) lost the figure and the edit with it: the mug came back
+    a mug at both seeds, and on the person case the coat came back a white
+    shirt. So the placement is what lands the edit in the mask and has to stay."
+  - "Why only the lamp: the glass is narrower than a mug and its handle, so the
+    mask has room left to fill and the caption offered a figure to fill it
+    with. The fern fills the vase's footprint and the armchair its own; on the
+    street and person cases the figure the caption asks for is the man already
+    standing there. Both masks cover the handle, which is why hard and soft
+    both showed it. At seed 1234 the old caption's glass filled the footprint
+    and no figure appeared — two of three seeds, not every one."
+  - "The fix, verified 2026-09-29 on an H100, five cases x seeds 42, 7 and 1234:
+    a region promoted from SAM carries `segment: true`, and _compose_caption
+    places it without the framing and outside the subject count. The lamp came
+    back as a glass of red wine with no figure at all three seeds (a clean glass
+    with paper where the handle was at 42, a wide tumbler at 7). The person case
+    is a belted leather trench inside the grey coat with no fog and no second
+    head at 42 and 7 — the fuller edit of the two arms both times."
+  - "What it costs, measured rather than assumed: the rim numbers are slightly
+    worse, at every seed. Soft arm, mean of six pictures, fixed vs the old
+    caption: seed 42 edge +0.081 vs +0.057, light +0.058 vs -0.028 (the recorded
+    +0.057/-0.028 is the old caption's, reproduced exactly); seed 7 -0.073 vs
+    -0.117, +0.043 vs +0.034; seed 1234 +0.210 vs +0.109, +0.029 vs -0.027.
+    Per picture it is mixed — the fixed arm is lower on edge in 4 of 12 at
+    seeds 42 and 7 and on light in 5 of 12. By eye the cost is on the coat:
+    without 'standing several steps from the camera, full body visible' the
+    street coat renders broader and its hem fades into the soft band (1234),
+    and once kept a grey sleeve (42); at 7 it is the cleaner of the two. The
+    seed-42 light mean moves mostly on one picture, armchair-1, where the fixed
+    arm painted a wedge of window light on the chair back instead of velvet —
+    the old caption did the same on armchair-0 at seed 7, so that one is the
+    case's own flakiness. Accepted: a stranger standing in an edit is a defect
+    anyone sees, and a softer hem on a garment is within the band the soft mask
+    exists to fade."
+evidence:
+  kind: manual
+  ref: "tools/ab_inpaint.py --arms figure,plain,unrouted at seeds 42 and 7
+    before the change, and --arms paste,hard,soft,figure at 42 and 7 plus
+    soft,figure at 1234 after it, on the recorded seed-42 sources and cases;
+    every picture read by eye, numbers above from scores.json.
+    tools/smoke_graphs.py: the local caption checks pass and fail four of five
+    against HEAD's composer, and the graph half passes on Modal.
+    tools/ui-checks/check_sam.py passes, including the request carrying
+    `segment: true` beside its mask; check_regions.py (62 ok) and
+    check_recall.py pass; web builds. Not deployed."

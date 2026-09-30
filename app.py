@@ -5783,6 +5783,12 @@ def _infotext(
         molds = sum(1 for r in regions if r.get("ref"))
         if molds:
             add("Region refs", molds)
+        # Only when some box was one, and for the same reason: a segment is
+        # placed without the framing clause, so its caption reads differently
+        # from a drawn box's with the same words. Older records have no field.
+        cuts = sum(1 for r in regions if r.get("segment"))
+        if cuts:
+            add("Region segments", cuts)
         # Which plates the compose ran around. The mode already says krea2edit;
         # without this line an outfit render and a scene render carried the
         # same sheet, and neither said what the whole frame was regenerated
@@ -6429,6 +6435,10 @@ def _validate_regions(raw: Any) -> list[dict[str, Any]]:
             "lora": lora[0]["name"] if lora else "None",
             "strength": lora[0]["unet"] if lora else 1.0,
             "ref": ref or "",
+            # SAM cut this box around something already in the picture — the
+            # page sets it when a mask is promoted, and nothing else does. It
+            # changes only what `_compose_caption` says about the box.
+            "segment": entry.get("segment") is True,
         })
     return out
 
@@ -6664,6 +6674,22 @@ def _compose_caption(prompt: str, regions: list[dict[str, Any]]) -> str:
 
     Qwen3-VL is an instruction-tuned VLM rather than a bag-of-tokens encoder,
     which is the reason this works at all and the reason it is prose.
+
+    **A segment is placed and not framed.** A box SAM cut around something
+    already in the picture has its size set by that thing, so there is no
+    subject to stand at a distance and the framing clause has nothing true to
+    say. It said something false instead: every inpaint box under a quarter of
+    the frame's height was "a small distant background figure far from the
+    camera, whole body", and a mug asked to become a glass of wine came back
+    with a small man standing where the handle had been — the glass is narrower
+    than the mug, the mask still has to be filled, and the caption had offered a
+    figure to fill it with. Measured in tools/ab_inpaint.py at three seeds: a
+    figure in two with the framing, none without it — for a slightly softer
+    rim on a garment, which without "full body visible" renders broader and
+    fades into the soft band (work-Z8uVo1Bo has the numbers). The placement stays,
+    because it is what makes the edit land in the mask — with the edit only
+    appended to the prompt, the mug came back a mug. Nor is a segment counted
+    as one of the subjects, since it may be a mug.
     """
     parts: list[str] = []
     base = (prompt or "").strip()
@@ -6671,6 +6697,7 @@ def _compose_caption(prompt: str, regions: list[dict[str, Any]]) -> str:
         parts.append(base.rstrip(".") + ".")
 
     clauses: list[str] = []
+    segments: list[str] = []
     for region in regions:
         described = (region.get("prompt") or "").strip()
         has_identity = (region.get("lora") not in (None, "", "None")
@@ -6684,12 +6711,13 @@ def _compose_caption(prompt: str, regions: list[dict[str, Any]]) -> str:
         described = _ONE_SUBJECT_RE.sub(r"one single \1 only", described)
         cx = float(region["x"]) + float(region["width"]) / 2.0
         cy = float(region["y"]) + float(region["height"]) / 2.0
-        clauses.append(
-            f"In the {_box_vertical(cy)} {_box_horizontal(cx)}, "
-            f"{described.rstrip('.')}, as {_box_framing(float(region['height']))}."
-        )
+        where = f"In the {_box_vertical(cy)} {_box_horizontal(cx)}, {described.rstrip('.')}"
+        if region.get("segment"):
+            segments.append(f"{where}.")
+            continue
+        clauses.append(f"{where}, as {_box_framing(float(region['height']))}.")
 
-    if not clauses:
+    if not clauses and not segments:
         return base
 
     parts.extend(clauses)
@@ -6709,6 +6737,9 @@ def _compose_caption(prompt: str, regions: list[dict[str, Any]]) -> str:
         parts.append(f"Exactly {total} distinct subjects in the frame, one in "
                      "each position described above and no others. Do not "
                      "duplicate any subject.")
+    # After the count, so "each position described above" names only the
+    # subjects it counted.
+    parts.extend(segments)
     return " ".join(parts)
 
 
@@ -7499,7 +7530,11 @@ class ImageGenerator:
             "regions": [{"box": [r["x"], r["y"], r["width"], r["height"]],
                          "lora": r["lora"], "strength": r["strength"],
                          "prompt": r["prompt"],
-                         "ref": bool(r.get("ref_image"))} for r in regions],
+                         "ref": bool(r.get("ref_image")),
+                         # Written on every box, true or not, because it
+                         # decides which clause the caption gave it and Reuse
+                         # reads it back to compose the same one.
+                         "segment": r["segment"]} for r in regions],
             "region_weight": region_weight,
             # Only when it differs from what was typed. A caption nobody wrote
             # is the one thing about a regional render that cannot be worked

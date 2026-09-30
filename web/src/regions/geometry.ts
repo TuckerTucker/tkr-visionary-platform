@@ -107,6 +107,8 @@ export function readRegions(_index: LoraFile[], regions: Region[], on: boolean) 
         loras: r.lora ? [{ path: r.lora.path, unet: r.lora.strength }] : [],
         ref: attached(r, 'identity'),
         x: r.x, y: r.y, width: r.w, height: r.h,
+        // Only when set, so a hand-drawn box's row is byte for byte what it was.
+        ...(r.segment ? { segment: true } : {}),
       }
     })
     .filter((r) => r.prompt || r.loras.length || r.ref)

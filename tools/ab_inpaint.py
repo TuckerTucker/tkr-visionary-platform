@@ -3,6 +3,7 @@ Does sampling from the source make a better inpaint than pasting a fresh frame?
 
     modal run tools/ab_inpaint.py --stage sources --out out/inpaint
     modal run tools/ab_inpaint.py --stage compare --out out/inpaint --cases cases.json
+    modal run tools/ab_inpaint.py --stage compare ... --arms soft,figure --seed 7
 
 Three arms, one seed, one caption, one SAM mask each, with how sampling treats
 the mask as the only variable:
@@ -21,6 +22,28 @@ deployed app: a man restyled in a leather coat kept his old outline and a
 second head as pale fog, because between the old silhouette and the new one the
 model painted background from nothing and the paste cut back along the old
 edge. The `person` case below is that gesture.
+
+Three more arms hold the soft mask and vary what the text encoder reads, because
+the lamp case — a mug asked to become a glass of wine — came back from every
+sampled arm with a small figure standing where the handle had been:
+
+  figure    the box composed as a performer's, framed by its height — "a small
+            distant background figure far from the camera, whole body". What
+            every inpaint read until a box knew it was SAM's cut.
+  plain     the typed prompt with the edit appended, and no clause placing it.
+  unrouted  `figure`'s caption with no regional node in the graph.
+
+What they settled (2026-09-29, seeds 42 and 7, twelve pictures each):
+`unrouted` is bit-identical to `figure` in all twelve, because a box with no
+LoRA and no photo arms nothing in V12 and it passes through
+(`[V9/V2] no active regions`) — so the node is not the cause. `plain` loses
+the figure and the edit with it: the mug came back a mug and the coat came
+back a shirt, because nothing put the new thing inside the mask. The cause is
+the framing clause, and `soft` now places a segment without it. The figure
+only shows on the lamp because only there does the new thing leave the mask
+room to fill — the glass is narrower than a mug and its handle — while the
+fern fills the vase's footprint, the chair its own, and on the street the
+figure the caption asks for is the man already there.
 
 **DifferentialDiffusion was an arm here and lost.** It is the node for a graded
 mask, and with it a mug asked to become a glass of wine stayed a mug — on the
@@ -47,7 +70,9 @@ read:
 Lower is better for both, and they measure the rim and nothing else: whether
 the edit shows what was asked for is for eyes or `judge_renders.py`, so the
 pictures are saved as `<name>_bare.png` (paste), `<name>_hard.png` and `<name>_rich.png`
-(soft).
+(soft), and the text arms under their own names. `scores.json` holds every
+picture's numbers, because a mean over five cases is how the one case with a
+figure in it hid behind four without one.
 
 Renders land in this container's ComfyUI output, never on the volume's
 `outputs/`, so nothing here appears in the gallery.
@@ -102,6 +127,12 @@ PROMPTS = {
     "street": "a man in a grey coat standing on a wet cobbled street under a "
               "streetlight, fog behind him",
 }
+
+# Every arm, and the suffix its pictures are saved under. `bare` and `rich` are
+# the names the first runs used for paste and soft, kept so a folder of old
+# pictures still reads the same way.
+ARMS = {"paste": "bare", "hard": "hard", "soft": "rich",
+        "figure": "figure", "plain": "plain", "unrouted": "unrouted"}
 
 # The band either side of the boundary the numbers are read over, and the blur
 # that turns `edge` into `light`. The band is wider than the feather so the
@@ -229,7 +260,8 @@ class Bench:
         return out
 
     @modal.method()
-    def compare(self, cases: list[dict[str, Any]], seed: int) -> list[dict]:
+    def compare(self, cases: list[dict[str, Any]], seed: int,
+                arms_wanted: list[str]) -> list[dict]:
         from PIL import Image, ImageFilter
 
         results = []
@@ -253,21 +285,34 @@ class Bench:
                 (COMFY / "input" / f"ab-{name}-{tag}.png").write_bytes(buf.getvalue())
 
             # The region the page makes from a SAM hit: the mask's box, holding
-            # what the person typed about it. Through the validator and the
-            # caption composer, so every arm reads what a real inpaint reads.
+            # what the person typed about it, marked as SAM's cut. Through the
+            # validator and the caption composer, so every arm reads what a real
+            # inpaint reads.
             x1, y1, x2, y2 = case["bbox"]
-            regions = _validate_regions([{
-                "x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1,
-                "prompt": case["edit"]}])
+            row = {"x": x1, "y": y1, "width": x2 - x1, "height": y2 - y1,
+                   "prompt": case["edit"]}
+            regions = _validate_regions([{**row, "segment": True}])
             caption = _compose_caption(case["prompt"], regions)
+            # The same box read as a performer to place — what every inpaint
+            # composed before a region knew it was a segment, and the caption
+            # that painted a figure beside the lamp case's glass.
+            performer = _validate_regions([row])
+            figure = _compose_caption(case["prompt"], performer)
             batch = int(case.get("batch", 1))
-            def sampled(mask_file: str) -> dict:
-                return _graph(caption, seed, regions,
+            def sampled(text: str, rows: list[dict], mask_file: str) -> dict:
+                return _graph(text, seed, rows,
                               {"inpaint_image": f"ab-{name}-source.png",
                                "inpaint_mask": mask_file}, batch)
+            soft_file = f"ab-{name}-soft.png"
             plan = {"paste": (_graph(caption, seed, regions, None, batch), feathered),
-                    "hard": (sampled(f"ab-{name}-hard.png"), feathered),
-                    "soft": (sampled(f"ab-{name}-soft.png"), soft)}
+                    "hard": (sampled(caption, regions, f"ab-{name}-hard.png"), feathered),
+                    "soft": (sampled(caption, regions, soft_file), soft),
+                    "figure": (sampled(figure, performer, soft_file), soft),
+                    "plain": (sampled(f"{case['prompt'].rstrip('.')}. "
+                                      f"{case['edit'].rstrip('.')}.",
+                                      regions, soft_file), soft),
+                    "unrouted": (sampled(figure, [], soft_file), soft)}
+            plan = {k: v for k, v in plan.items() if k in arms_wanted}
 
             arms = {}
             # Rotated per case so a container drifting warmer does not hand the
@@ -291,13 +336,14 @@ class Bench:
                 print(f"[ab-inpaint] {name} {arm}: "
                       + ", ".join(f"edge {p['edge']:+.3f} light {p['light']:+.3f}"
                                   for p in pics), flush=True)
-            results.append({"name": name, "caption": caption, "arms": arms})
+            results.append({"name": name, "caption": caption, "figure": figure,
+                            "arms": arms})
         return results
 
 
 @ab.local_entrypoint()
 def main(stage: str = "sources", out: str = "out/inpaint", cases: str = "",
-         seed: int = SEED):
+         seed: int = SEED, arms: str = ",".join(ARMS)):
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -324,17 +370,27 @@ def main(stage: str = "sources", out: str = "out/inpaint", cases: str = "",
         todo.append({**case, "source": base64.b64encode(source).decode(),
                      "mask": hit["mask"], "bbox": hit["bbox"]})
 
-    rows = Bench().compare.remote(todo, seed)
-    totals: dict[str, list[dict]] = {"paste": [], "hard": [], "soft": []}
+    wanted = [a for a in arms.split(",") if a]
+    unknown = sorted(set(wanted) - set(ARMS))
+    if unknown:
+        raise SystemExit(f"Unknown arm(s) {unknown}; the arms are {list(ARMS)}.")
+    rows = Bench().compare.remote(todo, seed, wanted)
+    totals: dict[str, list[dict]] = {a: [] for a in wanted}
+    scores: list[dict] = []
     for row in rows:
         for arm, pics in row["arms"].items():
             for i, pic in enumerate(pics):
-                suffix = {"paste": "bare", "hard": "hard", "soft": "rich"}[arm]
+                suffix = ARMS[arm]
                 tag = row["name"] + (f"-{i}" if len(pics) > 1 else "")
                 (out_dir / f"{tag}_{suffix}.png").write_bytes(base64.b64decode(pic["png"]))
                 totals[arm].append(pic)
+                scores.append({"picture": f"{tag}_{suffix}.png", "arm": arm,
+                               "seed": seed, "edge": pic["edge"],
+                               "light": pic["light"]})
     (out_dir / "briefs.json").write_text(json.dumps(
-        {r["name"]: r["caption"] for r in rows}, indent=2))
+        {r["name"]: {"caption": r["caption"], "figure": r["figure"]}
+         for r in rows}, indent=2))
+    (out_dir / "scores.json").write_text(json.dumps(scores, indent=2))
 
     print(f"\n{'arm':<8} {'n':>2} {'edge':>8} {'light':>8}   (excess over source; lower is better)")
     for arm, pics in totals.items():

@@ -106,6 +106,9 @@ export function reuse(it: GalleryItem): void {
         y: Number(box[1]) || 0,
         w: box[2] != null ? Number(box[2]) : 1,
         h: box[3] != null ? Number(box[3]) : 1,
+        // Read back so the reused box composes the caption its run did. Records
+        // older than the field have none, and a box with none is a performer's.
+        segment: r.segment === true,
       })
     }))
     s.select(saved.length ? 0 : -1)

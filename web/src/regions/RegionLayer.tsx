@@ -224,6 +224,7 @@ export function RegionLayer({ over = 'frame', renderJobId, renderFile }: {
     const r = newRegion({
       x: clamp01(x1), y: clamp01(y1),
       w: clamp01(x2 - x1), h: clamp01(y2 - y1),
+      segment: true,
     })
     useStore.setState({ regions: [...st.regions, r], rsel: st.regions.length })
     // Replaces any earlier one: an inpaint is one mask onto one render, and a second
